@@ -126,6 +126,7 @@ When guidance conflicts, higher sources win:
 - [Effect Style](./docs/effect-style.md): Effect 4 patterns for TypeScript
 - [Front-end Code Style](./docs/front-end-code-style.md): React and TypeScript conventions for the web app
 - [MVP Technical Plan](./docs/plans/mvp-technical-plan.md): the backend design: agent, MCP servers, data layer, network, evaluation and energy
+- [San Francisco Plan](./docs/plans/sf-plan.md): San Francisco sources, servers, tools and the agent loop
 - [Provisional Questions](./docs/plans/provisional-questions.md): the draft question set, pending confirmation from the research team
 
 # Contributing

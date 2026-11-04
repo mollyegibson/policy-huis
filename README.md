@@ -104,6 +104,7 @@ San Francisco work (sources, pipelines, corpus, `sf-data`) is owned by Molly; Am
 
 - [MVP Technical Plan](./docs/plans/mvp-technical-plan.md): the backend design
 - [Provisional Questions](./docs/plans/provisional-questions.md): the draft question set
+- [San Francisco Plan](./docs/plans/sf-plan.md): San Francisco sources, servers and the agent loop
 - [Domain-Driven Design and Hexagonal Architecture](./docs/domain-driven-design.md): where code belongs and why
 - [Working Agreement](./docs/working-agreement.md): the rules we hold each other to in review
 - [Ubiquitous Language](./docs/ubiquitous-language.md): the vocabulary
