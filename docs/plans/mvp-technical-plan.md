@@ -108,17 +108,17 @@ One TypeScript service is both the backend API the web app calls and the agent l
 - **API.** An Effect `HttpApi` with one question endpoint that streams the answer and its citations back (server-sent events), so a local model's 10–30 seconds of generation is visible as it happens. Requests are stateless.
 - **Model.** Effect 4's `LanguageModel` service (`effect/ai/LanguageModel`). The agent loop depends only on that service; one layer, chosen in config, decides which model provides it. Local runtimes (Ollama, LM Studio, llama.cpp, `mlx_lm.server`) imitate OpenAI's **Chat Completions** API (`/v1/chat/completions`), which [`@effect/ai-openai-compat`](https://effect.website/docs/v4/api/ai-openai-compat) calls, with tool calls and streaming. Spike S1 confirms tool calls and streaming work with each candidate model and runtime.
 - **One provider package for every configuration.** Local, same-model cloud and frontier configurations all use `@effect/ai-openai-compat`. Every configuration then runs through the same loop, prompts and tools, and its prompts, tools and tool results are serialized into identical requests, so differences in accuracy and tokens come from the model and hardware rather than the client. If the chosen frontier model does not work fully through Chat Completions (some models may be served only through OpenAI's newer Responses API), its configuration falls back to the provider's first-party package, such as `@effect/ai-openai`. The fallback is one more case in the layer that selects the model; the agent loop does not change.
-- **Tools.** An MCP client (`@modelcontextprotocol/sdk`, Streamable HTTP transport) connects to every server in the directory file and exposes their tools to the model.
+- **Tools.** Effect's MCP client (`effect/ai/McpClient`, Streamable HTTP transport) connects to every server in the directory file. `McpClient.toolkit` binds each server's tools into an `effect/ai` `Toolkit` under that server's tool prefix, so the model sees them as ordinary tools.
 - **Behavior rules in the system prompt.** Cite every claim; answer only from tool results; state the version or date a rule applies to; decline legal advice and causal conclusions and point to the right body.
 - **Traces.** Each request writes its model, tool calls, token counts, latency and energy sample to the `app` schema, for evaluation and debugging.
 
 ### MCP servers
 
-All servers are TypeScript and follow one **shared contract**, kept as Effect `Schema` definitions in a shared package:
+All servers are TypeScript, built with Effect's MCP server (`effect/ai/McpServer`, served over Streamable HTTP with `McpServer.layerHttp`). Each tool is an `effect/ai` `Tool` with Effect `Schema` input and output, registered through a `Toolkit`, so servers and agent use one schema system end to end. All servers follow one **shared contract**, kept as Effect `Schema` definitions in a shared package:
 
 - **Tool naming.** Each tool is prefixed with its server (for example `sf_policy_search`, `ams_data_social_rent_pipeline`), so the model can tell same-purpose tools apart across cities.
 - **Citation object.** Every result carries the citations behind it: source, title, provision or table, version or effective date, source URL, archived file hash and language.
-- **Errors.** Typed and returned to the model as tool results, never thrown as transport failures, so the model can say "no data" rather than guess.
+- **Errors.** Typed and returned to the model as tool results (`failureMode: "return"`), never thrown as transport failures, so the model can say "no data" rather than guess.
 - **Database access.** Each server connects with a role that can only read its own schema.
 
 #### Legal-text server
@@ -193,7 +193,7 @@ A Python package (uv, ruff, pytest) owns everything that loads or transforms dat
 | `raw_sf`, `raw_ams` | Python loaders | Alembic (raw SQL) | dbt |
 | `sf`, `ams` | dbt | dbt | The city's data server |
 | `policy_text_sf`, `policy_text_ams` | Python passage pipeline | Alembic | The matching legal-text server |
-| `app` | Agent service | `@effect/sql` Migrator | Agent service, evaluation reports |
+| `app` | Agent service | `effect/sql` Migrator | Agent service, evaluation reports |
 
 No server reads another server's schema. Moving a server to its own database later is then a connection-string change.
 
@@ -291,7 +291,8 @@ One shared repository.
 | Tests (TS) | `@effect/vitest` |
 | Effect | Effect 4 (`effect` 4.x, with AI modules under `effect/ai`) |
 | Validation | Effect `Schema` |
-| Operational database | `@effect/sql` / `@effect/sql-pg` |
+| Operational database | `effect/sql` with the `@effect/sql-pg` driver |
+| MCP server and client | `effect/ai/McpServer`, `effect/ai/McpClient` |
 | Python | uv, ruff, pytest |
 | Raw-schema migrations | Alembic, raw SQL, sequential IDs, append-only once applied |
 | Data models | dbt |
@@ -324,7 +325,7 @@ Each spike answers one question and records its result in `docs/plans/spikes/`. 
 
 | ID | Question | Method | Decision it informs |
 |---|---|---|---|
-| S1 | Do tool calls and streaming work with each local runtime and model? | In a scratch Effect 4 project, point `@effect/ai-openai-compat` at Ollama, LM Studio, `mlx_lm.server` and llama.cpp; run a streamed two-tool round trip, including parallel tool calls, with each candidate model | Local runtime; candidate models whose tool calling works |
+| S1 | Do tool calls and streaming work with each local runtime and model? | In a scratch Effect 4 project, point `@effect/ai-openai-compat` at Ollama, LM Studio, `mlx_lm.server` and llama.cpp; run a streamed two-tool round trip, including parallel tool calls, with each candidate model, with the tools served by a stub `McpServer` and bound through `McpClient.toolkit` | Local runtime; candidate models whose tool calling works; whether Effect's MCP server and client (marked unstable and experimental in Effect 4.1) hold up |
 | S2 | Can a small model pick the right tool among about 12? | Mock MCP servers with realistic tool descriptions; 20 routing questions; candidate models that fit a 24 GB M4 | Base model; tool design and naming |
 | S3 | Which model translates Dutch legal text well enough, under a usable license? | Translate sample passages from the Huisvestingsverordening and national rent law with candidates: dedicated translation models (for example [OPUS-MT](https://huggingface.co/Helsinki-NLP/opus-mt-nl-en), MADLAD-400) and a general open model prompted to translate. Have a Dutch reader grade a sample, and check each license, including whether it allows commercial use. Test whether the Dutch identifier search adds value. | Translation model; whether the identifier search is kept |
 | S4 | Which embedding model, and how much storage? | Run hybrid search on a sample corpus in both languages with candidate multilingual embedding models; for Amsterdam, compare embedding the Dutch original versus the English translation; compare against vector-only and keyword-only to confirm each search adds value; measure storage per passage in Neon | Embedding model; which Amsterdam text is embedded; whether the storage escape hatch is needed |
