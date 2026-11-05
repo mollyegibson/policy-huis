@@ -1,0 +1,9 @@
+**/node_modules
+.yarn
+**/.venv
+**/dbt/target
+**/dbt/dbt_packages
+research
+*.md
+*.yml
+*.yaml

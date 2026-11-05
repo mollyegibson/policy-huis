@@ -149,19 +149,19 @@ Once servers run on their own devices, the only interface between a server and t
 | `protocol/` | The API between the backend and the browser app: the question endpoint, the streamed events, and the citation schema the browser renders | The backend and the browser app, as in the reference project's `protocol` package. Servers produce citations that match its citation schema (published as JSON Schema), without importing it. |
 | `shared/mcp-kit/` | Helpers for building MCP servers: common formats, the `UnknownValue` error, citation ID construction, read-only database access, server setup | TypeScript MCP servers that choose to use it; a server in another language follows the same conventions without it |
 
-The code below typechecks against `effect` 4.1.2.
+The code below is copied from the repo, where it typechecks against `effect` 4.1.2; the Phase 2 tool blocks are drafts until those servers are built.
 
 **Formats.** Months, dates and counts as tool inputs and results.
 
 ```ts
 // shared/mcp-kit/src/Formats.ts
+import { Schema } from "effect"
+
+export { IsoDate } from "@policyhuis/protocol/Formats"
+
 export const YearMonth = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^\d{4}-(0[1-9]|1[0-2])$/, { message: "a month as YYYY-MM" }))
 ).annotate({ description: "A month, as YYYY-MM" })
-
-export const IsoDate = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/, { message: "a date as YYYY-MM-DD" }))
-).annotate({ description: "A date, as YYYY-MM-DD" })
 
 export const PositiveInt = Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0)))
 export const NonNegativeInt = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
@@ -180,7 +180,13 @@ The citation schema is in `protocol/`, because the browser app decodes it to sho
 
 ```ts
 // protocol/src/Citation.ts
-const IdPart = Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9_.()-]+$/, { message: "letters, digits, _ . ( ) - only" })))
+import { Schema } from "effect"
+
+import { IsoDate } from "./Formats.ts"
+
+const IdPart = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[A-Za-z0-9_.()-]+$/, { message: "letters, digits, _ . ( ) - only" }))
+)
 
 export const SourceId = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^[A-Za-z0-9_.()-]+@[A-Za-z0-9_.()-]+$/, { message: "a source ID, <key>@<version>" })),
@@ -188,7 +194,11 @@ export const SourceId = Schema.String.pipe(
 )
 
 export const CitationId = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^[A-Za-z0-9_.()-]+@[A-Za-z0-9_.()-]+#[A-Za-z0-9_.()-]+$/, { message: "a citation ID, <sourceId>#<part>" })),
+  Schema.check(
+    Schema.isPattern(/^[A-Za-z0-9_.()-]+@[A-Za-z0-9_.()-]+#[A-Za-z0-9_.()-]+$/, {
+      message: "a citation ID, <sourceId>#<part>"
+    })
+  ),
   Schema.brand("CitationId")
 )
 
@@ -224,7 +234,7 @@ export class DatasetCitation extends Schema.TaggedClass<DatasetCitation>()(
     citationId: CitationId,
     datasetKey: IdPart,
     title: Schema.String,
-    publisher: Schema.String,
+    publisher: Schema.NullOr(Schema.String),
     sourceUrl: Schema.String,
     sourceVersion: IdPart,
     tool: IdPart,
@@ -250,6 +260,8 @@ export type Citation = typeof Citation.Type
 
 ```ts
 // shared/mcp-kit/src/ToolErrors.ts
+import { Schema } from "effect"
+
 export class UnknownValue extends Schema.TaggedError<UnknownValue>()("UnknownValue", {
   field: Schema.String,
   value: Schema.String,
@@ -286,9 +298,17 @@ The answer rules (cite the snapshot, never say "stalled", notices are not evicti
 
 ```ts
 // san-francisco/housing-server/src/Tools.ts
+import { Schema } from "effect"
+import { Tool, Toolkit } from "effect/ai"
+
+import { IsoDate, NonNegativeInt, PositiveInt, UnknownValue } from "@policyhuis/mcp-kit"
+import { Citation } from "@policyhuis/protocol/Citation"
+
 const Citations = Schema.Array(Citation)
 
-const NeighborhoodName = Schema.String.annotate({ description: "An analysis neighborhood name, such as appears in tool results" })
+const NeighborhoodName = Schema.String.annotate({
+  description: "An analysis neighborhood name, such as appears in tool results"
+})
 const SupervisorDistrict = PositiveInt.annotate({ description: "A supervisor district number" })
 const DevelopmentStatus = Schema.String.annotate({
   description: "A Planning pipeline status, as listed by development_pipeline_summary grouped by status"
@@ -337,7 +357,11 @@ const AffordableProject = Schema.Struct({
   estimatedCompletion: Schema.NullOr(IsoDate)
 })
 
-export const HazardZoneKey = Schema.Literals(["slr_66in_100yr_storm", "sfpuc_100yr_storm", "air_pollutant_exposure_zone"])
+export const HazardZoneKey = Schema.Literals([
+  "slr_66in_100yr_storm",
+  "sfpuc_100yr_storm",
+  "air_pollutant_exposure_zone"
+])
 export const ProjectSource = Schema.Literals(["development_pipeline", "affordable_pipeline"])
 
 export const DevelopmentPipelineProjects = Tool.make("development_pipeline_projects", {
@@ -372,7 +396,12 @@ export const DevelopmentPipelineSummary = Tool.make("development_pipeline_summar
   }),
   success: Schema.Struct({
     groups: Schema.Array(
-      Schema.Struct({ key: Schema.String, projects: NonNegativeInt, netUnits: Schema.Int, affordableUnits: NonNegativeInt })
+      Schema.Struct({
+        key: Schema.String,
+        projects: NonNegativeInt,
+        netUnits: Schema.Int,
+        affordableUnits: NonNegativeInt
+      })
     ),
     snapshot: Schema.String,
     citations: Citations
@@ -403,15 +432,14 @@ export const AffordablePipelineProjects = Tool.make("affordable_pipeline_project
 })
 
 export const AffordablePipelineSummary = Tool.make("affordable_pipeline_summary", {
-  description: "Total MOHCD's affordable pipeline projects and units by status, construction stage, neighborhood, district or income band.",
+  description:
+    "Total MOHCD's affordable pipeline projects and units by status, construction stage, neighborhood, district or income band.",
   parameters: Schema.Struct({
     groupBy: Schema.Literals(["status", "construction_status", "neighborhood", "district", "ami_band"]),
     status: Schema.optional(AffordableStatus)
   }),
   success: Schema.Struct({
-    groups: Schema.Array(
-      Schema.Struct({ key: Schema.String, projects: NonNegativeInt, units: NonNegativeInt })
-    ),
+    groups: Schema.Array(Schema.Struct({ key: Schema.String, projects: NonNegativeInt, units: NonNegativeInt })),
     dataAsOf: IsoDate,
     citations: Citations
   }),
@@ -432,7 +460,7 @@ export const ProjectHazardExposure = Tool.make("project_hazard_exposure", {
     zone: Schema.Struct({
       key: HazardZoneKey,
       name: Schema.String,
-      publisher: Schema.String,
+      publisher: Schema.NullOr(Schema.String),
       sourceEditedAt: IsoDate,
       publisherDescription: Schema.NullOr(Schema.String)
     }),
@@ -441,7 +469,9 @@ export const ProjectHazardExposure = Tool.make("project_hazard_exposure", {
     totalInside: NonNegativeInt,
     unitsInside: Schema.Int,
     affordableUnitsInside: NonNegativeInt,
-    projects: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String, status: Schema.String, affordableUnits: NonNegativeInt })),
+    projects: Schema.Array(
+      Schema.Struct({ id: Schema.String, name: Schema.String, status: Schema.String, affordableUnits: NonNegativeInt })
+    ),
     citations: Citations
   }),
   failure: UnknownValue,
@@ -457,7 +487,7 @@ export const DatasetInfo = Tool.make("dataset_info", {
       Schema.Struct({
         key: Schema.String,
         title: Schema.String,
-        publisher: Schema.String,
+        publisher: Schema.NullOr(Schema.String),
         sourceUrl: Schema.String,
         license: Schema.NullOr(Schema.String),
         sourceVersion: Schema.String,
@@ -470,7 +500,7 @@ export const DatasetInfo = Tool.make("dataset_info", {
   failureMode: "return"
 })
 
-export const SfDataToolkit = Toolkit.make(
+export const SfHousingToolkit = Toolkit.make(
   DevelopmentPipelineProjects,
   DevelopmentPipelineSummary,
   AffordablePipelineProjects,
@@ -669,7 +699,7 @@ Every toolkit handler is wrapped so that:
 ### Model and toolkit
 
 - **Model:** `LanguageModel` from `effect/ai`, provided by one layer chosen in config (local runtime, same model in the cloud, or frontier), as in the MVP plan. The loop never imports a provider package.
-- **Toolkit:** for each server in the directory file, `McpClient.toolkit` binds that server's tools under its prefix. Spike S1 confirms that Effect's `McpServer` publishes a tool's `outputSchema` and returns `structuredContent` from its result schema, and that `McpClient` passes `structuredContent` through to the loop; the agent merges the toolkits for the request. If any server in the directory is unreachable at the start of a request, the API returns `503`.
+- **Toolkit:** for each server in the directory file, `McpClient.toolkit` binds that server's tools under its prefix, with `resultMode: "complete"` so the loop receives each full MCP result, `structuredContent` included, while the model reads it as text. Checked against the `effect` 4.1.2 source on November 5, 2026: `McpServer` publishes each tool's `outputSchema` from its success schema and returns `structuredContent`, and the `sf-housing` server does so end to end; the agent merges the toolkits for the request. If any server in the directory is unreachable at the start of a request, the API returns `503`.
 - **Configuration** (`backend/config/agent.yaml`): `maxSteps`, step timeout, error retry limit, tool result byte limit, system prompt file and version. These are declared choices with no source to derive them from, so they live in config and are reviewed by pull request.
 
 ### Testing
@@ -711,6 +741,8 @@ The example's values are illustrative only, not data.
 
 ```ts
 // protocol/src/QuestionsApi.ts
+import { Schema } from "effect"
+
 export class QuestionRequest extends Schema.Class<QuestionRequest>("QuestionRequest")({
   question: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(2000)))
 }) {}

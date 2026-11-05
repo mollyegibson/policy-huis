@@ -29,6 +29,7 @@ htmlcov/
 .user.yml
 
 # TypeScript (yarn)
+.yarn/install-state.gz
 node_modules/
 .yarn/*
 !.yarn/patches

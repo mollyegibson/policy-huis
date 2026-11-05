@@ -110,7 +110,10 @@ Contexts communicate through published contracts (database schemas, MCP tools an
 ## TypeScript (`backend/`, `browser-app/`, `protocol/`, `shared/`, city servers)
 
 - Follow [Effect Style](./docs/effect-style.md) and, for the web app, [Front-end Code Style](./docs/front-end-code-style.md).
-- Manage workspaces with `yarn`. Lint and format with ESLint and Prettier; test with `@effect/vitest`.
+- Manage workspaces with `yarn` (Yarn 4 through corepack: `corepack enable`, then `yarn install` at the repo root). Lint and format with ESLint and Prettier; test with `@effect/vitest`. Run `yarn lint && yarn format:check && yarn typecheck && yarn test` before finishing a change.
+- TypeScript runs directly on Node's type stripping (`node src/main.ts`), so use only erasable syntax (no enums, namespaces or parameter properties); `tsc` only typechecks.
+- Import `@effect/platform-node` modules by path (`@effect/platform-node/NodeRuntime`): its index also loads the Redis module, which needs the optional `redis` package.
+- Server tests run against a throwaway PostGIS container (`imresamu/postgis:17-3.5`), so Docker must be running.
 - Use Effect 4 (`effect` 4.x, AI modules under `effect/ai`). Model access goes through a config layer, not conditional imports.
 - Validate with Effect `Schema`, not Zod.
 - The `app` schema is migrated with the Migrator from `effect/sql`.

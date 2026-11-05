@@ -1,0 +1,196 @@
+import { fileURLToPath } from "node:url"
+
+import { PgClient } from "@effect/sql-pg"
+import { describe, expect, layer } from "@effect/vitest"
+import { PostgreSqlContainer } from "@testcontainers/postgresql"
+import { Context, Effect, Layer, Redacted, Schema } from "effect"
+import { McpProtocol, McpServer, McpTest } from "effect/ai"
+
+import { Citation } from "@policyhuis/protocol/Citation"
+
+import { SfHousingHandlers } from "../src/Handlers.ts"
+import { HousingRepo } from "../src/HousingRepo.ts"
+import { SfHousingToolkit } from "../src/Tools.ts"
+
+const POSTGIS_IMAGE = "imresamu/postgis:17-3.5"
+const FIXTURE = fileURLToPath(new URL("./fixtures/sf.sql", import.meta.url))
+
+/** A throwaway PostGIS database holding the synthetic `sf` schema, and an in-memory MCP client for the server. */
+class TestServer extends Context.Service<TestServer, McpTest.Client>()("test/TestServer") {
+  static readonly layer = Layer.effect(
+    this,
+    Effect.gen(function* () {
+      const container = yield* Effect.acquireRelease(
+        Effect.tryPromise(() =>
+          new PostgreSqlContainer(POSTGIS_IMAGE)
+            .withCopyFilesToContainer([{ source: FIXTURE, target: "/docker-entrypoint-initdb.d/zz-sf.sql" }])
+            .start()
+        ),
+        (started) => Effect.promise(() => started.stop())
+      )
+      const registrations = McpServer.toolkit(SfHousingToolkit).pipe(
+        Layer.provide(SfHousingHandlers),
+        Layer.provide(HousingRepo.layer),
+        Layer.provide(PgClient.layer({ url: Redacted.make(container.getConnectionUri()) }))
+      )
+      return yield* McpTest.makeClient(registrations, { protocols: [McpProtocol.v2025_11_25] })
+    })
+  )
+}
+
+const call = Effect.fn("call")(function* (name: string, args: Record<string, unknown>) {
+  const client = yield* TestServer
+  return yield* client.callTool({ name, arguments: args })
+})
+
+const structured = Effect.fn("structured")(function* (name: string, args: Record<string, unknown>) {
+  const result = yield* call(name, args)
+  expect(result.isError).toBe(false)
+  return Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(result.structuredContent)
+})
+
+const citationsOf = (content: Readonly<Record<string, unknown>>) =>
+  Schema.decodeUnknownSync(Schema.Array(Citation))(content["citations"])
+
+layer(TestServer.layer, { timeout: 120_000 })("sf-housing server", (it) => {
+  it.effect("publishes every tool with an input and an output schema", () =>
+    Effect.gen(function* () {
+      const client = yield* TestServer
+      const { tools } = yield* client.listTools()
+      expect(tools.map((t) => t.name).sort()).toEqual([
+        "affordable_pipeline_projects",
+        "affordable_pipeline_summary",
+        "dataset_info",
+        "development_pipeline_projects",
+        "development_pipeline_summary",
+        "project_hazard_exposure"
+      ])
+      for (const tool of tools) expect(tool.outputSchema).toBeDefined()
+    })
+  )
+
+  describe("development_pipeline_projects", () => {
+    it.effect("filters the latest snapshot and reports time in status", () =>
+      Effect.gen(function* () {
+        const content = yield* structured("development_pipeline_projects", { approvedBefore: "2020-01-01" })
+        expect(content["snapshot"]).toBe("2026 Q2")
+        expect(content["totalMatching"]).toBe(1)
+        const projects = Schema.decodeUnknownSync(
+          Schema.Array(Schema.Struct({ projectKey: Schema.String, daysInStatus: Schema.Number }))
+        )(content["projects"])
+        expect(projects.map((p) => p.projectKey)).toEqual(["3800001:2019-000001PRJ:1"])
+        expect(projects[0]?.daysInStatus).toBeGreaterThan(0)
+      })
+    )
+
+    it.effect("cites the dataset version with IDs the protocol accepts", () =>
+      Effect.gen(function* () {
+        const content = yield* structured("development_pipeline_projects", { status: "PL Approved" })
+        const [citation] = citationsOf(content)
+        expect(citation?.sourceId).toBe("sf.development_pipeline@2026-08-28")
+        expect(citation?._tag).toBe("DatasetCitation")
+      })
+    )
+
+    it.effect("gives the same citation ID for the same query", () =>
+      Effect.gen(function* () {
+        const first = citationsOf(
+          yield* structured("development_pipeline_projects", { status: "PL Approved", limit: 5 })
+        )
+        const second = citationsOf(
+          yield* structured("development_pipeline_projects", { limit: 5, status: "PL Approved" })
+        )
+        expect(first[0]?.citationId).toBe(second[0]?.citationId)
+      })
+    )
+
+    it.effect("returns an unknown neighborhood as an error result listing the valid values", () =>
+      Effect.gen(function* () {
+        const result = yield* call("development_pipeline_projects", { neighborhood: "Atlantis" })
+        expect(result.isError).toBe(true)
+        const text = JSON.stringify(result.content)
+        expect(text).toContain("UnknownValue")
+        expect(text).toContain("Castro/Upper Market")
+      })
+    )
+  })
+
+  it.effect("summarizes the development pipeline by status", () =>
+    Effect.gen(function* () {
+      const content = yield* structured("development_pipeline_summary", { groupBy: "status" })
+      expect(content["groups"]).toEqual([
+        { key: "BP Issued", projects: 1, netUnits: 12, affordableUnits: 0 },
+        { key: "Construction", projects: 1, netUnits: 20, affordableUnits: 20 },
+        { key: "PL Approved", projects: 1, netUnits: 40, affordableUnits: 8 }
+      ])
+    })
+  )
+
+  it.effect("lists affordable projects with units by income band", () =>
+    Effect.gen(function* () {
+      const content = yield* structured("affordable_pipeline_projects", { estimatedStartBefore: "2026-01-01" })
+      expect(content["dataAsOf"]).toBe("2026-05-21")
+      expect(content["projects"]).toEqual([
+        {
+          projectId: "2024-002",
+          name: "Project 2024-002",
+          status: "Construction",
+          constructionStatus: "(5) First Construction Document Issued",
+          neighborhood: "Castro/Upper Market",
+          supervisorDistrict: 8,
+          totalUnits: 50,
+          affordableUnits: 50,
+          unitsByAmi: [{ amiBand: "_50_ami", units: 50 }],
+          estimatedConstructionStart: "2025-02-01",
+          estimatedCompletion: "2026-12-01"
+        }
+      ])
+    })
+  )
+
+  it.effect("totals affordable units by income band", () =>
+    Effect.gen(function* () {
+      const content = yield* structured("affordable_pipeline_summary", { groupBy: "ami_band" })
+      expect(content["groups"]).toEqual([
+        { key: "_50_ami", projects: 2, units: 110 },
+        { key: "_80_ami", projects: 1, units: 39 }
+      ])
+    })
+  )
+
+  it.effect("reports projects inside a zone, counts those without a location, and cites both sources", () =>
+    Effect.gen(function* () {
+      const content = yield* structured("project_hazard_exposure", {
+        zone: "sfpuc_100yr_storm",
+        projects: "development_pipeline"
+      })
+      expect(content["projectsChecked"]).toBe(3)
+      expect(content["projectsWithoutLocation"]).toBe(1)
+      expect(content["totalInside"]).toBe(1)
+      expect(content["unitsInside"]).toBe(40)
+      expect(content["affordableUnitsInside"]).toBe(8)
+      expect(citationsOf(content).map((c) => c.sourceId)).toEqual([
+        "sf.development_pipeline@2026-08-28",
+        "sf.sfpuc_100yr_storm@2025-12-12"
+      ])
+    })
+  )
+
+  it.effect("describes each dataset with the publisher's own description", () =>
+    Effect.gen(function* () {
+      const content = yield* structured("dataset_info", { dataset: "sfpuc_100yr_storm" })
+      expect(content["datasets"]).toEqual([
+        {
+          key: "sfpuc_100yr_storm",
+          title: "100-Year Storm Flood Risk Zone",
+          publisher: null,
+          sourceUrl:
+            "https://gis.sfpuc.org/server/rest/services/Hosted/100_Year_Storm_Flood_Risk_Map_2024_Update/FeatureServer/2",
+          license: null,
+          sourceVersion: "2025-12-12",
+          publisherDescription: "Stormwater flooding."
+        }
+      ])
+    })
+  )
+})
