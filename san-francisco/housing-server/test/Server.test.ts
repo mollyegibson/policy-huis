@@ -33,7 +33,7 @@ class TestServer extends Context.Service<TestServer, McpTest.Client>()("test/Tes
         Layer.provide(HousingRepo.layer),
         Layer.provide(PgClient.layer({ url: Redacted.make(container.getConnectionUri()) }))
       )
-      return yield* McpTest.makeClient(registrations, { protocols: [McpProtocol.v2025_11_25] })
+      return yield* McpTest.makeClient(registrations, { protocols: [McpProtocol.v2026_07_28] })
     })
   )
 }

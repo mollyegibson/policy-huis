@@ -31,7 +31,7 @@ export const McpLive = McpServer.layerHttp({
   name: "sf-housing",
   version: "0.1.0",
   path: "/mcp",
-  protocols: [McpProtocol.v2025_11_25],
+  protocols: [McpProtocol.v2026_07_28],
   registrations: McpServer.toolkit(SfHousingToolkit).pipe(
     Layer.provide(SfHousingHandlers),
     Layer.provide(HousingRepo.layer),

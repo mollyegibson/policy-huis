@@ -44,14 +44,13 @@ flowchart LR
     subgraph host["Agent host (group hardware)"]
         agent["Backend<br/>question API + agent loop<br/>TypeScript, Effect 4"]
         llm["Local model runtime<br/>(OpenAI-compatible API)"]
-        emb["Embedding endpoint"]
     end
 
     cloud["Cloud model<br/>(baseline only)"]
 
     subgraph mesh["Private network (Tailscale)"]
-        lt_sf["legal-text MCP<br/>SF corpus"]
-        lt_ams["legal-text MCP<br/>Amsterdam corpus"]
+        lt_sf["legal-text MCP<br/>SF corpus<br/>+ local embedding model"]
+        lt_ams["legal-text MCP<br/>Amsterdam corpus<br/>+ local embedding model"]
         d_sf["sf-housing MCP"]
         d_ams["ams-data MCP"]
     end
@@ -67,11 +66,9 @@ flowchart LR
     agent --> llm
     agent -. baseline runs .-> cloud
     agent -- MCP over HTTP --> lt_sf & lt_ams & d_sf & d_ams
-    lt_sf & lt_ams --> emb
     lt_sf & lt_ams & d_sf & d_ams -- read-only --> pg
     pipe --> obj
     pipe --> pg
-    pipe --> emb
     agent -- traces, eval runs --> pg
 ```
 
@@ -119,6 +116,7 @@ All servers are TypeScript, built with Effect's MCP server (`effect/ai/McpServer
 - **Tool naming.** Each tool is prefixed with its server (for example `sf_policy_search`, `ams_data_social_rent_pipeline`), so the model can tell same-purpose tools apart across cities.
 - **Citation object.** Every result carries the citations behind it: source, title, provision or table, version or effective date, source URL, language, and stable source and citation IDs, in the shape of the citation schema in `protocol/`. The backend passes citations to the browser app unchanged; the browser shows them, and the evaluation checks them from traces. The archived file's hash stays in the load record, reached through the source ID.
 - **Errors.** Typed and returned to the model as tool results (`failureMode: "return"`), never thrown as transport failures, so the model can say "no data" rather than guess.
+- **Sessionless MCP.** Servers and the backend's client use MCP protocol version `2026-07-28`, which has no session, so a server can restart without breaking the backend's connection (see [MCP connections](agent-loop.md#mcp-connections)). If a server is down, the agent answers with the others and says which could not be reached.
 - **Database access.** Each server connects with a role that can only read its own schema.
 
 #### Legal-text server
@@ -127,9 +125,10 @@ One codebase, run as one instance per corpus (SF and Amsterdam), configured with
 
 | Tool | Purpose |
 |---|---|
-| `search_policy` | Find passages relevant to a question, optionally filtered by document or effective date |
-| `get_provision` | Return a full article or section by its identifier, in a given version |
-| `list_versions` | List the versions of a document and their effective dates |
+| `search_policy` | Find passages relevant to a question, optionally filtered by document |
+| `get_provision` | Return a full article or section by its identifier |
+
+Each document is loaded in one version, so the tools take no date. A `list_versions` tool and date parameters are added only if a question needs a document's history.
 
 **Retrieval is hybrid.** Two searches run over the same passages and their rankings are combined:
 
@@ -231,9 +230,9 @@ Embeddings are stored as `halfvec` from the start. That halves vector storage, a
 
 The passage pipeline (Python) and the legal-text server (TypeScript) must embed text with exactly the same model, or search quality degrades silently.
 
-- Both call **one shared embedding endpoint** (for example a local Ollama instance serving the chosen model).
+- **Each legal-text node serves the chosen embedding model itself** (for example a local Ollama instance on the same machine), so search does not depend on any other node being up. The passage pipeline runs the same model wherever it runs.
 - Every embedding row stores its model identifier.
-- The legal-text server checks on startup that its configured model matches the stored identifier, and refuses to start if it does not.
+- The legal-text server checks on startup that its configured model matches the stored identifier, and refuses to start if it does not. **(verify)** in S4 that the same model identifier gives the same embeddings across the runtimes and quantizations the nodes use; if not, the identifier includes the quantization.
 
 ## Network
 
@@ -252,6 +251,7 @@ The agent and servers are reachable only while their machines are awake and conn
 - **Size:** 30–50 questions drawn from the project overview's question types, for both cities, including questions the agent should decline. The [provisional questions](provisional-questions.md) are the starting set, pending confirmation from the research team.
 - **Verification:** the research team's policy expert checks the expected answers and citations.
 - **Storage:** questions live in a reviewed file in the repo; each run's results go to the `app` schema.
+- **Run conditions:** evaluation runs never overlap demo traffic on the agent host, and answer one question at a time, so each request's energy sample covers that request alone. Before timing starts, the runner calls each server once, so a Neon database waking from scale-to-zero does not count against the first question; traces record tool latency apart from model time.
 
 **Per question, record:**
 

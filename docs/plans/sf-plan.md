@@ -568,7 +568,7 @@ export const EvictionGrounds = Tool.make("eviction_grounds", {
   failureMode: "return"
 })
 
-export const SfDataToolkitWithEvictions = Toolkit.merge(SfDataToolkit, Toolkit.make(EvictionNoticeCounts, EvictionGrounds))
+export const SfHousingToolkitWithEvictions = Toolkit.merge(SfHousingToolkit, Toolkit.make(EvictionNoticeCounts, EvictionGrounds))
 ```
 
 ### Legal-text tools (Phase 2)
@@ -679,7 +679,7 @@ Each raw table has the same four columns: `load_id`, `row_number`, `record` (the
 | `development_pipeline` | 1 | One per project in the snapshot | `project_key` (PK with `snapshot`: parcel, Planning case and permit application), `block_lot`, `name_or_address`, `status`, `status_since`, `planning_approved_on`, `net_units`, `affordable_units`, `units_extremely_low` … `units_moderate`, `neighborhood` (FK, nullable, names converted to the official spelling), `supervisor_district` (int, cast from text), `geom geometry(Point, 4326)` (nullable), `snapshot`, `load_id` | Unique per snapshot; status values are the six documented ones after mapping `BP BP Issued`; a warning test lists projects whose affordable units by level do not sum to `affordable_units` (18 on November 4, 2026) |
 | `affordable_pipeline` | 1 | One per project | `project_id` (PK), `name`, `status`, `construction_status`, `neighborhood` (FK), `supervisor_district` (int, cast from text), `total_units`, `affordable_units`, `estimated_start`, `estimated_completion`, `geom geometry(Point, 4326)`, `load_id` | Unique; every project has a location, or the build fails |
 | `affordable_pipeline_ami_units` | 1 | One per project and income band | `project_id`, `ami_band` (the source column name), `units` | Bands are an unpivot of the source's AMI columns; zero-unit rows are dropped |
-| `zones` | 1 | One per flood or exposure zone | `zone` (PK: `slr_66in_100yr_storm`, `sfpuc_100yr_storm`, `air_pollutant_exposure_zone`), `name`, `publisher`, `source_edited_at`, `publisher_description`, `geom` (polygons repaired with `ST_MakeValid`, then merged), `load_id` | Name, publisher, edit date and description come from each source's archived metadata; the zone key is the source's key in `san-francisco/ingest/san-francisco/ingest/config/sources.yaml` |
+| `zones` | 1 | One per flood or exposure zone | `zone` (PK: `slr_66in_100yr_storm`, `sfpuc_100yr_storm`, `air_pollutant_exposure_zone`), `name`, `publisher`, `source_edited_at`, `publisher_description`, `geom` (polygons repaired with `ST_MakeValid`, then merged), `load_id` | Name, publisher, edit date and description come from each source's archived metadata; the zone key is the source's key in `san-francisco/ingest/config/sources.yaml` |
 | `project_zone_exposure` | 1 | One per project, source and zone it falls inside | `project_source` (`development_pipeline` or `affordable_pipeline`), `project_id`, `zone` | `ST_Intersects`, for the latest pipeline snapshot; tests pin synthetic projects inside and outside a zone |
 | `datasets` | 1 | One per loaded dataset | `dataset_key`, `title`, `publisher`, `source_url`, `license`, `source_version`, `publisher_description` | Built from the latest manifest row per source and its archived metadata |
 | `eviction_grounds` | 2 | One per ground | `ground_key` (PK, the source column name), `label`, `subsection` (nullable), `mapping_source` | Every ground flag column in `raw_sf.eviction_notices` has a row |
@@ -753,7 +753,7 @@ A minimal React app in `browser-app/`, following [Front-end Code Style](../front
 - one question box and a streamed answer, decoded with the contract's `AgentStreamEvent`;
 - tool status lines from `ToolStart` and `ToolEnd` ("Checking the development pipeline…");
 - citation markers in the answer linked to the citations in the `ToolEnd` results, decoded with `protocol/`'s citation schema and grouped by source (dataset or document version, publisher, source link) with each query or provision used underneath; markers that match no citation shown as unlinked. Markers are parsed out of the text before it is rendered as Markdown, since a marker followed by `(` would otherwise read as a link;
-- the `message` from `Complete` when the outcome is `step_limit` or `failed`, the `message` from a `503`, and an "agent host offline" state when the API cannot be reached;
+- the `message` from `Complete` when the outcome is `step_limit`, `context_limit`, `truncated` or `failed`, a note for each server in `Complete.unavailableServers`, the `message` from a `503`, and an "agent host offline" state when the API cannot be reached;
 - a note that questions are logged.
 
 No accounts, history or maps in Phase 1. The full web app design remains the MVP plan's follow-up.
