@@ -81,11 +81,11 @@ Tool schemas stay in the server, because nothing else imports them: the backend 
 Follow these as the San Francisco Plan defines them; link to it rather than restating them in the Dutch code or docs:
 
 - **Citations and their IDs**: every result carries its citations in `structuredContent`, matching `protocol/`'s citation schema, with a stable `sourceId` and `citationId` built from the citation's own fields. See [Protocol and shared helpers](sf-plan.md#protocol-and-shared-helpers).
-- **How the model cites**: claims are marked with the full `citationId`; the backend passes results through unchanged, and the browser app links markers to citations. See [Citations in answers](sf-plan.md#citations-in-answers).
+- **How the model cites**: claims are marked with the full `citationId`; the backend passes results through unchanged, and the browser app links markers to citations. See [Citations in answers](agent-loop.md#citations-in-answers).
 - **Tool errors**: returned as results (`failureMode: "return"`), with `UnknownValue` listing the valid values. See [Protocol and shared helpers](sf-plan.md#protocol-and-shared-helpers).
 - **Tool design rules**: fixed, parameterized tools backed by tested dbt models; list and summary tools so the model never adds up numbers; filters rather than labels (as with "is it moving"); inputs validated against the loaded data; reading rules in tool descriptions; facts about the data as typed fields; the publisher's description through a `dataset_info` tool. See [Data server tools](sf-plan.md#data-server-tools).
 - **Naming**: servers name tools without a prefix; the backend's server directory gives the Dutch server its prefix. See [Data server tools](sf-plan.md#data-server-tools).
-- **Testing**: decode tests for every schema, and server tests through `McpTest` against a Postgres testcontainer. See [Testing](sf-plan.md#testing).
+- **Testing**: decode tests for every schema, and server tests through `McpTest` against a Postgres testcontainer. See the [`sf-housing` server README](../../san-francisco/housing-server/README.md).
 - **What the Netherlands adds to the contract**: a jurisdiction for servers covering several municipalities, and language labels for Dutch documents. See [How this extends to the Netherlands](sf-plan.md#how-this-extends-to-the-netherlands).
 
 ### Designing from the data

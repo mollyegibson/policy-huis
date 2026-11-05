@@ -2,7 +2,7 @@
 
 Draft, November 3, 2026; revised November 4, 2026.
 
-This plan covers the San Francisco build: its sources, the San Francisco MCP servers, and the agent loop that every city's servers plug into. It builds on the [MVP Technical Plan](mvp-technical-plan.md), which remains the reference for the shared architecture (one agent, independent MCP servers, the shared contract, the data layer, the network, evaluation and energy). Where this plan is more specific, this plan wins for San Francisco.
+This plan covers the San Francisco build: its sources and its MCP servers. The agent loop that every city's servers plug into is in the [Agent Loop Plan](agent-loop.md). It builds on the [MVP Technical Plan](mvp-technical-plan.md), which remains the reference for the shared architecture (one agent, independent MCP servers, the shared contract, the data layer, the network, evaluation and energy). Where this plan is more specific, this plan wins for San Francisco.
 
 ## Summary
 
@@ -13,7 +13,7 @@ This plan covers the San Francisco build: its sources, the San Francisco MCP ser
 - **Phase 3, evaluation:** the San Francisco questions run against the three model configurations.
 - **Servers:** one San Francisco data server (see [Data servers](#data-servers)), and from Phase 2 the shared legal-text server with a San Francisco corpus.
 - **Data tools:** fixed, parameterized tools backed by tested queries. No free-form query tool.
-- **Agent loop:** a custom multi-step loop over Effect's `Chat` and `LanguageModel`, streaming typed events to the API (see [Agent loop](#agent-loop)).
+- **Agent loop:** a custom multi-step loop over Effect's `LanguageModel`, the same for every city, with no conversation history, streaming typed events to the API (see the [Agent Loop Plan](agent-loop.md)).
 
 ## What already exists in San Francisco
 
@@ -167,12 +167,12 @@ export const PositiveInt = Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0))
 export const NonNegativeInt = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
 ```
 
-**Citations.** Every tool result carries the citations behind it in its `structuredContent` (see [Tool results](#tool-results-and-the-result-guard)). A citation is either a passage from a document (a law, a report or a reference) or a dataset query. Phase 1 uses dataset citations only; document citations arrive with the legal-text server in Phase 2. Every citation carries two stable IDs, assigned by the tool that returns it:
+**Citations.** Every tool result carries the citations behind it in its `structuredContent` (see [Tool results](agent-loop.md#tool-results-and-the-result-guard)). A citation is either a passage from a document (a law, a report or a reference) or a dataset query. Phase 1 uses dataset citations only; document citations arrive with the legal-text server in Phase 2. Every citation carries two stable IDs, assigned by the tool that returns it:
 
 - **`sourceId`** names one version of a source: `<documentId>@<versionDate>` for a document (`rent_ordinance@2026-06-29`), `<datasetKey>@<sourceVersion>` for a dataset (`sf.development_pipeline@2026-08-28`). Every citation of the same dataset or PDF version, from any call, has the same `sourceId`.
 - **`citationId`** names the part of that source a claim rests on: `<sourceId>#<provision>` for a document (`rent_ordinance@2026-06-29#37.9(a)(8)`), `<sourceId>#<queryKey>` for a dataset. `queryKey` is the first 16 hex characters of the SHA-256 of the tool name and its decoded parameters as canonical JSON (keys sorted, absent optional fields omitted), so the same query always gets the same ID.
 
-Both IDs are derived from the citation's own fields, so they are the same across calls, requests, model configurations and evaluation runs. The schema rejects a citation whose IDs do not match its fields, so anything decoding citations (the browser app, the evaluation) can rely on the rule. The model cites claims with the full `citationId` (see [Citations in answers](#citations-in-answers)).
+Both IDs are derived from the citation's own fields, so they are the same across calls, requests, model configurations and evaluation runs. The schema rejects a citation whose IDs do not match its fields, so anything decoding citations (the browser app, the evaluation) can rely on the rule. The model cites claims with the full `citationId` (see [Citations in answers](agent-loop.md#citations-in-answers)).
 
 **The archived file's hash is not in the citation.** Users can only open the publisher's live link (`sourceUrl`), not our archive, so the hash would cost the model tokens in every tool result without anything a user could check. It stays in `raw_sf.load_manifest`, where `sourceId` leads to the archived file and its hash for reproducing an answer or detecting that the publisher replaced a file. The web app shows the version cited and notes that the live link may show newer data. Serving archived public-domain files by `sourceId` can be added later without changing the citation.
 
@@ -294,7 +294,7 @@ Fixed tools, each backed by a tested dbt model or query. Servers name tools with
 - **The publisher's own caveats are loaded from the source.** Each loader archives the dataset's metadata, and `dataset_info` and `project_hazard_exposure` return the publisher's description verbatim, as a citable quote. DataSF's descriptions already state the main limits, for example the Eviction Notices dataset's "A notice of eviction does not necessarily indicate that the tenant was eventually evicted". Where a description is known to be stale (MOHCD's says "as of September 30, 2023"; the SFPUC zone layer's says July 1, 2022), the typed version fields are the authority, and the answer says the description is older than the data.
 - **How to read a result is part of the tool's description**, in code, reviewed like code: for example, that counts by ground do not sum to the total, or that zones are never combined. The model reads these when it chooses the tool.
 
-The answer rules (cite the snapshot, never say "stalled", notices are not evictions) are in the system prompt and checked by the evaluation. If the evaluation shows answers dropping a rule, the fix is a structured flag in the result (for example `countsOverlap: true`), not prose.
+The answer rules (cite the snapshot, never say "stalled", notices are not evictions) are in these tool descriptions, not the backend's system prompt, which names no city (see [The system prompt](agent-loop.md#the-system-prompt)). The evaluation checks them. If the evaluation shows answers dropping a rule, the fix is a structured flag in the result (for example `countsOverlap: true`), not prose.
 
 ```ts
 // san-francisco/housing-server/src/Tools.ts
@@ -618,365 +618,6 @@ export const GetProvision = Tool.make("get_provision", {
 export const LegalTextToolkit = Toolkit.make(SearchPolicy, GetProvision)
 ```
 
-## Agent loop
-
-The backend (`backend/`) answers one question per request by running a custom multi-step loop: call the model, run the tools it asks for, call the model again with the results, and stop when it answers. Effect's `LanguageModel.streamText` resolves one round of tool calls per call and has no step limit or loop of its own, so the loop is ours.
-
-This section is the technical design for that loop and the service around it. Effect APIs named here were checked against the `effect` 4.1.2 type declarations and source on November 5, 2026; anything still to confirm is marked **(verify)**.
-
-### Scope
-
-The backend:
-
-- accepts a question over `POST /questions` and streams the answer back as server-sent events;
-- runs the loop against one model, chosen by configuration, with the tools of every MCP server in its directory;
-- passes each tool result's `structuredContent` to the browser app unchanged (see [Citations in answers](#citations-in-answers));
-- writes one trace per request to the `app` schema.
-
-It does not:
-
-- read, check or rewrite citations; the browser shows them and the evaluation checks them;
-- keep conversations: every request starts from the system prompt and the question;
-- read any server's database: it only calls tools.
-
-### Where the code lives
-
-| Module (`backend/src/`) | Responsibility |
-|---|---|
-| `main.ts` | Launches the server layer with `NodeRuntime.runMain` |
-| `Server.ts` | Composes the layers: configuration, model, MCP connections, trace store, HTTP |
-| `config/AgentConfig.ts` | Decodes `backend/config/agent.yaml` with a `Schema`; fails at startup if any field is missing or invalid |
-| `config/ServerDirectory.ts` | Decodes `backend/config/servers.yaml`: each server's name, URL and tool prefix |
-| `model/ModelLayer.ts` | Builds the `LanguageModel` layer for the configured model configuration (Local, Same model in the cloud, Frontier) through `@effect/ai-openai-compat`; the only module that imports a provider package |
-| `tools/McpConnections.ts` | One long-lived `McpClient` per server; health; cached tool descriptors |
-| `tools/TurnToolkit.ts` | Builds the merged toolkit for a request from the connections, with the result guard applied |
-| `tools/ResultGuard.ts` | Turns handler defects into failed results; replaces oversized results |
-| `loop/AgentLoop.ts` | `runAgentLoop`: the step loop, returning a `Stream` of `AgentStreamEvent` |
-| `loop/TurnState.ts` | The per-request state service (`Ref`) |
-| `loop/StepRecovery.ts` | Classifies step errors; builds the synthetic retry prompt |
-| `loop/SystemPrompt.ts` | Loads the versioned system prompt file named in config |
-| `api/QuestionsHandler.ts` | Implements the `protocol/` `QuestionsApi` group: admission, turn setup, the event stream |
-| `trace/TraceStore.ts` | Writes the trace rows to `app` in one transaction |
-| `migrations/` | `effect/sql` Migrator migrations for the `app` schema |
-
-`protocol/` gains the `QuestionsApi` `HttpApiGroup`, so the browser app can call it with `HttpApiClient`.
-
-### Configuration
-
-Declared choices live in `backend/config/agent.yaml`, reviewed by pull request; secrets live only in `backend/.env`. Values marked "from S1/S2" are set from the spikes' results, not chosen in advance.
-
-| Field | Meaning | Value |
-|---|---|---|
-| `model.configuration` | Which configuration provides `LanguageModel`: `local`, `same_model_cloud` or `frontier` | Set per run |
-| `model.configurations.<key>` | Base URL and model ID for each configuration (no keys) | From S1 |
-| `loop.maxSteps` | Model turns per question, counting each turn that called tools | From S2 |
-| `loop.stepTimeout` | Longest one model turn may take, including its tool calls | From S1 (local generation takes 10–30 seconds per answer) |
-| `loop.maxRetries` | Recoverable step errors tolerated per question | To decide |
-| `loop.toolConcurrency` | Tool calls run at once when the model asks for several in one turn | To decide |
-| `tools.callTimeout` | Longest one MCP tool call may take | To decide |
-| `tools.resultByteLimit` | Largest tool result passed to the model | To decide; the `sf-housing` tools already cap list sizes |
-| `api.maxConcurrentQuestions` | Questions answered at once | 1 for the local configuration, since one laptop runs one model |
-| `prompt.file`, `prompt.version` | The system prompt file and its version, recorded in every trace | `backend/prompts/system.v1.md`, `v1` |
-
-`backend/config/servers.yaml` is the server directory: for each server, its `name` (`sf-housing`), `url` (`http://<host>:<port>/mcp`) and tool `prefix` (`sf_`). `backend/.env` holds the `app` database URL and any cloud model API keys.
-
-### Startup
-
-1. Decode `agent.yaml` and `servers.yaml`; any error stops the process with the field that failed.
-2. Run the `app` migrations with the `effect/sql` Migrator.
-3. Build the `LanguageModel` layer for `model.configuration`.
-4. For each server in the directory, open an `McpClient` with the Streamable HTTP transport (`McpClient.make` with `McpClient.http`, in the application scope), initialize it, list its tools and cache the descriptors. A server that cannot be reached is marked unavailable and retried in the background; startup continues.
-5. Serve `QuestionsApi` over HTTP.
-
-### Request lifecycle
-
-```mermaid
-sequenceDiagram
-    participant B as Browser app
-    participant H as QuestionsHandler
-    participant L as runAgentLoop
-    participant M as LanguageModel
-    participant S as MCP servers
-    participant T as TraceStore
-
-    B->>H: POST /questions { question }
-    H->>H: admit (semaphore), check model and servers
-    alt busy, or model or a server unavailable
-        H-->>B: 503 AgentUnavailable
-    end
-    H->>L: Chat (system prompt + question), toolkit
-    loop each step, until no tool calls or maxSteps
-        L->>M: chat.streamText({ prompt, toolkit })
-        M-->>L: text-delta parts
-        L-->>B: TextChunk
-        M-->>L: tool-call parts
-        L-->>B: ToolStart
-        L->>S: tools/call (via McpClient)
-        S-->>L: structuredContent
-        L-->>B: ToolEnd (structuredContent)
-        M-->>L: finish (usage)
-    end
-    L-->>B: Complete { requestId, outcome }
-    H->>T: write trace (after the stream ends)
-```
-
-### Admission
-
-`POST /questions` takes a permit from a semaphore sized `api.maxConcurrentQuestions` with `Semaphore.withPermitsIfAvailable`. If none is free, or the model or any directory server is marked unavailable, it returns `503 AgentUnavailable` before the stream starts, so a stream that starts always ends with `Complete`. The permit is held until the stream ends.
-
-### Building the turn
-
-For each request:
-
-1. **Request ID**: a UUID, sent in `Complete` and used as the trace's key.
-2. **Per-request state**: a fresh `TurnState` (see [Per-request state](#per-request-state)).
-3. **Chat**: `Chat.fromPrompt` with the system prompt (a system message) and the question (a user message). Nothing else is carried over from earlier requests.
-4. **Toolkit**: for each available server, `McpClient.toolkit(client, { prefix, tools: cachedDescriptors, resultMode: "complete", failureMode: "return", timeout: tools.callTimeout })`, merged with `Toolkit.merge`, then wrapped by the result guard.
-   - `tools: cachedDescriptors` avoids a `tools/list` round trip per request.
-   - `resultMode: "complete"` gives the loop each full MCP result, `structuredContent` included, while the model reads it as text.
-   - `failureMode: "return"` hands MCP and transport errors to the model as failed tool results instead of failing the step.
-
-### Tool results and the result guard
-
-Every handler in the merged toolkit is wrapped so that:
-
-- a defect in a handler becomes a failed tool result the model can read, instead of failing the step;
-- a result larger than `tools.resultByteLimit` is replaced with a failed result saying it was too large and how to narrow the request. Results are never cut in half, since a truncated table looks complete;
-- the result the model reads is the same `structuredContent` the browser app receives.
-
-**(verify)** Whether the guard is best written by wrapping the toolkit's `handle` or with `McpClient.toolkit`'s `transformTool` option is settled in the first implementation step; the behavior above is fixed either way.
-
-### `runAgentLoop`
-
-An `Effect.fn("AgentLoop.run")` that takes the `Chat`, the toolkit and the initial prompt, and returns `Stream<AgentStreamEvent>`. A sketch of its shape, not compiled code:
-
-```
-runAgentLoop(chat, toolkit, initialPrompt):
-  queue  = Queue.unbounded<AgentStreamEvent, LoopError>()
-  fork into the request scope (Effect.forkScoped):
-    prompt = initialPrompt; step = 0; retries = 0; outcome = "answered"
-    while true:
-      if step == maxSteps: outcome = "step_limit"; break
-      snapshot = Ref.get(chat.history)
-      stepHadToolCalls = false
-      result = chat.streamText({ prompt, toolkit, concurrency: toolConcurrency })
-                 |> Stream.runForEach(part -> handlePart(part))   // emits events, updates TurnState
-                 |> Effect.timeoutOrElse(stepTimeout -> fail StepTimedOut)
-                 |> capture the error, if any
-      if result failed:
-        if recoverable(error) and retries < maxRetries:
-          retries++; Ref.set(chat.history, snapshot)
-          offer StepRetried { step, reason }
-          prompt = retryPrompt(error); continue
-        outcome = "failed"; fail the loop with error
-      if not stepHadToolCalls: break                             // the model has answered
-      prompt = Prompt.empty; step++
-    ensuring:  offer Complete { requestId, outcome }            // every exit path
-    on error:  Queue.fail(queue, error)
-    on defect: outcome = "failed"; die
-    ensuring:  Queue.end(queue)
-  return Stream.fromQueue(queue)
-```
-
-- **One step** is one `chat.streamText` call: one model turn plus the resolution of the tool calls it makes. `Chat` appends the model's message and the tool results to its history.
-- **The next step** continues with `Prompt.empty`, so the history, now holding the tool results, is the whole context.
-- **The loop stops** when a step makes no tool calls (the model has answered), at `maxSteps`, or on an unrecoverable error.
-- **The step timeout** covers the whole step. A stalled step fails the loop rather than being retried, because retrying a stalled turn usually stalls again.
-
-### Stream parts to events
-
-| `Response` part | Action | Event to the browser |
-|---|---|---|
-| `text-delta` | Append to the answer text in `TurnState` | `TextChunk { text }` |
-| `tool-call` | Mark the step as having tool calls; record the call (ID, name, params, start time) | `ToolStart { callId, tool, arguments }` |
-| `tool-result` (not `preliminary`) | Record the result and latency; read `structuredContent` from the MCP result; `isFailure` sets the outcome | `ToolEnd { callId, tool, outcome, result }` |
-| `finish` | Add `usage` to `TurnState` | None |
-| `error` | Fail the step with the provider's error, which recovery classifies | None (see `StepRetried`) |
-| `reasoning-*`, `text-start`/`text-end`, `tool-params-*`, `response-metadata`, sources, files | Ignored | None |
-
-### Errors and recovery
-
-| Error | Where it comes from | Handling |
-|---|---|---|
-| Tool failure (the server returned an error result, such as `UnknownValue`) | MCP server | Not an error to the loop: the model reads it and corrects its call or explains |
-| MCP or transport error during a call | `McpClient` | A failed tool result (`failureMode: "return"`); the model reads it |
-| Handler defect | Toolkit | A failed tool result (result guard) |
-| Malformed tool-call arguments, provider rate limit or transient error | `AiError` from the model | Recoverable: restore the step's history snapshot, emit `StepRetried`, and continue with a synthetic user message describing the error, up to `loop.maxRetries` |
-| Step timeout | `Effect.timeoutOrElse` | Not retried: `Complete { outcome: "failed" }` |
-| `maxSteps` reached | Loop | `Complete { outcome: "step_limit" }`; the answer so far is shown as incomplete |
-| Any other error or defect | Loop | `Complete { outcome: "failed" }`, then the stream fails |
-| Model or a server unreachable before the stream starts | Admission | `503 AgentUnavailable` |
-| Trace write fails | `TraceStore` | Logged; the user's answer is unaffected |
-
-**`StepRetried`** is a new event, added to `protocol/` with the loop. When a step fails after it has already streamed text or tool events, restoring the history snapshot removes that step from the model's context, but the browser has already shown it. `StepRetried { step, reason }` tells the browser to discard what it showed for that step. The browser numbers steps from the events it receives, and each event gains a `step` field so it knows which events to discard.
-
-### Termination and cancellation
-
-- **`Complete` is sent on every exit path**, from an `Effect.ensuring` around the loop, so the browser always learns the outcome and the trace is always written.
-- **Errors** end the queue with `Queue.fail`, and defects die, so the stream always terminates.
-- **If the browser disconnects**, the response stream is interrupted, which closes the request scope and interrupts the loop's fiber, including any model stream and tool calls in flight. The trace is still written, with outcome `cancelled` (added to the `app.requests.outcome` check), from the per-request state.
-
-### Per-request state
-
-A `Context.Service` holding a `Ref`, provided fresh to each request:
-
-| Field | Purpose |
-|---|---|
-| `requestId` | Trace key, sent in `Complete` |
-| `answerText` | The text streamed so far, minus discarded steps |
-| `toolCalls` | Each call: step, ID, tool, arguments, outcome, `structuredContent`, latency |
-| `usage` | Input and output tokens summed across steps |
-| `steps`, `retries` | For the trace |
-| `outcome` | Set when the loop ends |
-
-A `Ref` rather than fiber-local state, because tool handlers run on forked fibers when the model calls several tools at once.
-
-### Events
-
-| Event | Fields | The browser app uses it to |
-|---|---|---|
-| `TextChunk` | step, text | Append answer text |
-| `ToolStart` | step, call ID, tool name, arguments | Show "Checking the development pipeline…" status |
-| `ToolEnd` | step, call ID, tool name, outcome, the result's `structuredContent` | Update the status, and keep the citations for linking |
-| `StepRetried` | step, reason | Discard that step's text and statuses |
-| `Complete` | request ID, outcome | Show whether the answer is complete |
-
-The events are `Schema` classes in `protocol/` (see [API contract](#api-contract)), so the backend's server-sent event stream and the browser app decode the same shapes.
-
-### Citations in answers
-
-The backend does not read, check or rewrite citations. Citations are for the user: each claim points to the exact source, and the user checks it there.
-
-- **Servers** put the citations behind each result in the result's `structuredContent`, in the shape set by `protocol/`'s citation schema, and declare it in the tool's `outputSchema`.
-- **The model** marks each claim with the `citationId` it rests on, in square brackets (for example `[sf.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f]`, with an illustrative query key), as the system prompt tells it to.
-- **The backend** passes each tool result's `structuredContent` to the browser app in `ToolEnd`, unchanged, and stores it in the trace.
-- **The browser app** links each marker to the citation with that `citationId` among the results it received, groups citations by `sourceId`, and shows a marker that matches no citation as unlinked.
-- **The evaluation** checks citations offline, from the traces: whether each claim cites the right source and whether any marker matched nothing.
-
-**Copying full IDs is tested, not assumed.** Spike S2 checks that the chosen local model copies `citationId`s exactly. Short aliases (`c1`, `c2`) are a fallback, added only if it does not; they would need the backend to map them, so they are avoided if possible.
-
-### Streaming to the browser
-
-`QuestionsApi` is an `HttpApiGroup` in `protocol/` with one endpoint, `POST /questions`, whose success response is `HttpApiSchema.StreamSse` of `AgentStreamEvent`. Effect's HTTP API encodes each event as one server-sent event, and `HttpApiClient` in the browser app decodes them with the same schema. The handler returns the loop's stream, with the trace write attached to its end (`Stream.ensuring`), so the response is not delayed by the write.
-
-### Traces
-
-When the stream ends, `TraceStore` writes the `app.requests` row and its `app.tool_calls` rows in one transaction, from the per-request state: the question, model configuration and model ID, prompt version, outcome, steps, retries, token usage, latency, the answer text, and each tool call with its arguments and `structuredContent`. The evaluation reads citations from those results and markers from the answer text. Energy samples are added with the evaluation work.
-
-### The system prompt
-
-A versioned Markdown file (`backend/prompts/system.v1.md`) whose version is recorded in every trace. It covers:
-
-- **Role and audience**: answer San Francisco housing questions for policy makers and residents, in plain language.
-- **Answer only from tool results**, and say when the data cannot answer a question.
-- **Citing**: mark every claim with the `citationId` of the result it rests on, in square brackets, copied exactly.
-- **The data's limits**: name the pipeline snapshot or dataset date; describe how long a project has held a status rather than calling it stalled; never combine flood or exposure zones into one risk; say that MOHCD dates are estimates.
-- **Declines**: legal advice and causal claims, pointing to the right body.
-- **Tools**: prefer summary tools for totals; check `dataset_info` when asked how current the data is.
-
-The prompt's exact wording is drafted with the evaluation questions and tested in spike S2.
-
-### Observability
-
-Every function is an `Effect.fn` with a name, so each request produces a span tree: the request, each step, each tool call. Logs carry the request ID. Nothing logs a question's text outside the trace store.
-
-### Testing
-
-| Area | Test |
-|---|---|
-| Loop | `@effect/vitest` tests with a scripted `LanguageModel` (`LanguageModel.make` with a `streamText` that replays a list of parts per call): tool call then answer; two tool calls in one turn; a malformed tool call then recovery, checking `StepRetried` and the restored history; repeated errors past `maxRetries`; never answering, to hit `maxSteps`; a stalled step, to hit the timeout. Each checks the event sequence and that `Complete` comes last. |
-| Tools | The `sf-housing` server's registrations through `McpTest.makeClient`, so the loop runs against the real tools without HTTP |
-| Result guard | A handler that dies, and one that returns more than the byte limit |
-| Admission | A second question while one is running returns `503`; an unavailable server returns `503` |
-| API | `QuestionsApi` through `HttpApiClient` against the running handler, checking the server-sent events decode |
-| Traces | Rows written for each outcome, including `cancelled`, against a Postgres testcontainer |
-
-### Decisions to review
-
-1. **`StepRetried` and a `step` field on events**, so the browser can discard a failed step's output.
-2. **Outcome `cancelled`** for traces of disconnected requests.
-3. **Fail, don't retry, a timed-out step.**
-4. **One question at a time** on the local configuration (`api.maxConcurrentQuestions: 1`), with `503` for a second; queueing instead would hold the browser's connection open for minutes.
-5. **What happens at `maxSteps`**: stop with `step_limit` (as designed), or run one final model turn with tools disabled (`toolChoice: "none"`) asking for an answer from what was gathered.
-
-## API contract
-
-One endpoint, in the `QuestionsApi` group defined in `protocol/` so the backend and the browser app share it (see [Streaming to the browser](#streaming-to-the-browser)). Requests are stateless: each question is answered on its own.
-
-### `POST /questions`
-
-| | |
-|---|---|
-| Request body | `QuestionRequest`: `{ "question": string }`, 1 to 2,000 characters |
-| Success | `200`, `Content-Type: text/event-stream`: a stream of `AgentStreamEvent`s, always ending with `Complete` |
-| `400` | The body failed to decode: `HttpApi`'s built-in decode error |
-| `503` | `AgentUnavailable`: another question is being answered, or the model or a server in the directory is unreachable. Checked before the stream starts, so a stream that starts always ends with `Complete` |
-
-**Wire format.** Each event is one server-sent event, encoded with `Sse` from `effect/encoding`: the event name is the event's `_tag`, and `data` is the event encoded as JSON with its own schema. The browser app decodes `data` with `AgentStreamEvent`, so both ends share one definition.
-
-```
-event: ToolStart
-data: {"_tag":"ToolStart","callId":"call_1","tool":"sf_development_pipeline_summary","arguments":{"groupBy":"status"}}
-
-event: ToolEnd
-data: {"_tag":"ToolEnd","callId":"call_1","tool":"sf_development_pipeline_summary","outcome":"success","result":{"groups":[…],"snapshot":"2026 Q2","citations":[{"_tag":"DatasetCitation","sourceId":"sf.development_pipeline@2026-08-28","citationId":"sf.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f",…}]}}
-
-event: TextChunk
-data: {"_tag":"TextChunk","text":"… [sf.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f]"}
-
-event: Complete
-data: {"_tag":"Complete","requestId":"…","outcome":"answered"}
-```
-
-The example's values are illustrative only, not data.
-
-```ts
-// protocol/src/QuestionsApi.ts
-import { Schema } from "effect"
-
-export class QuestionRequest extends Schema.Class<QuestionRequest>("QuestionRequest")({
-  question: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(2000)))
-}) {}
-
-export class TextChunk extends Schema.TaggedClass<TextChunk>()("TextChunk", {
-  text: Schema.String
-}) {}
-
-export class ToolStart extends Schema.TaggedClass<ToolStart>()("ToolStart", {
-  callId: Schema.String,
-  tool: Schema.String,
-  arguments: Schema.Unknown
-}) {}
-
-/** A tool call's outcome, with the tool's `structuredContent` passed through unchanged for the browser to render. */
-export class ToolEnd extends Schema.TaggedClass<ToolEnd>()("ToolEnd", {
-  callId: Schema.String,
-  tool: Schema.String,
-  outcome: Schema.Literals(["success", "failure"]),
-  result: Schema.Unknown
-}) {}
-
-export class Complete extends Schema.TaggedClass<Complete>()("Complete", {
-  requestId: Schema.String.pipe(Schema.check(Schema.isUUID())),
-  outcome: Schema.Literals(["answered", "step_limit", "failed"])
-}) {}
-
-export const AgentStreamEvent = Schema.Union([TextChunk, ToolStart, ToolEnd, Complete])
-export type AgentStreamEvent = typeof AgentStreamEvent.Type
-
-export class AgentUnavailable extends Schema.TaggedError<AgentUnavailable>()("AgentUnavailable", {}) {}
-```
-
-| `Complete.outcome` | Meaning |
-|---|---|
-| `answered` | The model finished with no further tool calls |
-| `step_limit` | `maxSteps` was reached first; the answer so far is incomplete, and the web app says so |
-| `failed` | The loop failed or hit a defect after the stream started; the answer so far should not be trusted |
-
-**No protocol version.** The backend and the browser app are built from this repo and released together, so `protocol/` carries no version. Changes still prefer additive ones (a new optional field, such as `audience`), and the browser app ignores event types it does not know.
-
-**Not in the contract for now:** authentication (Cloudflare Access sits in front of the tunnel, per the MVP plan), conversation history, and cancellation beyond closing the connection, which ends the request's scope and with it the loop's fiber.
-
 ## Database schemas
 
 Three Neon projects (see [Data servers](#data-servers)), each with its own schemas; `sf-legal-text` is created in Phase 2. Column names in `raw_sf` are the source's own field names, read from each dataset's DataSF metadata (`https://data.sf.gov/api/views/<id>.json`) on November 4, 2026.
@@ -987,7 +628,7 @@ Three Neon projects (see [Data servers](#data-servers)), each with its own schem
 | `sf-housing` | `sf` | dbt | dbt | `sf-housing` server (role `sf_housing_reader`) |
 | `sf-legal-text` (Phase 2) | `raw_sf` | Python loaders | Alembic | Passage pipeline |
 | `sf-legal-text` (Phase 2) | `policy_text_sf` | Python passage pipeline | Alembic | Legal-text server (role `sf_legal_text_reader`) |
-| `app` | `app` | Backend | `effect/sql` Migrator | Backend, evaluation reports |
+| `app` | `app` | Backend | `effect/sql` Migrator | Backend, evaluation reports; see [The `app` schema](agent-loop.md#the-app-schema) |
 
 Each reader role has `USAGE` on its schema and `SELECT` on its tables, and nothing else.
 
@@ -1080,43 +721,6 @@ CREATE INDEX passages_tsv ON policy_text_sf.passages USING gin (tsv);
 
 **Embeddings come in a later migration.** A `halfvec` column needs a fixed dimension, which depends on the embedding model spike S4 chooses. That migration adds `embedding halfvec(<dimension>)`, `embedding_model text NOT NULL`, and an HNSW index with `halfvec_cosine_ops`. The server checks at startup that its configured embedding model matches the stored one.
 
-### `app`
-
-```sql
-CREATE TABLE app.requests (
-    request_id      uuid PRIMARY KEY,
-    received_at     timestamptz NOT NULL,
-    question        text NOT NULL,
-    model_config    text NOT NULL,          -- the configuration's key in config/agent.yaml
-    model_id        text NOT NULL,
-    prompt_version  text NOT NULL,
-    outcome         text NOT NULL CHECK (outcome IN ('answered', 'step_limit', 'failed', 'cancelled')),
-    steps           integer NOT NULL,
-    retries         integer NOT NULL,
-    input_tokens    integer NOT NULL,
-    output_tokens   integer NOT NULL,
-    latency_ms      integer NOT NULL,
-    answer_text     text NOT NULL
-);
-
-CREATE TABLE app.tool_calls (
-    request_id   uuid NOT NULL REFERENCES app.requests,
-    call_id      text NOT NULL,
-    step         integer NOT NULL,
-    tool         text NOT NULL,
-    arguments    jsonb NOT NULL,
-    outcome      text NOT NULL CHECK (outcome IN ('success', 'failure')),
-    discarded    boolean NOT NULL,          -- the step failed and was retried
-    result       jsonb NOT NULL,            -- the structuredContent, including its citations
-    latency_ms   integer NOT NULL,
-    PRIMARY KEY (request_id, call_id)
-);
-```
-
-`model_config` names one of the three model configurations in [Ubiquitous Language](../ubiquitous-language.md) (Local, Same model in the cloud, Frontier); their keys are declared in `backend/config/agent.yaml`. The request row and its children are written in one transaction after `Complete`. Evaluation and energy tables are designed with the evaluation work (MVP plan, Evaluation and energy).
-
-Traces store each question as asked, so the web app tells users that questions are logged.
-
 ## Ingestion for San Francisco
 
 Python, in [`san-francisco/ingest/`](../../san-francisco/ingest/README.md), built on the shared library in [`shared/ingest/`](../../shared/ingest/README.md) and following the provenance rules in [CLAUDE.md](../../CLAUDE.md):
@@ -1149,7 +753,7 @@ A minimal React app in `browser-app/`, following [Front-end Code Style](../front
 - one question box and a streamed answer, decoded with the contract's `AgentStreamEvent`;
 - tool status lines from `ToolStart` and `ToolEnd` ("Checking the development pipeline…");
 - citation markers in the answer linked to the citations in the `ToolEnd` results, decoded with `protocol/`'s citation schema and grouped by source (dataset or document version, publisher, source link) with each query or provision used underneath; markers that match no citation shown as unlinked. Markers are parsed out of the text before it is rendered as Markdown, since a marker followed by `(` would otherwise read as a link;
-- a notice when `Complete.outcome` is `step_limit` or `failed`, and an "agent host offline" state when the API returns `503` or cannot be reached;
+- the `message` from `Complete` when the outcome is `step_limit` or `failed`, the `message` from a `503`, and an "agent host offline" state when the API cannot be reached;
 - a note that questions are logged.
 
 No accounts, history or maps in Phase 1. The full web app design remains the MVP plan's follow-up.
@@ -1158,7 +762,7 @@ No accounts, history or maps in Phase 1. The full web app design remains the MVP
 
 | Phase | Milestone | Done when |
 |---|---|---|
-| 1 | P1.1 Contracts | `protocol/` and the `shared/mcp-kit` helpers in [Protocol and shared helpers](#protocol-and-shared-helpers), the Phase 1 tools in [Data server tools](#data-server-tools) and [API contract](#api-contract) in code, with decode tests; migrations for `raw_sf` and `app` written. |
+| 1 | P1.1 Contracts | `protocol/` and the `shared/mcp-kit` helpers in [Protocol and shared helpers](#protocol-and-shared-helpers), the Phase 1 tools in [Data server tools](#data-server-tools) and [API contract](agent-loop.md#api-contract) in code, with decode tests; migrations for `raw_sf` and `app` written. |
 | 1 | P1.2 Data loaded | Both pipelines, the three zones and neighborhoods loaded with provenance; dbt models and tests pass; database size measured. |
 | 1 | P1.3 `sf-housing` server | The six Phase 1 tools pass tests through `McpTest` against a Postgres testcontainer. |
 | 1 | P1.4 First cited answer | The agent loop answers a "where is it, and is it moving" question and a climate-ready question through `POST /questions`, with dataset citations and a trace in `app`. |

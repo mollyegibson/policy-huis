@@ -135,7 +135,8 @@ When guidance conflicts, higher sources win:
 - [Effect Style](./docs/effect-style.md): Effect 4 patterns for TypeScript
 - [Front-end Code Style](./docs/front-end-code-style.md): React and TypeScript conventions for the web app
 - [MVP Technical Plan](./docs/plans/mvp-technical-plan.md): the backend design: agent, MCP servers, data layer, network, evaluation and energy
-- [San Francisco Plan](./docs/plans/sf-plan.md): San Francisco sources, servers, tools and the agent loop
+- [San Francisco Plan](./docs/plans/sf-plan.md): San Francisco sources, servers and tools
+- [Agent Loop Plan](./docs/plans/agent-loop.md): the backend's agent loop, question API and `app` schema, shared by every city
 - [Netherlands Ingestion and Tools Plan](./docs/plans/netherlands-ingestion.md): loading the Dutch sources and designing the Dutch data server's tools
 - [Provisional Questions](./docs/plans/provisional-questions.md): the draft question set, pending confirmation from the research team
 

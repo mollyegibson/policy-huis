@@ -106,7 +106,8 @@ San Francisco work (sources, ingestion, corpus, `sf-housing`) is owned by Molly;
 
 - [MVP Technical Plan](./docs/plans/mvp-technical-plan.md): the backend design
 - [Provisional Questions](./docs/plans/provisional-questions.md): the draft question set
-- [San Francisco Plan](./docs/plans/sf-plan.md): San Francisco phases, sources, tools, contracts, schemas and the agent loop
+- [San Francisco Plan](./docs/plans/sf-plan.md): San Francisco phases, sources, tools, contracts and schemas
+- [Agent Loop Plan](./docs/plans/agent-loop.md): the backend's agent loop, question API and `app` schema, shared by every city
 - [Netherlands Ingestion and Tools Plan](./docs/plans/netherlands-ingestion.md): loading the Dutch sources and designing the Dutch data server's tools
 - [Domain-Driven Design and Hexagonal Architecture](./docs/domain-driven-design.md): where code belongs and why
 - [Working Agreement](./docs/working-agreement.md): the rules we hold each other to in review
