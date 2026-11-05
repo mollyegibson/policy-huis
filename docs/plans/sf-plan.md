@@ -167,7 +167,7 @@ export const PositiveInt = Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0))
 export const NonNegativeInt = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
 ```
 
-**Citations.** Every tool result carries the citations behind it in its `structuredContent` (see [Tool results](#tool-results)). A citation is either a passage from a document (a law, a report or a reference) or a dataset query. Phase 1 uses dataset citations only; document citations arrive with the legal-text server in Phase 2. Every citation carries two stable IDs, assigned by the tool that returns it:
+**Citations.** Every tool result carries the citations behind it in its `structuredContent` (see [Tool results](#tool-results-and-the-result-guard)). A citation is either a passage from a document (a law, a report or a reference) or a dataset query. Phase 1 uses dataset citations only; document citations arrive with the legal-text server in Phase 2. Every citation carries two stable IDs, assigned by the tool that returns it:
 
 - **`sourceId`** names one version of a source: `<documentId>@<versionDate>` for a document (`rent_ordinance@2026-06-29`), `<datasetKey>@<sourceVersion>` for a dataset (`sf.development_pipeline@2026-08-28`). Every citation of the same dataset or PDF version, from any call, has the same `sourceId`.
 - **`citationId`** names the part of that source a claim rests on: `<sourceId>#<provision>` for a document (`rent_ordinance@2026-06-29#37.9(a)(8)`), `<sourceId>#<queryKey>` for a dataset. `queryKey` is the first 16 hex characters of the SHA-256 of the tool name and its decoded parameters as canonical JSON (keys sorted, absent optional fields omitted), so the same query always gets the same ID.
@@ -620,59 +620,226 @@ export const LegalTextToolkit = Toolkit.make(SearchPolicy, GetProvision)
 
 ## Agent loop
 
-The backend (`backend/`) runs a custom multi-step loop. Effect's `LanguageModel.streamText` resolves one round of tool calls per request and has no step limit or loop of its own, so the loop that calls the model, runs tools, and calls the model again until it answers is ours.
+The backend (`backend/`) answers one question per request by running a custom multi-step loop: call the model, run the tools it asks for, call the model again with the results, and stop when it answers. Effect's `LanguageModel.streamText` resolves one round of tool calls per call and has no step limit or loop of its own, so the loop is ours.
 
-### Shape
+This section is the technical design for that loop and the service around it. Effect APIs named here were checked against the `effect` 4.1.2 type declarations and source on November 5, 2026; anything still to confirm is marked **(verify)**.
 
+### Scope
+
+The backend:
+
+- accepts a question over `POST /questions` and streams the answer back as server-sent events;
+- runs the loop against one model, chosen by configuration, with the tools of every MCP server in its directory;
+- passes each tool result's `structuredContent` to the browser app unchanged (see [Citations in answers](#citations-in-answers));
+- writes one trace per request to the `app` schema.
+
+It does not:
+
+- read, check or rewrite citations; the browser shows them and the evaluation checks them;
+- keep conversations: every request starts from the system prompt and the question;
+- read any server's database: it only calls tools.
+
+### Where the code lives
+
+| Module (`backend/src/`) | Responsibility |
+|---|---|
+| `main.ts` | Launches the server layer with `NodeRuntime.runMain` |
+| `Server.ts` | Composes the layers: configuration, model, MCP connections, trace store, HTTP |
+| `config/AgentConfig.ts` | Decodes `backend/config/agent.yaml` with a `Schema`; fails at startup if any field is missing or invalid |
+| `config/ServerDirectory.ts` | Decodes `backend/config/servers.yaml`: each server's name, URL and tool prefix |
+| `model/ModelLayer.ts` | Builds the `LanguageModel` layer for the configured model configuration (Local, Same model in the cloud, Frontier) through `@effect/ai-openai-compat`; the only module that imports a provider package |
+| `tools/McpConnections.ts` | One long-lived `McpClient` per server; health; cached tool descriptors |
+| `tools/TurnToolkit.ts` | Builds the merged toolkit for a request from the connections, with the result guard applied |
+| `tools/ResultGuard.ts` | Turns handler defects into failed results; replaces oversized results |
+| `loop/AgentLoop.ts` | `runAgentLoop`: the step loop, returning a `Stream` of `AgentStreamEvent` |
+| `loop/TurnState.ts` | The per-request state service (`Ref`) |
+| `loop/StepRecovery.ts` | Classifies step errors; builds the synthetic retry prompt |
+| `loop/SystemPrompt.ts` | Loads the versioned system prompt file named in config |
+| `api/QuestionsHandler.ts` | Implements the `protocol/` `QuestionsApi` group: admission, turn setup, the event stream |
+| `trace/TraceStore.ts` | Writes the trace rows to `app` in one transaction |
+| `migrations/` | `effect/sql` Migrator migrations for the `app` schema |
+
+`protocol/` gains the `QuestionsApi` `HttpApiGroup`, so the browser app can call it with `HttpApiClient`.
+
+### Configuration
+
+Declared choices live in `backend/config/agent.yaml`, reviewed by pull request; secrets live only in `backend/.env`. Values marked "from S1/S2" are set from the spikes' results, not chosen in advance.
+
+| Field | Meaning | Value |
+|---|---|---|
+| `model.configuration` | Which configuration provides `LanguageModel`: `local`, `same_model_cloud` or `frontier` | Set per run |
+| `model.configurations.<key>` | Base URL and model ID for each configuration (no keys) | From S1 |
+| `loop.maxSteps` | Model turns per question, counting each turn that called tools | From S2 |
+| `loop.stepTimeout` | Longest one model turn may take, including its tool calls | From S1 (local generation takes 10–30 seconds per answer) |
+| `loop.maxRetries` | Recoverable step errors tolerated per question | To decide |
+| `loop.toolConcurrency` | Tool calls run at once when the model asks for several in one turn | To decide |
+| `tools.callTimeout` | Longest one MCP tool call may take | To decide |
+| `tools.resultByteLimit` | Largest tool result passed to the model | To decide; the `sf-housing` tools already cap list sizes |
+| `api.maxConcurrentQuestions` | Questions answered at once | 1 for the local configuration, since one laptop runs one model |
+| `prompt.file`, `prompt.version` | The system prompt file and its version, recorded in every trace | `backend/prompts/system.v1.md`, `v1` |
+
+`backend/config/servers.yaml` is the server directory: for each server, its `name` (`sf-housing`), `url` (`http://<host>:<port>/mcp`) and tool `prefix` (`sf_`). `backend/.env` holds the `app` database URL and any cloud model API keys.
+
+### Startup
+
+1. Decode `agent.yaml` and `servers.yaml`; any error stops the process with the field that failed.
+2. Run the `app` migrations with the `effect/sql` Migrator.
+3. Build the `LanguageModel` layer for `model.configuration`.
+4. For each server in the directory, open an `McpClient` with the Streamable HTTP transport (`McpClient.make` with `McpClient.http`, in the application scope), initialize it, list its tools and cache the descriptors. A server that cannot be reached is marked unavailable and retried in the background; startup continues.
+5. Serve `QuestionsApi` over HTTP.
+
+### Request lifecycle
+
+```mermaid
+sequenceDiagram
+    participant B as Browser app
+    participant H as QuestionsHandler
+    participant L as runAgentLoop
+    participant M as LanguageModel
+    participant S as MCP servers
+    participant T as TraceStore
+
+    B->>H: POST /questions { question }
+    H->>H: admit (semaphore), check model and servers
+    alt busy, or model or a server unavailable
+        H-->>B: 503 AgentUnavailable
+    end
+    H->>L: Chat (system prompt + question), toolkit
+    loop each step, until no tool calls or maxSteps
+        L->>M: chat.streamText({ prompt, toolkit })
+        M-->>L: text-delta parts
+        L-->>B: TextChunk
+        M-->>L: tool-call parts
+        L-->>B: ToolStart
+        L->>S: tools/call (via McpClient)
+        S-->>L: structuredContent
+        L-->>B: ToolEnd (structuredContent)
+        M-->>L: finish (usage)
+    end
+    L-->>B: Complete { requestId, outcome }
+    H->>T: write trace (after the stream ends)
 ```
-HTTP request (question)
-  → prepare turn: fresh per-request state, Chat seeded with the system prompt and question,
-    toolkit merged from every server in the directory
-  → runAgentLoop: forked fiber writing AgentStreamEvents to a queue
-  → stream consumer: events → server-sent events to the caller, trace rows to `app`
-```
+
+### Admission
+
+`POST /questions` takes a permit from a semaphore sized `api.maxConcurrentQuestions` with `Semaphore.withPermitsIfAvailable`. If none is free, or the model or any directory server is marked unavailable, it returns `503 AgentUnavailable` before the stream starts, so a stream that starts always ends with `Complete`. The permit is held until the stream ends.
+
+### Building the turn
+
+For each request:
+
+1. **Request ID**: a UUID, sent in `Complete` and used as the trace's key.
+2. **Per-request state**: a fresh `TurnState` (see [Per-request state](#per-request-state)).
+3. **Chat**: `Chat.fromPrompt` with the system prompt (a system message) and the question (a user message). Nothing else is carried over from earlier requests.
+4. **Toolkit**: for each available server, `McpClient.toolkit(client, { prefix, tools: cachedDescriptors, resultMode: "complete", failureMode: "return", timeout: tools.callTimeout })`, merged with `Toolkit.merge`, then wrapped by the result guard.
+   - `tools: cachedDescriptors` avoids a `tools/list` round trip per request.
+   - `resultMode: "complete"` gives the loop each full MCP result, `structuredContent` included, while the model reads it as text.
+   - `failureMode: "return"` hands MCP and transport errors to the model as failed tool results instead of failing the step.
+
+### Tool results and the result guard
+
+Every handler in the merged toolkit is wrapped so that:
+
+- a defect in a handler becomes a failed tool result the model can read, instead of failing the step;
+- a result larger than `tools.resultByteLimit` is replaced with a failed result saying it was too large and how to narrow the request. Results are never cut in half, since a truncated table looks complete;
+- the result the model reads is the same `structuredContent` the browser app receives.
+
+**(verify)** Whether the guard is best written by wrapping the toolkit's `handle` or with `McpClient.toolkit`'s `transformTool` option is settled in the first implementation step; the behavior above is fixed either way.
 
 ### `runAgentLoop`
 
-An `Effect.fn` that takes the `Chat`, the toolkit and the initial prompt, and returns `Stream<AgentStreamEvent>`.
+An `Effect.fn("AgentLoop.run")` that takes the `Chat`, the toolkit and the initial prompt, and returns `Stream<AgentStreamEvent>`. A sketch of its shape, not compiled code:
 
-1. Create a `Queue` of `AgentStreamEvent`, and fork the loop into the request's scope with `Effect.forkScoped`, so it ends with the request.
-2. Each step:
-   1. Snapshot the chat history, so a failed step can be rolled back.
-   2. Call `chat.streamText({ prompt, toolkit })` for one model turn plus tool resolution.
-   3. For each streamed part:
-      - `text-delta` → offer `TextChunk`.
-      - `tool-call` → record that the step had tool calls; offer `ToolStart` with the call ID, tool name and arguments; record the call in the per-request state.
-      - `tool-result` → offer `ToolEnd` with the call ID, tool name, outcome and the result's `structuredContent`, unchanged.
-      - `finish` → add the token usage to the per-request state.
-   4. Bound each step with a timeout from config, so a stalled model stream fails the step instead of holding the request open.
-   5. If the step failed with a recoverable model error (`AiError`, such as malformed tool-call arguments or a transient provider error), restore the history snapshot and continue with a synthetic user message describing the error, up to a retry limit from config. Other errors fail the loop.
-   6. If the step had no tool calls, the model has answered: stop. Otherwise continue with `Prompt.empty`, so the history (now holding the tool results) is the whole context, and count the step.
-3. Stop at `maxSteps` from config. If the limit is reached before the model answers, the final event says the answer is incomplete.
-4. On every exit path (answer, step limit, error or defect), emit `Complete` with the outcome before ending the queue, so the consumer always writes the trace, including usage from the per-request state. Errors end the queue with `Queue.fail` and defects with a die, so the stream terminates in every case.
+```
+runAgentLoop(chat, toolkit, initialPrompt):
+  queue  = Queue.unbounded<AgentStreamEvent, LoopError>()
+  fork into the request scope (Effect.forkScoped):
+    prompt = initialPrompt; step = 0; retries = 0; outcome = "answered"
+    while true:
+      if step == maxSteps: outcome = "step_limit"; break
+      snapshot = Ref.get(chat.history)
+      stepHadToolCalls = false
+      result = chat.streamText({ prompt, toolkit, concurrency: toolConcurrency })
+                 |> Stream.runForEach(part -> handlePart(part))   // emits events, updates TurnState
+                 |> Effect.timeoutOrElse(stepTimeout -> fail StepTimedOut)
+                 |> capture the error, if any
+      if result failed:
+        if recoverable(error) and retries < maxRetries:
+          retries++; Ref.set(chat.history, snapshot)
+          offer StepRetried { step, reason }
+          prompt = retryPrompt(error); continue
+        outcome = "failed"; fail the loop with error
+      if not stepHadToolCalls: break                             // the model has answered
+      prompt = Prompt.empty; step++
+    ensuring:  offer Complete { requestId, outcome }            // every exit path
+    on error:  Queue.fail(queue, error)
+    on defect: outcome = "failed"; die
+    ensuring:  Queue.end(queue)
+  return Stream.fromQueue(queue)
+```
 
-This follows Effect 4's API: `Queue` with `Queue.end` and `Queue.fail` replaces Effect 3's `Mailbox`, and `Stream.fromQueue` turns it into the returned stream.
+- **One step** is one `chat.streamText` call: one model turn plus the resolution of the tool calls it makes. `Chat` appends the model's message and the tool results to its history.
+- **The next step** continues with `Prompt.empty`, so the history, now holding the tool results, is the whole context.
+- **The loop stops** when a step makes no tool calls (the model has answered), at `maxSteps`, or on an unrecoverable error.
+- **The step timeout** covers the whole step. A stalled step fails the loop rather than being retried, because retrying a stalled turn usually stalls again.
+
+### Stream parts to events
+
+| `Response` part | Action | Event to the browser |
+|---|---|---|
+| `text-delta` | Append to the answer text in `TurnState` | `TextChunk { text }` |
+| `tool-call` | Mark the step as having tool calls; record the call (ID, name, params, start time) | `ToolStart { callId, tool, arguments }` |
+| `tool-result` (not `preliminary`) | Record the result and latency; read `structuredContent` from the MCP result; `isFailure` sets the outcome | `ToolEnd { callId, tool, outcome, result }` |
+| `finish` | Add `usage` to `TurnState` | None |
+| `error` | Fail the step with the provider's error, which recovery classifies | None (see `StepRetried`) |
+| `reasoning-*`, `text-start`/`text-end`, `tool-params-*`, `response-metadata`, sources, files | Ignored | None |
+
+### Errors and recovery
+
+| Error | Where it comes from | Handling |
+|---|---|---|
+| Tool failure (the server returned an error result, such as `UnknownValue`) | MCP server | Not an error to the loop: the model reads it and corrects its call or explains |
+| MCP or transport error during a call | `McpClient` | A failed tool result (`failureMode: "return"`); the model reads it |
+| Handler defect | Toolkit | A failed tool result (result guard) |
+| Malformed tool-call arguments, provider rate limit or transient error | `AiError` from the model | Recoverable: restore the step's history snapshot, emit `StepRetried`, and continue with a synthetic user message describing the error, up to `loop.maxRetries` |
+| Step timeout | `Effect.timeoutOrElse` | Not retried: `Complete { outcome: "failed" }` |
+| `maxSteps` reached | Loop | `Complete { outcome: "step_limit" }`; the answer so far is shown as incomplete |
+| Any other error or defect | Loop | `Complete { outcome: "failed" }`, then the stream fails |
+| Model or a server unreachable before the stream starts | Admission | `503 AgentUnavailable` |
+| Trace write fails | `TraceStore` | Logged; the user's answer is unaffected |
+
+**`StepRetried`** is a new event, added to `protocol/` with the loop. When a step fails after it has already streamed text or tool events, restoring the history snapshot removes that step from the model's context, but the browser has already shown it. `StepRetried { step, reason }` tells the browser to discard what it showed for that step. The browser numbers steps from the events it receives, and each event gains a `step` field so it knows which events to discard.
+
+### Termination and cancellation
+
+- **`Complete` is sent on every exit path**, from an `Effect.ensuring` around the loop, so the browser always learns the outcome and the trace is always written.
+- **Errors** end the queue with `Queue.fail`, and defects die, so the stream always terminates.
+- **If the browser disconnects**, the response stream is interrupted, which closes the request scope and interrupts the loop's fiber, including any model stream and tool calls in flight. The trace is still written, with outcome `cancelled` (added to the `app.requests.outcome` check), from the per-request state.
 
 ### Per-request state
 
-A `Context.Service` holding a `Ref` of the turn's state, provided fresh for each request:
+A `Context.Service` holding a `Ref`, provided fresh to each request:
 
 | Field | Purpose |
 |---|---|
-| `toolCalls` | Every call with its name, arguments, result and latency, for the trace |
-| `usage` | Input and output tokens summed across steps, for the trace |
-| `steps` | Steps taken, for the trace |
+| `requestId` | Trace key, sent in `Complete` |
+| `answerText` | The text streamed so far, minus discarded steps |
+| `toolCalls` | Each call: step, ID, tool, arguments, outcome, `structuredContent`, latency |
+| `usage` | Input and output tokens summed across steps |
+| `steps`, `retries` | For the trace |
+| `outcome` | Set when the loop ends |
 
-A `Ref` rather than fiber-local state, because tool handlers can run on forked fibers and their updates must be visible to the loop.
+A `Ref` rather than fiber-local state, because tool handlers run on forked fibers when the model calls several tools at once.
 
 ### Events
 
-| Event | Fields | Sent to the caller as |
+| Event | Fields | The browser app uses it to |
 |---|---|---|
-| `TextChunk` | text | Answer text as it streams |
-| `ToolStart` | call ID, tool name, arguments | "Searching the Rent Ordinance…" style status |
-| `ToolEnd` | call ID, tool name, outcome, the result's `structuredContent` | Status update, and the citations the browser app links answer markers to |
-| `Complete` | request ID, outcome | Whether the answer is complete |
+| `TextChunk` | step, text | Append answer text |
+| `ToolStart` | step, call ID, tool name, arguments | Show "Checking the development pipeline…" status |
+| `ToolEnd` | step, call ID, tool name, outcome, the result's `structuredContent` | Update the status, and keep the citations for linking |
+| `StepRetried` | step, reason | Discard that step's text and statuses |
+| `Complete` | request ID, outcome | Show whether the answer is complete |
 
 The events are `Schema` classes in `protocol/` (see [API contract](#api-contract)), so the backend's server-sent event stream and the browser app decode the same shapes.
 
@@ -688,29 +855,53 @@ The backend does not read, check or rewrite citations. Citations are for the use
 
 **Copying full IDs is tested, not assumed.** Spike S2 checks that the chosen local model copies `citationId`s exactly. Short aliases (`c1`, `c2`) are a fallback, added only if it does not; they would need the backend to map them, so they are avoided if possible.
 
-### Tool results
+### Streaming to the browser
 
-Every toolkit handler is wrapped so that:
+`QuestionsApi` is an `HttpApiGroup` in `protocol/` with one endpoint, `POST /questions`, whose success response is `HttpApiSchema.StreamSse` of `AgentStreamEvent`. Effect's HTTP API encodes each event as one server-sent event, and `HttpApiClient` in the browser app decodes them with the same schema. The handler returns the loop's stream, with the trace write attached to its end (`Stream.ensuring`), so the response is not delayed by the write.
 
-- a defect or framework error in a handler becomes a failed tool result the model can read, instead of crashing the stream;
-- the result the model reads is the same `structuredContent` the browser app receives;
-- a result larger than a configured byte limit is replaced with a message saying it was too large and how to narrow the request (results are never cut in half, since a truncated table looks complete).
+### Traces
 
-### Model and toolkit
+When the stream ends, `TraceStore` writes the `app.requests` row and its `app.tool_calls` rows in one transaction, from the per-request state: the question, model configuration and model ID, prompt version, outcome, steps, retries, token usage, latency, the answer text, and each tool call with its arguments and `structuredContent`. The evaluation reads citations from those results and markers from the answer text. Energy samples are added with the evaluation work.
 
-- **Model:** `LanguageModel` from `effect/ai`, provided by one layer chosen in config (local runtime, same model in the cloud, or frontier), as in the MVP plan. The loop never imports a provider package.
-- **Toolkit:** for each server in the directory file, `McpClient.toolkit` binds that server's tools under its prefix, with `resultMode: "complete"` so the loop receives each full MCP result, `structuredContent` included, while the model reads it as text. Checked against the `effect` 4.1.2 source on November 5, 2026: `McpServer` publishes each tool's `outputSchema` from its success schema and returns `structuredContent`, and the `sf-housing` server does so end to end; the agent merges the toolkits for the request. If any server in the directory is unreachable at the start of a request, the API returns `503`.
-- **Configuration** (`backend/config/agent.yaml`): `maxSteps`, step timeout, error retry limit, tool result byte limit, system prompt file and version. These are declared choices with no source to derive them from, so they live in config and are reviewed by pull request.
+### The system prompt
+
+A versioned Markdown file (`backend/prompts/system.v1.md`) whose version is recorded in every trace. It covers:
+
+- **Role and audience**: answer San Francisco housing questions for policy makers and residents, in plain language.
+- **Answer only from tool results**, and say when the data cannot answer a question.
+- **Citing**: mark every claim with the `citationId` of the result it rests on, in square brackets, copied exactly.
+- **The data's limits**: name the pipeline snapshot or dataset date; describe how long a project has held a status rather than calling it stalled; never combine flood or exposure zones into one risk; say that MOHCD dates are estimates.
+- **Declines**: legal advice and causal claims, pointing to the right body.
+- **Tools**: prefer summary tools for totals; check `dataset_info` when asked how current the data is.
+
+The prompt's exact wording is drafted with the evaluation questions and tested in spike S2.
+
+### Observability
+
+Every function is an `Effect.fn` with a name, so each request produces a span tree: the request, each step, each tool call. Logs carry the request ID. Nothing logs a question's text outside the trace store.
 
 ### Testing
 
-- **Loop:** `@effect/vitest` tests with a scripted `LanguageModel` stub (a tool call, then an answer; a malformed call, then recovery; never answering, to hit the step limit), checking the event sequence and that `Complete` is always emitted.
-- **Servers:** `McpTest.makeClient` from `effect/ai` runs a server's registrations in memory, through the same JSON-RPC encoding as the HTTP transport, against a Postgres testcontainer.
-- **Browser app:** unit tests for linking markers to citations, including markers that match nothing.
+| Area | Test |
+|---|---|
+| Loop | `@effect/vitest` tests with a scripted `LanguageModel` (`LanguageModel.make` with a `streamText` that replays a list of parts per call): tool call then answer; two tool calls in one turn; a malformed tool call then recovery, checking `StepRetried` and the restored history; repeated errors past `maxRetries`; never answering, to hit `maxSteps`; a stalled step, to hit the timeout. Each checks the event sequence and that `Complete` comes last. |
+| Tools | The `sf-housing` server's registrations through `McpTest.makeClient`, so the loop runs against the real tools without HTTP |
+| Result guard | A handler that dies, and one that returns more than the byte limit |
+| Admission | A second question while one is running returns `503`; an unavailable server returns `503` |
+| API | `QuestionsApi` through `HttpApiClient` against the running handler, checking the server-sent events decode |
+| Traces | Rows written for each outcome, including `cancelled`, against a Postgres testcontainer |
+
+### Decisions to review
+
+1. **`StepRetried` and a `step` field on events**, so the browser can discard a failed step's output.
+2. **Outcome `cancelled`** for traces of disconnected requests.
+3. **Fail, don't retry, a timed-out step.**
+4. **One question at a time** on the local configuration (`api.maxConcurrentQuestions: 1`), with `503` for a second; queueing instead would hold the browser's connection open for minutes.
+5. **What happens at `maxSteps`**: stop with `step_limit` (as designed), or run one final model turn with tools disabled (`toolChoice: "none"`) asking for an answer from what was gathered.
 
 ## API contract
 
-One endpoint in the backend's `HttpApi`, defined in `protocol/` so the backend and the browser app share it. Requests are stateless: each question is answered on its own.
+One endpoint, in the `QuestionsApi` group defined in `protocol/` so the backend and the browser app share it (see [Streaming to the browser](#streaming-to-the-browser)). Requests are stateless: each question is answered on its own.
 
 ### `POST /questions`
 
@@ -719,7 +910,7 @@ One endpoint in the backend's `HttpApi`, defined in `protocol/` so the backend a
 | Request body | `QuestionRequest`: `{ "question": string }`, 1 to 2,000 characters |
 | Success | `200`, `Content-Type: text/event-stream`: a stream of `AgentStreamEvent`s, always ending with `Complete` |
 | `400` | The body failed to decode: `HttpApi`'s built-in decode error |
-| `503` | `AgentUnavailable`: the model or a server in the directory is unreachable. Checked before the stream starts, so a stream that starts always ends with `Complete` |
+| `503` | `AgentUnavailable`: another question is being answered, or the model or a server in the directory is unreachable. Checked before the stream starts, so a stream that starts always ends with `Complete` |
 
 **Wire format.** Each event is one server-sent event, encoded with `Sse` from `effect/encoding`: the event name is the event's `_tag`, and `data` is the event encoded as JSON with its own schema. The browser app decodes `data` with `AgentStreamEvent`, so both ends share one definition.
 
@@ -899,8 +1090,9 @@ CREATE TABLE app.requests (
     model_config    text NOT NULL,          -- the configuration's key in config/agent.yaml
     model_id        text NOT NULL,
     prompt_version  text NOT NULL,
-    outcome         text NOT NULL CHECK (outcome IN ('answered', 'step_limit', 'failed')),
+    outcome         text NOT NULL CHECK (outcome IN ('answered', 'step_limit', 'failed', 'cancelled')),
     steps           integer NOT NULL,
+    retries         integer NOT NULL,
     input_tokens    integer NOT NULL,
     output_tokens   integer NOT NULL,
     latency_ms      integer NOT NULL,
@@ -914,6 +1106,7 @@ CREATE TABLE app.tool_calls (
     tool         text NOT NULL,
     arguments    jsonb NOT NULL,
     outcome      text NOT NULL CHECK (outcome IN ('success', 'failure')),
+    discarded    boolean NOT NULL,          -- the step failed and was retried
     result       jsonb NOT NULL,            -- the structuredContent, including its citations
     latency_ms   integer NOT NULL,
     PRIMARY KEY (request_id, call_id)
