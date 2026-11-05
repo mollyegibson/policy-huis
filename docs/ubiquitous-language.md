@@ -11,7 +11,9 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | **Question** | One request from a user, answered on its own. Requests are stateless: there is no conversation memory. |
 | **Answer** | The agent's reply to a question, in English and plain language, streamed to the caller with its citations. |
 | **Claim** | One statement in an answer. Every claim has at least one citation. |
-| **Citation** | The object behind a claim: source, title, provision or table, version or effective date, source URL, archived file hash and language. Defined once in the shared contract and produced only by tools. |
+| **Citation** | The object behind a claim: source, title, provision or table, version or effective date, source URL, language, and its source and citation IDs. Its schema is in `protocol/`; only tools produce citations, and the browser app shows them. |
+| **Source ID** | A citation's stable name for one version of its source: `<documentId>@<versionDate>` or `<datasetKey>@<sourceVersion>`. Citations of the same dataset or document version share it. |
+| **Citation ID** | A citation's stable name for the part of the source a claim rests on: the source ID plus a provision or a query key. The model marks claims with it. |
 | **Decline** | An answer that does not give what was asked, says why, and points to the right body (the San Francisco Rent Board or the Huurcommissie) or to the missing data. Used for legal advice, causal conclusions and questions the data can't answer. |
 | **Question type** | One of Rule (legal-text server only), Ground (data server only), Rule + data (both), Climate, Cross-city (both cities' servers) and Decline. |
 | **Rule-plus-data pair** | A provision and a dataset that answer questions about it together, e.g. Chapter 37 of the SF Administrative Code with the Eviction Notices dataset. Each city's first pair is loaded in full before other sources. |
@@ -21,23 +23,23 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | Term | Meaning |
 |---|---|
 | **Agent** | The one reasoning loop that answers a question: it calls the model, calls tools and assembles the answer. There is one agent, not one per city. |
-| **Agent service** | The TypeScript service that is both the backend API and the agent loop. |
+| **Backend** | The TypeScript service that is both the question API and the agent loop (`backend/`). |
 | **MCP server** | An independent server exposing tools over the Model Context Protocol. A server's specialization is its data and tools, not its model. |
 | **Legal-text server** | The MCP server for laws, ordinances and policy documents. One codebase, run once per corpus. |
-| **Data server** | The MCP server for one city's housing, demographic and climate data (`sf-data`, `ams-data`). |
+| **Data server** | The MCP server for one city's housing, demographic and climate data (`sf-housing` for San Francisco). |
 | **Tool** | One operation an MCP server exposes, with an input and output schema. |
 | **Tool prefix** | The server's prefix on every tool name (e.g. `sf_`, `ams_data_`), so the model can tell same-purpose tools apart across cities. |
 | **Tool error** | A typed failure returned as a tool's result (e.g. no data for that period), not a transport failure. |
 | **Directory file** | The file in the repo listing each server's name, address, owner and tool prefix. The agent connects to every server it lists. |
 | **Model configuration** | Which model provides `LanguageModel` for a run: Local (the open-weight model on the agent host), Same model in the cloud (the same open-weight model at a cloud provider) or Frontier (a closed cloud model, as the accuracy ceiling). |
-| **Agent host** | The machine running the agent service and the local model runtime. |
+| **Agent host** | The machine running the backend and the local model runtime. |
 | **Trace** | The record of one request in the `app` schema: model configuration, tool calls, token counts, latency and energy sample. |
 
 ## Legal text and retrieval
 
 | Term | Meaning |
 |---|---|
-| **Corpus** | The set of documents one legal-text server instance searches: one per city. Corpus membership is declared in `config/`. |
+| **Corpus** | The set of documents one legal-text server instance searches: one per city. Corpus membership is declared in the city's `legal-text/` config. |
 | **Document** | One law, ordinance or policy document in a corpus, e.g. the Huisvestingsverordening Amsterdam 2024. |
 | **Version** | One edition of a document, with its effective date. A citation names the version a rule applies to. |
 | **Effective date** | The date a version takes legal effect. Not the publication or fetch date. |
@@ -60,7 +62,7 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | **Manifest** | The table of loads: what was fetched, when, from where, with which filters, and the archived file's hash. |
 | **Archive** | The object storage holding every downloaded source file, unchanged. The archived file's SHA-256 identifies the exact bytes. |
 | **Source version** | Which edition of a source a load came from, as the source exposes it (a release label, last-edited date or fetch time). |
-| **Filter** | Rows dropped as a load is parsed, such as a nationwide dataset filtered to one city. Set in `config/sources.yaml` and recorded in the manifest. |
+| **Filter** | Rows dropped as a load is parsed, such as a nationwide dataset filtered to one city. Set in the city's `config/sources.yaml` and recorded in the manifest. |
 | **raw_* / sf, ams / policy_text_* / app** | The database schemas: data as fetched per city; dbt models each data server reads; passages each legal-text server reads; agent traces and evaluation results. |
 
 ## Evaluation and energy

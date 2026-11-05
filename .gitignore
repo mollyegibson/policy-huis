@@ -23,9 +23,9 @@ htmlcov/
 *.egg-info/
 
 # dbt
-pipelines/dbt/target/
-pipelines/dbt/dbt_packages/
-pipelines/dbt/logs/
+**/dbt/target/
+**/dbt/dbt_packages/
+**/dbt/logs/
 .user.yml
 
 # TypeScript (yarn)
@@ -46,8 +46,8 @@ coverage/
 *.log
 
 # Local model weights and downloaded source files; source files are archived in object storage
-models/
-data/
+/models/
+/data/
 
 # Claude Code per-user memory
 .claude/projects/

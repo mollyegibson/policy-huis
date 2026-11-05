@@ -1,0 +1,15 @@
+name: policyhuis
+version: "0.1.0"
+config-version: 2
+profile: policyhuis
+
+model-paths:
+  - models
+macro-paths:
+  - macros
+test-paths:
+  - tests
+
+models:
+  policyhuis:
+    +materialized: table

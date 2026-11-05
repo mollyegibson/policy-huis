@@ -1,0 +1,75 @@
+version: 2
+
+models:
+  - name: neighborhoods
+    columns:
+      - name: name
+        data_tests:
+          - unique
+          - not_null
+
+  - name: development_pipeline
+    data_tests:
+      - policyhuis_macros.unique_combination:
+          arguments:
+            columns: [snapshot, project_key]
+    columns:
+      - name: snapshot
+        data_tests:
+          - not_null
+      - name: project_key
+        data_tests:
+          - not_null
+      - name: status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["PL Filed", "PL Approved", "BP Filed", "BP Approved", "BP Issued", "Construction"]
+      - name: neighborhood
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('neighborhoods')
+                field: name
+
+  - name: affordable_pipeline
+    columns:
+      - name: project_id
+        data_tests:
+          - unique
+          - not_null
+      - name: geom
+        data_tests:
+          - not_null
+      - name: neighborhood
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('neighborhoods')
+                field: name
+
+  - name: affordable_pipeline_ami_units
+    columns:
+      - name: project_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('affordable_pipeline')
+                field: project_id
+
+  - name: zones
+    columns:
+      - name: zone
+        data_tests:
+          - unique
+          - not_null
+      - name: geom
+        data_tests:
+          - not_null
+
+  - name: datasets
+    columns:
+      - name: dataset_key
+        data_tests:
+          - unique

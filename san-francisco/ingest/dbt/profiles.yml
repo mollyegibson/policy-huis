@@ -1,0 +1,14 @@
+# Connection values come from the environment; `uv run sf-ingest dbt …` sets them from SF_HOUSING_DATABASE_URL.
+policyhuis:
+  target: sf_housing
+  outputs:
+    sf_housing:
+      type: postgres
+      host: "{{ env_var('DBT_HOST') }}"
+      port: "{{ env_var('DBT_PORT') | int }}"
+      user: "{{ env_var('DBT_USER') }}"
+      password: "{{ env_var('DBT_PASSWORD') }}"
+      dbname: "{{ env_var('DBT_DBNAME') }}"
+      sslmode: "{{ env_var('DBT_SSLMODE') }}"
+      schema: sf
+      threads: 4

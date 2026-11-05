@@ -93,15 +93,15 @@ A bounded context is a boundary within which a term means exactly one thing. Our
 
 | Context | Language | Writes | Reads | Published contract |
 |---|---|---|---|---|
-| **Data pipelines** (`pipelines/`) | Python, dbt | `raw_sf`, `raw_ams`, `sf`, `ams`, `policy_text_sf`, `policy_text_ams` | Public sources | The city data and passage schemas |
-| **Legal-text server** (`mcp/legal-text/`) | TypeScript, Effect | Nothing | Its corpus's `policy_text_*` schema | Its MCP tools |
-| **City data servers** (`mcp/sf-data/`, `mcp/ams-data/`) | TypeScript, Effect | Nothing | Its city's `sf` or `ams` schema | Its MCP tools |
-| **Agent service** (`apps/agent/`) | TypeScript, Effect | `app` | MCP tools only | The backend API |
-| **Evaluation** (`evaluation/`) | YAML, Python | Results through the agent service | `app` | The question-set file format |
+| **Ingestion** (`shared/ingest/`, each city's `ingest/`) | Python, dbt | `raw_sf`, `sf`, `policy_text_sf` and the Dutch equivalents | Public sources | The city data and passage schemas |
+| **Legal-text server** (`shared/legal-text/`, one instance per corpus) | TypeScript, Effect | Nothing | Its corpus's `policy_text_*` schema | Its MCP tools |
+| **City data servers** (`san-francisco/housing-server/`, and the Dutch servers) | TypeScript, Effect | Nothing | Its city's schema (`sf`) | Its MCP tools |
+| **Backend** (`backend/`) | TypeScript, Effect | `app` | MCP tools only | The backend API |
+| **Evaluation** (`evaluation/`) | YAML, Python | Results through the backend | `app` | The question-set file format |
 
 **Contexts communicate through published contracts, never by importing each other's code.** The agent doesn't read `policy_text_*`; it calls the legal-text server's tools. A data server doesn't read another city's schema. Python and TypeScript share only database schemas. A change to a published contract (a schema another context reads, an MCP tool's input or output, the backend API) is a contract change and gets reviewed as one.
 
-**The shared contract package is the one exception, and it holds only schemas.** `packages/contract/` defines the tool naming rule, the citation object, the tool error shape and the backend API as Effect `Schema`. The agent and every server import it so both sides of each boundary decode the same shapes. It holds no logic and no database access.
+**Shared packages are libraries, never contracts between nodes.** MCP servers share nothing with the backend but MCP itself: their tool definitions, `outputSchema` and `structuredContent`, following the citation convention. `protocol/` holds the API between the backend and the browser app, including the citation schema the browser decodes, as Effect `Schema`; both import it, and it holds no logic and no database access. `shared/mcp-kit/` and `shared/ingest/` are optional helpers a node installs, not interfaces another node depends on.
 
 Isolation extends to credentials: each MCP server connects with a database role that can only read its own schema, so the grants enforce the boundary rather than convention alone. No server reads another server's schema, so moving a server to its own database is a connection-string change.
 
@@ -115,7 +115,7 @@ An anti-corruption layer stops another system's model from leaking into ours. We
 
 - **Source loaders.** Each loader maps a source's columns, by name, into typed rows and fails the load on a value it can't parse. DataSF can add a column or the BWB can change its XML; the blast radius is one parser.
 - **Model output.** Tool-call arguments from the model are decoded through the tool's input schema before a handler runs. A small model can produce malformed arguments; they fail at the boundary and go back to the model as a typed error.
-- **Tool results.** The agent decodes every tool result through the shared contract before it reaches the loop or the answer.
+- **Tool results.** The backend passes each result's `structuredContent` through unchanged; the browser app decodes citations through `protocol/`'s schema before rendering them, and treats anything that fails to decode as unlinked.
 
 **Rule:** every upstream response is decoded through a parser or schema we own. Raw JSON never crosses into domain code. In Python that's typed parsing (pydantic, explicit conversion); in TypeScript it's Effect `Schema`.
 
@@ -125,7 +125,7 @@ Every number in an answer comes from a tool result, and every tool result comes 
 
 ### Citations are part of the result, not decoration
 
-Every tool result carries the citation objects behind it (source, title, provision or table, version or effective date, source URL, archived file hash, language). The agent assembles citations from those objects; it never writes a citation from the model's text. A claim with no citation object behind it is not made.
+Every tool result carries the citation objects behind it (source, title, provision or table, version or effective date, source URL, language, and stable source and citation IDs). The agent assembles citations from those objects; it never writes a citation from the model's text. A claim with no citation object behind it is not made.
 
 ### Tool errors are results
 
@@ -164,7 +164,7 @@ The vocabulary lives in [Ubiquitous Language](./ubiquitous-language.md). If a te
 **Fix:** Call that server's tool instead. If no tool fits, the tool design is incomplete.
 
 **Symptom:** Two contexts need the same logic and importing feels easier.
-**Fix:** Either it belongs to one context and the other calls its published contract, or it's a schema that belongs in the shared contract package. "It was easier to import" isn't a third option.
+**Fix:** Either it belongs to one context and the other calls its published contract, or, for the backend and the browser app only, it's a schema that belongs in `protocol/`. "It was easier to import" isn't a third option.
 
 ---
 

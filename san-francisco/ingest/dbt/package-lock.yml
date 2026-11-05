@@ -1,0 +1,4 @@
+packages:
+  - local: ../../../shared/ingest/dbt
+    name: policyhuis_macros
+sha1_hash: 50b46fcc0332762376f9e1ebfaa479efc6280d4c

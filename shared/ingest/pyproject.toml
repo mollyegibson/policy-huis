@@ -1,0 +1,36 @@
+[project]
+name = "policyhuis-ingest"
+version = "0.1.0"
+description = "Shared ingestion for PolicyHuis data nodes: fetch, archive and load public sources, and run dbt"
+requires-python = ">=3.14"
+dependencies = [
+    "boto3>=1.43.124",
+    "dbt-core>=1.12.6",
+    "dbt-postgres>=1.11.0",
+    "httpx>=0.28.1",
+    "psycopg[binary]>=3.3.8",
+    "pydantic-settings>=2.16.2",
+    "pyyaml>=6.0.3",
+]
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+    "testcontainers[postgres]>=4.15.0",
+]

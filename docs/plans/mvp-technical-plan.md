@@ -42,7 +42,7 @@ flowchart LR
     tunnel["Public tunnel<br/>(Cloudflare Tunnel)"]
 
     subgraph host["Agent host (group hardware)"]
-        agent["Agent service<br/>backend API + agent loop<br/>TypeScript, Effect 4"]
+        agent["Backend<br/>question API + agent loop<br/>TypeScript, Effect 4"]
         llm["Local model runtime<br/>(OpenAI-compatible API)"]
         emb["Embedding endpoint"]
     end
@@ -52,7 +52,7 @@ flowchart LR
     subgraph mesh["Private network (Tailscale)"]
         lt_sf["legal-text MCP<br/>SF corpus"]
         lt_ams["legal-text MCP<br/>Amsterdam corpus"]
-        d_sf["sf-data MCP"]
+        d_sf["sf-housing MCP"]
         d_ams["ams-data MCP"]
     end
 
@@ -101,7 +101,7 @@ The MVP demonstrates group-hosted: the agent and its model run on a team laptop,
 
 ## Components
 
-### Agent service
+### Backend (agent service)
 
 One TypeScript service is both the backend API the web app calls and the agent loop.
 
@@ -114,10 +114,10 @@ One TypeScript service is both the backend API the web app calls and the agent l
 
 ### MCP servers
 
-All servers are TypeScript, built with Effect's MCP server (`effect/ai/McpServer`, served over Streamable HTTP with `McpServer.layerHttp`). Each tool is an `effect/ai` `Tool` with Effect `Schema` input and output, registered through a `Toolkit`, so servers and agent use one schema system end to end. All servers follow one **shared contract**, kept as Effect `Schema` definitions in a shared package:
+All servers are TypeScript, built with Effect's MCP server (`effect/ai/McpServer`, served over Streamable HTTP with `McpServer.layerHttp`). Each tool is an `effect/ai` `Tool` with Effect `Schema` input and output, registered through a `Toolkit`, and returns its result as MCP `structuredContent` described by the tool's `outputSchema`. Servers share nothing with the backend but MCP itself, plus these conventions (helpers for TypeScript servers are in `shared/mcp-kit`):
 
 - **Tool naming.** Each tool is prefixed with its server (for example `sf_policy_search`, `ams_data_social_rent_pipeline`), so the model can tell same-purpose tools apart across cities.
-- **Citation object.** Every result carries the citations behind it: source, title, provision or table, version or effective date, source URL, archived file hash and language.
+- **Citation object.** Every result carries the citations behind it: source, title, provision or table, version or effective date, source URL, language, and stable source and citation IDs, in the shape of the citation schema in `protocol/`. The backend passes citations to the browser app unchanged; the browser shows them, and the evaluation checks them from traces. The archived file's hash stays in the load record, reached through the source ID.
 - **Errors.** Typed and returned to the model as tool results (`failureMode: "return"`), never thrown as transport failures, so the model can say "no data" rather than guess.
 - **Database access.** Each server connects with a role that can only read its own schema.
 
@@ -163,7 +163,7 @@ The costs are about 2 KB more storage per Amsterdam passage, and translating the
 
 #### City data servers
 
-One per city (`sf-data`, `ams-data`). Their tools are specific to each city's datasets and include its climate data (flood and sea-level-rise zones, heat stress, energy labels, building age).
+One per city (`sf-housing` for San Francisco). Their tools are specific to each city's datasets and include its climate data (flood and sea-level-rise zones, heat stress, energy labels, building age).
 
 Climate data sits inside each city's server because the MVP sources are city-specific. A separate climate server becomes worthwhile when one source covers many places (for example FEMA's national flood maps for several US cities); it would answer by location, not by city.
 
@@ -193,7 +193,7 @@ A Python package (uv, ruff, pytest) owns everything that loads or transforms dat
 | `raw_sf`, `raw_ams` | Python loaders | Alembic (raw SQL) | dbt |
 | `sf`, `ams` | dbt | dbt | The city's data server |
 | `policy_text_sf`, `policy_text_ams` | Python passage pipeline | Alembic | The matching legal-text server |
-| `app` | Agent service | `effect/sql` Migrator | Agent service, evaluation reports |
+| `app` | Backend | `effect/sql` Migrator | Backend, evaluation reports |
 
 No server reads another server's schema. Moving a server to its own database later is then a connection-string change.
 
@@ -301,14 +301,14 @@ One shared repository.
 **Proposed layout:**
 
 ```
-apps/agent/              agent service (backend API + agent loop)
-mcp/legal-text/          legal-text MCP server (one codebase, per-corpus config)
-mcp/sf-data/             SF data MCP server
-mcp/ams-data/            Amsterdam data MCP server
-packages/contract/       shared tool and citation schemas
-pipelines/               Python: loaders, PDF extraction, passages, embeddings, energy estimates
-pipelines/dbt/           dbt project
-config/                  sources, load filters, corpus membership, server directory
+backend/                 the question API and the agent loop
+browser-app/             web app (React)
+protocol/                API between the backend and the browser app, including the citation schema
+shared/mcp-kit/          optional MCP server helpers: formats, errors, citation IDs, database access
+shared/ingest/           Python library: fetch, archive and load sources; run dbt
+shared/legal-text/       legal-text MCP server and passage pipeline (one codebase, run per corpus)
+san-francisco/           sf-housing server, SF ingestion (sources, raw_sf migrations, dbt), SF legal-text corpus
+netherlands/             the Dutch nodes, same shape
 evaluation/              question set and expected answers
 docs/plans/              technical plans
 ```
@@ -325,8 +325,8 @@ Each spike answers one question and records its result in `docs/plans/spikes/`. 
 
 | ID | Question | Method | Decision it informs |
 |---|---|---|---|
-| S1 | Do tool calls and streaming work with each local runtime and model? | In a scratch Effect 4 project, point `@effect/ai-openai-compat` at Ollama, LM Studio, `mlx_lm.server` and llama.cpp; run a streamed two-tool round trip, including parallel tool calls, with each candidate model, with the tools served by a stub `McpServer` and bound through `McpClient.toolkit` | Local runtime; candidate models whose tool calling works; whether Effect's MCP server and client (marked unstable and experimental in Effect 4.1) hold up |
-| S2 | Can a small model pick the right tool among about 12? | Mock MCP servers with realistic tool descriptions; 20 routing questions; candidate models that fit a 24 GB M4 | Base model; tool design and naming |
+| S1 | Do tool calls and streaming work with each local runtime and model? | In a scratch Effect 4 project, point `@effect/ai-openai-compat` at Ollama, LM Studio, `mlx_lm.server` and llama.cpp; run a streamed two-tool round trip, including parallel tool calls, with each candidate model, with the tools served by a stub `McpServer` and bound through `McpClient.toolkit` | Local runtime; candidate models whose tool calling works; whether Effect's MCP server and client (marked unstable and experimental in Effect 4.1) hold up, including whether `McpServer` publishes `outputSchema` and returns `structuredContent` from a tool's result schema and `McpClient` passes it through |
+| S2 | Can a small model pick the right tool among about 12, and copy citation IDs exactly? | Mock MCP servers with realistic tool descriptions and citations; 20 routing questions; candidate models that fit a 24 GB M4; count markers that do not match a returned `citationId` | Base model; tool design and naming; whether the agent needs short citation aliases |
 | S3 | Which model translates Dutch legal text well enough, under a usable license? | Translate sample passages from the Huisvestingsverordening and national rent law with candidates: dedicated translation models (for example [OPUS-MT](https://huggingface.co/Helsinki-NLP/opus-mt-nl-en), MADLAD-400) and a general open model prompted to translate. Have a Dutch reader grade a sample, and check each license, including whether it allows commercial use. Test whether the Dutch identifier search adds value. | Translation model; whether the identifier search is kept |
 | S4 | Which embedding model, and how much storage? | Run hybrid search on a sample corpus in both languages with candidate multilingual embedding models; for Amsterdam, compare embedding the Dutch original versus the English translation; compare against vector-only and keyword-only to confirm each search adds value; measure storage per passage in Neon | Embedding model; which Amsterdam text is embedded; whether the storage escape hatch is needed |
 | S5 | Can energy be measured and estimated credibly? | Sample `powermetrics` around local requests; check EcoLogits coverage of the candidate cloud providers; confirm the candidate frontier model works fully through Chat Completions with `@effect/ai-openai-compat` (tool calls, streaming, token counts including reasoning tokens) | Energy method; cloud baseline providers; whether the frontier configuration needs the first-party fallback |
@@ -337,7 +337,7 @@ Each spike answers one question and records its result in `docs/plans/spikes/`. 
 | Milestone | Done when |
 |---|---|
 | M0. Sources and questions | A source proposal per city records each chosen source and the reason for choosing it, with its access method, license or reuse terms, and actual format checked. Provisional questions are drafted (see [Provisional questions](provisional-questions.md)), pending confirmation from the research team. The first rule-plus-data pair per city is chosen. Spikes S1–S6 run alongside and are recorded with decisions. |
-| M1. Contracts | The data servers' tool schemas, the citation contract and the backend API contract (the question endpoint and its streamed events) are defined as Effect `Schema` in the shared contract package, and reviewed against the provisional questions. |
+| M1. Contracts | The data servers' tool schemas, the citation contract and the backend API contract (the question endpoint and its streamed events) are defined as Effect `Schema` (the tool schemas in each server, the API and citation schemas in `protocol/`), and reviewed against the provisional questions. |
 | M2. Data foundation | Database schemas, roles and migrations exist; source files are archived in object storage; the first rule-plus-data pair per city is loaded **in full** with provenance (for example, for San Francisco, a section of the Administrative Code and a dataset that answers questions about it). |
 | M3. First answer | The agent loop, the legal-text server and each city's data server (with tools for the first pair) are running, and a rule-plus-data question returns a cited answer through the API endpoint, with a trace in `app`. |
 | M4. Remaining sources | The other chosen sources are loaded and their tools implemented. |
@@ -348,7 +348,7 @@ Loading one complete pair per city before the remaining sources tests both pipel
 
 M2 depends on spikes S3 and S4, because loading legal text means translating and embedding it.
 
-San Francisco work (source proposal, pipelines, corpus, `sf-data`) is owned by Molly. Amsterdam work (source proposal, pipelines, corpus, `ams-data`) is owned by Martin. Ownership of shared pieces is an open question.
+San Francisco work (source proposal, ingestion, corpus, `sf-housing`) is owned by Molly. Amsterdam work (source proposal, pipelines, corpus, `ams-data`) is owned by Martin. Ownership of shared pieces is an open question.
 
 ## Deferred options
 
@@ -371,7 +371,7 @@ San Francisco work (source proposal, pipelines, corpus, `sf-data`) is owned by M
 5. **Translation model** (spike S3), including whether its license allows commercial use if PolicyHuis becomes a company.
 6. **Provisional questions.** The research team confirms or revises the [provisional questions](provisional-questions.md), which drive the tool design in M1.
 7. **Demo questions**, chosen from user research.
-8. **Ownership of shared pieces**: the agent service, the shared contract, the legal-text server, evaluation.
+8. **Ownership of shared pieces**: the backend, `protocol/`, `shared/`, evaluation.
 9. **Data server tool design.** Fixed, parameterized tools only, or a constrained query tool as well? Fixed tools keep numbers traceable to tested queries; a query tool covers more questions.
 10. **License** for the code, and confirming each model's license allows this use.
 

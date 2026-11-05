@@ -11,11 +11,11 @@ The short, citable form of what we hold each other to in review.
 2. **Every upstream response is decoded through a parser or schema we own.** That includes source files, model tool-call arguments and MCP tool results. Raw JSON never crosses into domain code.
 3. **Persistence, network and model access stay in adapters.** The agent loop and tool handlers depend on services, not on clients or SDKs.
 4. **Dependencies form a DAG rooted in the domain.** No cycles, no domain → adapter imports.
-5. **Contexts share published contracts, never code.** Pipelines publish the city data and passage schemas, servers publish MCP tools, the agent publishes the backend API. The shared contract package holds only schemas.
-6. **No server reads another server's schema**, and the agent reads no server schema at all; it calls tools.
+5. **Contexts share published contracts, never code.** Pipelines publish the city data and passage schemas, servers publish MCP tools and their results, the backend publishes its API through `protocol/`. `protocol/` holds only schemas, and only the backend and the browser app import it.
+6. **No server reads another server's schema**, and the backend reads no server schema at all; it calls tools.
 7. **Numbers come from data, not from the model.** Every number in an answer comes from a tool result backed by a tested query.
-8. **Every claim carries a citation object from a tool result.** The agent never writes a citation from the model's text.
-9. **Tool errors are returned as tool results**, typed by the shared contract, never thrown as transport failures.
+8. **Every claim points to a citation a tool returned, by its citation ID.** No citation is written from the model's text: the browser app shows only citations that came back in tool results.
+9. **Tool errors are returned as tool results**, typed by the server that returns them, never thrown as transport failures.
 10. **One model layer.** The agent loop depends only on `LanguageModel`; the configuration chooses which layer provides it. No conditional imports per model.
 11. **Skip the layer when it earns nothing.** No substitution needed and no adapter calling it? Write a function.
 12. **A new term in the code is a new row in the [Ubiquitous Language](./ubiquitous-language.md)**, in the same PR.

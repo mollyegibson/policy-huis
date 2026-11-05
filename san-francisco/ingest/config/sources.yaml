@@ -1,0 +1,38 @@
+# Sources loaded into raw_sf. Each key is also the raw table's name.
+# kind: socrata reads a dataset from a Socrata portal (DataSF is data.sf.gov); arcgis_layer reads an ArcGIS FeatureServer layer.
+# format: json for rows with no geometry column used at load; geojson for layers whose geometry is loaded.
+
+development_pipeline:
+  kind: socrata
+  domain: data.sf.gov
+  dataset_id: 6jgi-cpb4
+  format: json
+
+affordable_pipeline:
+  kind: socrata
+  domain: data.sf.gov
+  dataset_id: aaxw-2cb8
+  format: json
+
+analysis_neighborhoods:
+  kind: socrata
+  domain: data.sf.gov
+  dataset_id: j2bu-swwd
+  format: json
+
+slr_66in_100yr_storm:
+  kind: socrata
+  domain: data.sf.gov
+  dataset_id: 6ann-usi8
+  format: geojson
+
+air_pollutant_exposure_zone:
+  kind: socrata
+  domain: data.sf.gov
+  dataset_id: t65d-x6p8
+  format: geojson
+
+sfpuc_100yr_storm:
+  kind: arcgis_layer
+  layer_url: https://gis.sfpuc.org/server/rest/services/Hosted/100_Year_Storm_Flood_Risk_Map_2024_Update/FeatureServer/2
+  format: geojson

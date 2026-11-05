@@ -1,6 +1,6 @@
 # Effect Style Guidance
 
-How we write TypeScript with [Effect 4](https://effect.website/) in the agent service, the MCP servers and the shared contract package. The examples were typechecked against `effect` 4.1.2 under `strict`. In Effect 4, most modules that were separate `@effect/*` packages in Effect 3 live inside `effect` itself: `effect/ai`, `effect/http`, `effect/http-api` and `effect/sql`. Database drivers such as `@effect/sql-pg` and the model providers such as `@effect/ai-openai-compat` are still separate packages.
+How we write TypeScript with [Effect 4](https://effect.website/) in the backend, the MCP servers, `protocol/` and `shared/mcp-kit/`. The examples were typechecked against `effect` 4.1.2 under `strict`. In Effect 4, most modules that were separate `@effect/*` packages in Effect 3 live inside `effect` itself: `effect/ai`, `effect/http`, `effect/http-api` and `effect/sql`. Database drivers such as `@effect/sql-pg` and the model providers such as `@effect/ai-openai-compat` are still separate packages.
 
 ## 1. Use Effect.fn for functions returning Effects
 
@@ -184,7 +184,7 @@ const TokenResponse = Schema.Struct({ access_token: Schema.Redacted(Schema.Strin
 
 ### Avoid Schema.Any and Schema.Unknown at boundaries
 
-`Schema.Any` and `Schema.Unknown` opt out of all validation. Only use them in truly dynamic contexts, and document why. MCP tool inputs and outputs are never one of them: every tool has a schema in the shared contract.
+`Schema.Any` and `Schema.Unknown` opt out of all validation. Only use them in truly dynamic contexts, and document why. MCP tool inputs and outputs are never one of them: every tool has input and output schemas in the server that defines it, published to clients as its `inputSchema` and `outputSchema`. The backend's pass-through of a tool result to the browser app is the one dynamic case: the browser decodes the citations in it with `protocol/`'s schema.
 
 ## 5. Use .make() for constructing schema-typed values
 
@@ -298,7 +298,7 @@ Never use plain `Error` subclasses or plain objects as typed errors; they can't 
 
 ### Tool errors are returned to the model
 
-An MCP tool's expected errors (no data for a period, a provision not in this version) are returned as the tool's result, typed by the shared contract, so the model can say "no data" rather than guess. They are not thrown as transport failures. Tools are `effect/ai` `Tool` definitions served by `McpServer`; set `failureMode: "return"` on each, so a handler's typed error becomes the tool's result. See [Domain-Driven Design § Tool errors are results](./domain-driven-design.md#tool-errors-are-results).
+An MCP tool's expected errors (no data for a period, a provision not in this version) are returned as the tool's result, typed by the server (with `UnknownValue` from `shared/mcp-kit`), so the model can say "no data" rather than guess. They are not thrown as transport failures. Tools are `effect/ai` `Tool` definitions served by `McpServer`; set `failureMode: "return"` on each, so a handler's typed error becomes the tool's result. See [Domain-Driven Design § Tool errors are results](./domain-driven-design.md#tool-errors-are-results).
 
 ## 8. Distinguish expected errors from defects
 

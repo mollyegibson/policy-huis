@@ -26,7 +26,7 @@ flowchart LR
     tunnel["Public tunnel<br/>(Cloudflare Tunnel)"]
 
     subgraph host["Agent host (group hardware)"]
-        agent["Agent service<br/>backend API + agent loop<br/>TypeScript, Effect 4"]
+        agent["Backend<br/>question API + agent loop<br/>TypeScript, Effect 4"]
         llm["Local model runtime<br/>(OpenAI-compatible API)"]
         emb["Embedding endpoint"]
     end
@@ -36,7 +36,7 @@ flowchart LR
     subgraph mesh["Private network (Tailscale)"]
         lt_sf["legal-text MCP<br/>SF corpus"]
         lt_ams["legal-text MCP<br/>Amsterdam corpus"]
-        d_sf["sf-data MCP"]
+        d_sf["sf-housing MCP"]
         d_ams["ams-data MCP"]
     end
 
@@ -71,17 +71,19 @@ The full design, including the spikes, milestones and open questions, is in the 
 
 ## Repository layout
 
-Proposed; directories other than `docs/` are created as the work starts.
+Each node (the agent, each city's servers) can run on its own device. Shared code is libraries that each node installs, never code a node calls at runtime. City-specific sources, migrations and models live in the city's directory. Directories are created as the work starts; `shared/ingest/` and `san-francisco/ingest/` exist now.
 
 ```
-apps/agent/              agent service (backend API + agent loop)
-mcp/legal-text/          legal-text MCP server (one codebase, per-corpus config)
-mcp/sf-data/             SF data MCP server
-mcp/ams-data/            Amsterdam data MCP server
-packages/contract/       shared tool and citation schemas
-pipelines/               Python: loaders, PDF extraction, passages, embeddings, energy estimates
-pipelines/dbt/           dbt project
-config/                  sources, load filters, corpus membership, server directory
+backend/                 the question API and the agent loop
+browser-app/             web app (React)
+protocol/                API between the backend and the browser app, including the citation schema
+shared/mcp-kit/          optional MCP server helpers: formats, errors, citation IDs, database access
+shared/ingest/           Python library: fetch, archive and load sources; run dbt
+shared/legal-text/       legal-text MCP server and passage pipeline (one codebase, run per corpus)
+san-francisco/housing-server/   sf-housing MCP server
+san-francisco/ingest/    SF sources, raw_sf migrations, sf dbt models
+san-francisco/legal-text/       SF corpus and deploy settings for its legal-text instance
+netherlands/             the Dutch nodes, same shape
 evaluation/              question set and expected answers
 docs/                    plans, architecture and style guides
 ```
@@ -98,13 +100,14 @@ docs/                    plans, architecture and style guides
 
 ## Team
 
-San Francisco work (sources, pipelines, corpus, `sf-data`) is owned by Molly; Amsterdam work (sources, pipelines, corpus, `ams-data`) by Martin. A research team, including a policy expert, checks the evaluation answers.
+San Francisco work (sources, ingestion, corpus, `sf-housing`) is owned by Molly; Amsterdam work (sources, pipelines, corpus, `ams-data`) by Martin. A research team, including a policy expert, checks the evaluation answers.
 
 ## Documentation
 
 - [MVP Technical Plan](./docs/plans/mvp-technical-plan.md): the backend design
 - [Provisional Questions](./docs/plans/provisional-questions.md): the draft question set
-- [San Francisco Plan](./docs/plans/sf-plan.md): San Francisco sources, servers and the agent loop
+- [San Francisco Plan](./docs/plans/sf-plan.md): San Francisco phases, sources, tools, contracts, schemas and the agent loop
+- [Netherlands Ingestion and Tools Plan](./docs/plans/netherlands-ingestion.md): loading the Dutch sources and designing the Dutch data server's tools
 - [Domain-Driven Design and Hexagonal Architecture](./docs/domain-driven-design.md): where code belongs and why
 - [Working Agreement](./docs/working-agreement.md): the rules we hold each other to in review
 - [Ubiquitous Language](./docs/ubiquitous-language.md): the vocabulary
