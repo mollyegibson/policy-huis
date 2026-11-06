@@ -1,14 +1,16 @@
 {#
   One row per project per quarterly snapshot. A project is identified by parcel, Planning case and
   building permit application together: a parcel can hold several projects. When a snapshot is loaded
-  more than once, its latest load wins.
+  more than once, its latest load wins. `source_version` is that load's source version (the dataset's
+  rows-updated date), which dated answers about the snapshot, such as days in a status, are counted to.
 #}
 WITH snapshot_loads AS (
-    SELECT DISTINCT ON (snapshot) load_id, snapshot
+    SELECT DISTINCT ON (snapshot) load_id, snapshot, source_version
     FROM (
         SELECT
             load_id,
             loaded_at,
+            source_version,
             substring(publisher_description FROM 'as of the end of (\d{4} Q[1-4])') AS snapshot
         FROM {{ source('raw_sf', 'load_manifest') }}
         WHERE source_key = 'development_pipeline'
@@ -18,6 +20,7 @@ WITH snapshot_loads AS (
 
 SELECT
     l.snapshot,
+    l.source_version,
     concat_ws(
         ':', r.record ->> 'blklot', coalesce(r.record ->> 'case_no', ''), coalesce(r.record ->> 'bpa_no', '')
     ) AS project_key,

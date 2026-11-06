@@ -5,12 +5,17 @@ import { describe, expect, layer } from "@effect/vitest"
 import { PostgreSqlContainer } from "@testcontainers/postgresql"
 import { Context, Effect, Layer, Redacted, Schema } from "effect"
 import { McpProtocol, McpServer, McpTest } from "effect/ai"
+import { SqlError } from "effect/sql"
 
 import { Citation } from "@policyhuis/protocol/Citation"
 
 import { SfHousingHandlers } from "../src/Handlers.ts"
 import { HousingRepo } from "../src/HousingRepo.ts"
 import { SfHousingToolkit } from "../src/Tools.ts"
+
+const refused = new SqlError.SqlError({
+  reason: new SqlError.ConnectionError({ cause: new Error("connection refused") })
+})
 
 const POSTGIS_IMAGE = "imresamu/postgis:17-3.5"
 const FIXTURE = fileURLToPath(new URL("./fixtures/sf.sql", import.meta.url))
@@ -60,6 +65,7 @@ layer(TestServer.layer, { timeout: 120_000 })("sf-housing server", (it) => {
       expect(tools.map((t) => t.name).sort()).toEqual([
         "affordable_pipeline_projects",
         "affordable_pipeline_summary",
+        "affordable_pipeline_units_by_income_band",
         "dataset_info",
         "development_pipeline_projects",
         "development_pipeline_summary",
@@ -70,7 +76,7 @@ layer(TestServer.layer, { timeout: 120_000 })("sf-housing server", (it) => {
   )
 
   describe("development_pipeline_projects", () => {
-    it.effect("filters the latest snapshot and reports time in status", () =>
+    it.effect("filters the latest snapshot and reports days in status up to the snapshot's source version", () =>
       Effect.gen(function* () {
         const content = yield* structured("development_pipeline_projects", { approvedBefore: "2020-01-01" })
         expect(content["snapshot"]).toBe("2026 Q2")
@@ -79,7 +85,7 @@ layer(TestServer.layer, { timeout: 120_000 })("sf-housing server", (it) => {
           Schema.Array(Schema.Struct({ projectKey: Schema.String, daysInStatus: Schema.Number }))
         )(content["projects"])
         expect(projects.map((p) => p.projectKey)).toEqual(["3800001:2019-000001PRJ:1"])
-        expect(projects[0]?.daysInStatus).toBeGreaterThan(0)
+        expect(projects[0]?.daysInStatus).toBe(2634)
       })
     )
 
@@ -150,10 +156,20 @@ layer(TestServer.layer, { timeout: 120_000 })("sf-housing server", (it) => {
 
   it.effect("totals affordable units by income band", () =>
     Effect.gen(function* () {
-      const content = yield* structured("affordable_pipeline_summary", { groupBy: "ami_band" })
+      const content = yield* structured("affordable_pipeline_units_by_income_band", {})
+      expect(content["bands"]).toEqual([
+        { amiBand: "_50_ami", projects: 2, unitsInBand: 110 },
+        { amiBand: "_80_ami", projects: 1, unitsInBand: 39 }
+      ])
+    })
+  )
+
+  it.effect("totals affordable units by status", () =>
+    Effect.gen(function* () {
+      const content = yield* structured("affordable_pipeline_summary", { groupBy: "status" })
       expect(content["groups"]).toEqual([
-        { key: "_50_ami", projects: 2, units: 110 },
-        { key: "_80_ami", projects: 1, units: 39 }
+        { key: "Construction", projects: 1, affordableUnits: 50 },
+        { key: "Pre-Construction", projects: 1, affordableUnits: 99 }
       ])
     })
   )
@@ -176,6 +192,19 @@ layer(TestServer.layer, { timeout: 120_000 })("sf-housing server", (it) => {
     })
   )
 
+  it.effect("returns a zone that has not been loaded as DataUnavailable", () =>
+    Effect.gen(function* () {
+      const result = yield* call("project_hazard_exposure", {
+        zone: "air_pollutant_exposure_zone",
+        projects: "affordable_pipeline"
+      })
+      expect(result.isError).toBe(true)
+      const text = JSON.stringify(result.content)
+      expect(text).toContain("DataUnavailable")
+      expect(text).toContain("air_pollutant_exposure_zone")
+    })
+  )
+
   it.effect("describes each dataset with the publisher's own description", () =>
     Effect.gen(function* () {
       const content = yield* structured("dataset_info", { dataset: "sfpuc_100yr_storm" })
@@ -191,6 +220,55 @@ layer(TestServer.layer, { timeout: 120_000 })("sf-housing server", (it) => {
           publisherDescription: "Stormwater flooding."
         }
       ])
+    })
+  )
+})
+
+/** A repo whose every query fails as one whose database refuses connections. */
+const unreachableRepo = Layer.succeed(HousingRepo, {
+  datasets: () => Effect.fail(refused),
+  snapshot: () => Effect.fail(refused),
+  developmentStatuses: () => Effect.fail(refused),
+  affordableStatuses: () => Effect.fail(refused),
+  neighborhoods: () => Effect.fail(refused),
+  districts: () => Effect.fail(refused),
+  developmentProjects: () => Effect.fail(refused),
+  developmentSummary: () => Effect.fail(refused),
+  affordableProjects: () => Effect.fail(refused),
+  affordableSummary: () => Effect.fail(refused),
+  affordableUnitsByIncomeBand: () => Effect.fail(refused),
+  zone: () => Effect.fail(refused),
+  exposure: () => Effect.fail(refused)
+})
+
+class UnreachableServer extends Context.Service<UnreachableServer, McpTest.Client>()("test/UnreachableServer") {
+  static readonly layer = Layer.effect(
+    this,
+    McpTest.makeClient(
+      McpServer.toolkit(SfHousingToolkit).pipe(Layer.provide(SfHousingHandlers), Layer.provide(unreachableRepo)),
+      { protocols: [McpProtocol.v2026_07_28] }
+    )
+  )
+}
+
+layer(UnreachableServer.layer)("sf-housing server without its database", (it) => {
+  it.effect("returns DatabaseUnavailable as an error result from every tool", () =>
+    Effect.gen(function* () {
+      const client = yield* UnreachableServer
+      const calls: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+        ["development_pipeline_projects", {}],
+        ["development_pipeline_summary", { groupBy: "status" }],
+        ["affordable_pipeline_projects", {}],
+        ["affordable_pipeline_summary", { groupBy: "status" }],
+        ["affordable_pipeline_units_by_income_band", {}],
+        ["project_hazard_exposure", { zone: "sfpuc_100yr_storm", projects: "development_pipeline" }],
+        ["dataset_info", {}]
+      ]
+      for (const [name, args] of calls) {
+        const result = yield* client.callTool({ name, arguments: args })
+        expect(result.isError).toBe(true)
+        expect(JSON.stringify(result.content)).toContain("DatabaseUnavailable")
+      }
     })
   )
 })

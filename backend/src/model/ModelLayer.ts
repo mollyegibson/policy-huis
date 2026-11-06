@@ -1,7 +1,8 @@
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
-import { Config, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
 
 import { activeModel, AgentConfig } from "../config/AgentConfig.ts"
+import { BackendEnv } from "../config/Env.ts"
 
 /**
  * The `LanguageModel` for the configured model configuration, through `@effect/ai-openai-compat`; the only module
@@ -13,7 +14,7 @@ export const ModelLayer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* AgentConfig
     const { key, endpoint } = yield* activeModel(config)
-    const apiKey = key === "local" ? undefined : yield* Config.Redacted(`${key.toUpperCase()}_API_KEY`)
+    const apiKey = key === "local" ? undefined : yield* BackendEnv.secret(`${key.toUpperCase()}_API_KEY`)
     return OpenAiLanguageModel.layer({
       model: endpoint.modelId,
       config: {

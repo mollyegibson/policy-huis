@@ -20,20 +20,20 @@ INSERT INTO sf.datasets VALUES
      NULL, '2025-12-12', 'Stormwater flooding.');
 
 CREATE TABLE sf.development_pipeline (
-    snapshot text NOT NULL, project_key text NOT NULL, block_lot text NOT NULL, name_or_address text NOT NULL,
-    status text NOT NULL, status_since date, planning_approved_on date, net_units integer, affordable_units integer,
+    snapshot text NOT NULL, source_version date NOT NULL, project_key text NOT NULL, block_lot text NOT NULL,
+    name_or_address text NOT NULL, status text NOT NULL, status_since date, planning_approved_on date, net_units integer, affordable_units integer,
     units_extremely_low integer, units_very_low integer, units_low integer, units_moderate integer,
     neighborhood text, supervisor_district integer, geom geometry(Point, 4326), load_id uuid,
     PRIMARY KEY (snapshot, project_key)
 );
 INSERT INTO sf.development_pipeline VALUES
-    ('2026 Q2', '3800001:2019-000001PRJ:1', '3800001', '1 Test St', 'PL Approved', '2019-06-12', '2019-06-12',
+    ('2026 Q2', '2026-08-28', '3800001:2019-000001PRJ:1', '3800001', '1 Test St', 'PL Approved', '2019-06-12', '2019-06-12',
      40, 8, 0, 4, 4, 0, 'Mission Bay', 6, ST_SetSRID(ST_MakePoint(-122.395, 37.775), 4326), NULL),
-    ('2026 Q2', '3800001:2019-000002PRJ:1', '3800001', '1 Test St', 'BP Issued', '2025-01-10', '2020-03-01',
+    ('2026 Q2', '2026-08-28', '3800001:2019-000002PRJ:1', '3800001', '1 Test St', 'BP Issued', '2025-01-10', '2020-03-01',
      12, 0, 0, 0, 0, 0, 'Castro/Upper Market', 8, ST_SetSRID(ST_MakePoint(-122.45, 37.75), 4326), NULL),
-    ('2026 Q2', '3800002:2020-000003PRJ:1', '3800002', '2 Test St', 'Construction', NULL, NULL,
+    ('2026 Q2', '2026-08-28', '3800002:2020-000003PRJ:1', '3800002', '2 Test St', 'Construction', NULL, NULL,
      20, 20, 5, 15, 0, 0, 'Mission Bay', 6, NULL, NULL),
-    ('2026 Q1', '3800001:2019-000001PRJ:1', '3800001', '1 Test St', 'PL Approved', '2019-06-12', '2019-06-12',
+    ('2026 Q1', '2026-05-21', '3800001:2019-000001PRJ:1', '3800001', '1 Test St', 'PL Approved', '2019-06-12', '2019-06-12',
      40, 8, 0, 4, 4, 0, 'Mission Bay', 6, NULL, NULL);
 
 CREATE TABLE sf.affordable_pipeline (

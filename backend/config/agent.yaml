@@ -31,6 +31,9 @@ tools:
 api:
   keepaliveInterval: 20 seconds
 
+trace:
+  writeTimeout: 10 seconds # provisional; longest a trace write may take, including waking the app database
+
 prompt:
   file: prompts/system.v1.md
   version: v1

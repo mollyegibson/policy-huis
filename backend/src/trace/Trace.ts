@@ -1,15 +1,22 @@
 import type { Failure } from "../loop/Failures.ts"
 import { failureDetail } from "../loop/Failures.ts"
-import type { LoopEvent, Outcome } from "../loop/LoopEvent.ts"
+import type { LoopEvent } from "../loop/LoopEvent.ts"
+import type { Outcome, ToolOutcome } from "../loop/Outcome.ts"
+import { OUTCOMES } from "../loop/Outcome.ts"
+
+/** How a question's trace ended: the loop's outcome, or `cancelled` when the browser disconnected first. */
+export const TRACE_OUTCOMES = [...OUTCOMES, "cancelled"] as const
+export type TraceOutcome = (typeof TRACE_OUTCOMES)[number]
 
 export interface ToolCallTrace {
   readonly callId: string
+  readonly providerCallId: string
   readonly step: number
   readonly tool: string
   readonly arguments: unknown
-  readonly outcome: "success" | "failure" | null
+  readonly outcome: ToolOutcome | null
   readonly result: unknown
-  readonly startedAt: number | null
+  readonly startedAt: number
   readonly endedAt: number | null
 }
 
@@ -55,31 +62,32 @@ export const foldTrace = (trace: Trace, event: LoopEvent): Trace => {
       }
     case "TextChunk":
       return { ...trace, answerText: trace.answerText + event.text }
-    case "ToolStart":
+    case "ToolCallStarted":
       return {
         ...trace,
         toolCalls: [
           ...trace.toolCalls,
           {
             callId: event.callId,
+            providerCallId: event.providerCallId,
             step: trace.currentStep,
             tool: event.tool,
             arguments: event.arguments,
             outcome: null,
             result: null,
-            startedAt: null,
+            startedAt: event.at,
             endedAt: null
           }
         ]
       }
-    case "ToolTimed":
-      return updateCall(trace, event.callId, (call) =>
-        call.startedAt === null ? { ...call, startedAt: event.at } : { ...call, endedAt: event.at }
-      )
+    case "ToolCallEnded":
+      return updateCall(trace, event.callId, (call) => ({ ...call, endedAt: event.at }))
     case "ToolEnd":
       return updateCall(trace, event.callId, (call) => ({ ...call, outcome: event.outcome, result: event.result }))
     case "ToolFailed":
       return updateCall(trace, event.callId, (call) => ({ ...call, result: event.encodedError }))
+    case "ToolStart":
+      return trace
     case "ModelRetried":
       return { ...trace, modelRetries: trace.modelRetries + 1 }
     case "Finished":
@@ -88,7 +96,7 @@ export const foldTrace = (trace: Trace, event: LoopEvent): Trace => {
 }
 
 /** A question whose stream ended without `Finished` was interrupted, because the browser disconnected. */
-export const traceOutcome = (trace: Trace): Outcome | "cancelled" => trace.outcome ?? "cancelled"
+export const traceOutcome = (trace: Trace): TraceOutcome => trace.outcome ?? "cancelled"
 
 export const traceErrorDetail = (trace: Trace): string | null =>
   trace.failure === null ? null : failureDetail(trace.failure)

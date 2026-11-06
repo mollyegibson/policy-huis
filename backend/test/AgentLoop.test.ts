@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Duration, Effect, Fiber, Ref, Stream } from "effect"
+import { Duration, Effect, Fiber, Ref, Schema, Stream } from "effect"
 import { AiError, Prompt } from "effect/ai"
 import { TestClock } from "effect/testing"
+
+import { CallId } from "@policyhuis/protocol/QuestionsApi"
 
 import type { LoopSettings } from "../src/loop/AgentLoop.ts"
 import { runAgentLoop } from "../src/loop/AgentLoop.ts"
@@ -90,12 +92,22 @@ describe("runAgentLoop", () => {
         parts: [toolCall("c1", "lookup", { key: "a" }), toolCall("c2", "lookup", { key: "b" }), finish("tool-calls")]
       }
       const { events } = yield* run([both, answer])
-      expect(
-        events
-          .filter((event) => event._tag === "ToolEnd")
-          .map((event) => event.callId)
-          .sort()
-      ).toEqual(["c1", "c2"])
+      const started = events.filter((event) => event._tag === "ToolCallStarted")
+      expect(started.map((event) => event.providerCallId)).toEqual(["c1", "c2"])
+      const ended = events.filter((event) => event._tag === "ToolEnd").map((event) => event.callId)
+      expect(ended.sort()).toEqual(started.map((event) => event.callId).sort())
+    })
+  )
+
+  it.effect("gives every tool call its own UUID, even when the provider reuses a call ID across steps", () =>
+    Effect.gen(function* () {
+      const { events } = yield* run([lookup("call_0", "a"), lookup("call_0", "b"), answer])
+      const starts = events.filter((event) => event._tag === "ToolStart").map((event) => event.callId)
+      expect(starts).toHaveLength(2)
+      expect(new Set(starts).size).toBe(2)
+      for (const callId of starts) expect(Schema.is(CallId)(callId)).toBe(true)
+      const ends = events.filter((event) => event._tag === "ToolEnd").map((event) => event.callId)
+      expect(ends).toEqual(starts)
     })
   )
 
@@ -160,13 +172,55 @@ describe("runAgentLoop", () => {
     })
   )
 
-  it.effect("does not retry once text has reached the browser", () =>
+  it.effect("retries a turn whose text was held back, since none of it reached the browser", () =>
     Effect.gen(function* () {
       const partial: ScriptedTurn = { parts: text("a", "partial"), failWith: aiError(new AiError.RateLimitError({})) }
-      const { events, calls } = yield* run([partial])
+      const { events, calls } = yield* runTimed([partial, answer], "5 seconds")
+      expect(calls).toHaveLength(2)
+      expect(events.filter((event) => event._tag === "TextChunk").map((event) => event.text)).toEqual(["the answer"])
+      expect(last(events).outcome).toBe("answered")
+    })
+  )
+
+  it.effect("does not retry once a tool call has reached the browser", () =>
+    Effect.gen(function* () {
+      const afterCall: ScriptedTurn = {
+        parts: [toolCall("c1", "lookup", { key: "k" })],
+        failWith: aiError(new AiError.RateLimitError({}))
+      }
+      const { events, calls } = yield* run([afterCall])
       expect(calls).toHaveLength(1)
-      expect(tags(events)).toEqual(["TextChunk"])
+      expect(tags(events)).toContain("ToolStart")
       expect(last(events).failure?._tag).toBe("ModelStopped")
+    })
+  )
+
+  it.effect("never sends text from a turn that calls a tool", () =>
+    Effect.gen(function* () {
+      const narrated: ScriptedTurn = {
+        parts: [...text("n", "Let me look that up."), toolCall("c1", "lookup", { key: "k" }), finish("tool-calls")]
+      }
+      const { events } = yield* run([narrated, answer])
+      expect(events.filter((event) => event._tag === "TextChunk").map((event) => event.text)).toEqual(["the answer"])
+    })
+  )
+
+  it.effect("continues after tool calls whatever finish reason the provider gives", () =>
+    Effect.gen(function* () {
+      const stopWithCall: ScriptedTurn = { parts: [toolCall("c1", "lookup", { key: "k" }), finish("stop")] }
+      const { events } = yield* run([stopWithCall, answer])
+      expect(last(events).outcome).toBe("answered")
+    })
+  )
+
+  it.effect("fails an answer the provider filtered or stopped for another reason", () =>
+    Effect.gen(function* () {
+      const filtered = yield* run([{ parts: [...text("a", "partial"), finish("content-filter")] }])
+      expect(last(filtered.events).outcome).toBe("failed")
+      expect(last(filtered.events).failure?._tag).toBe("ContentRefused")
+      const unknown = yield* run([{ parts: [...text("a", "partial"), finish("unknown")] }])
+      expect(last(unknown.events).outcome).toBe("failed")
+      expect(last(unknown.events).failure?._tag).toBe("UnexpectedFinish")
     })
   )
 
@@ -174,12 +228,13 @@ describe("runAgentLoop", () => {
     Effect.gen(function* () {
       const { events, calls } = yield* run([lookup("c1", "a"), lookup("c2", "b"), lookup("c3", "c"), answer])
       expect(calls).toHaveLength(4)
-      expect(calls[3]?.toolChoice).toBe("none")
+      expect(calls[0]?.toolNames).toEqual(["lookup"])
+      expect(calls[3]?.toolNames).toEqual([])
       expect(JSON.stringify(calls[3]?.prompt.content)).toContain("You have reached the limit on data lookups")
       expect(tags(events).at(-1)).toBe("TextChunk")
       const finished = last(events)
       expect(finished.outcome).toBe("step_limit")
-      expect(finished.failure).toEqual(Failure.StepLimit())
+      expect(finished.failure).toEqual(Failure.StepLimit({ maxSteps: SETTINGS.maxSteps }))
     })
   )
 
@@ -206,7 +261,7 @@ describe("runAgentLoop", () => {
   it.effect("answers from the earlier prompt when a result would overflow the context", () =>
     Effect.gen(function* () {
       const { events, calls } = yield* run([lookup("c1", "big"), answer])
-      expect(calls[1]?.toolChoice).toBe("none")
+      expect(calls[1]?.toolNames).toEqual([])
       const finalPrompt = JSON.stringify(calls[1]?.prompt.content)
       expect(finalPrompt).not.toContain("xxxx")
       expect(finalPrompt).toContain("The data looked up is more than you can read at once")

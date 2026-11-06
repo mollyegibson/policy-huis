@@ -21,13 +21,14 @@ CREATE TABLE "app"."requests" (
 --> statement-breakpoint
 CREATE TABLE "app"."tool_calls" (
 	"request_id" uuid NOT NULL,
-	"call_id" text NOT NULL,
+	"call_id" uuid NOT NULL,
+	"provider_call_id" text NOT NULL,
 	"step" integer NOT NULL,
 	"tool" text NOT NULL,
 	"arguments" jsonb NOT NULL,
 	"outcome" text NOT NULL,
 	"result" jsonb NOT NULL,
-	"latency_ms" integer NOT NULL,
+	"latency_ms" integer,
 	CONSTRAINT "tool_calls_request_id_call_id_pk" PRIMARY KEY("request_id","call_id"),
 	CONSTRAINT "tool_calls_outcome_check" CHECK ("app"."tool_calls"."outcome" IN ('success', 'failure'))
 );

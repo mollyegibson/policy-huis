@@ -2,15 +2,23 @@ import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api"
 
 export class QuestionRequest extends Schema.Class<QuestionRequest>("QuestionRequest")({
-  question: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(2000)))
+  question: Schema.String.pipe(
+    Schema.check(
+      Schema.isMinLength(1, { message: "A question must not be empty" }),
+      Schema.isMaxLength(2000, { message: "A question must be at most 2,000 characters" })
+    )
+  )
 }) {}
+
+/** The UUID the backend gives each tool call. */
+export const CallId = Schema.String.pipe(Schema.check(Schema.isUUID()))
 
 export class TextChunk extends Schema.TaggedClass<TextChunk>()("TextChunk", {
   text: Schema.String
 }) {}
 
 export class ToolStart extends Schema.TaggedClass<ToolStart>()("ToolStart", {
-  callId: Schema.String,
+  callId: CallId,
   tool: Schema.String,
   arguments: Schema.Unknown
 }) {}
@@ -21,7 +29,7 @@ export class ToolStart extends Schema.TaggedClass<ToolStart>()("ToolStart", {
  * `UnknownValue` or `TransportError`; its details stay in the trace.
  */
 export class ToolEnd extends Schema.TaggedClass<ToolEnd>()("ToolEnd", {
-  callId: Schema.String,
+  callId: CallId,
   tool: Schema.String,
   outcome: Schema.Literals(["success", "failure"]),
   result: Schema.Unknown,

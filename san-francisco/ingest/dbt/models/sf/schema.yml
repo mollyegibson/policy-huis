@@ -17,6 +17,9 @@ models:
       - name: snapshot
         data_tests:
           - not_null
+      - name: source_version
+        data_tests:
+          - not_null
       - name: project_key
         data_tests:
           - not_null

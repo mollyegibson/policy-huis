@@ -84,7 +84,8 @@ PolicyHuis is a monorepo: a single agent that answers housing-policy questions f
 | `backend/` | TypeScript | The backend: the question API and the agent loop |
 | `browser-app/` | TypeScript, React | Web app: asks questions and shows streamed, cited answers |
 | `protocol/` | TypeScript | The API between the backend and the browser app, including the citation schema the browser renders |
-| `shared/mcp-kit/` | TypeScript | Optional helpers for MCP servers: formats, the `UnknownValue` error, citation ID construction, read-only database access, server setup |
+| `shared/mcp-kit/` | TypeScript | Optional helpers for MCP servers: formats, the tool errors (`UnknownValue`, `DatabaseUnavailable`, `DataUnavailable`) and the mapping of database failures to them, citation ID construction |
+| `shared/node-config/` | TypeScript | Library every TypeScript node uses to read its configuration: YAML files decoded with a `Schema`, the `.env`-first provider, and `ConfigFileError` for anything missing |
 | `shared/ingest/` | Python (uv), dbt | Library: fetch, archive and load public sources into a raw schema; shared dbt macros; run dbt |
 | `shared/legal-text/` | TypeScript, Python | Legal-text MCP server, passage pipeline and its migrations; one codebase, run once per corpus |
 | `san-francisco/housing-server/` | TypeScript | The `sf-housing` MCP server: San Francisco's housing pipeline and climate-zone tools |
@@ -111,12 +112,13 @@ Contexts communicate through published contracts (database schemas, MCP tools an
 
 - Follow [Effect Style](./docs/effect-style.md) and, for the web app, [Front-end Code Style](./docs/front-end-code-style.md).
 - Manage workspaces with `yarn` (Yarn 4 through corepack: `corepack enable`, then `yarn install` at the repo root). Lint and format with ESLint and Prettier; test with `@effect/vitest`. Run `yarn lint && yarn format:check && yarn typecheck && yarn test` before finishing a change.
+- **Never edit `yarn.lock` by hand**, and never hand-edit dependencies in a `package.json`: add, remove and upgrade them with `yarn add` / `yarn remove` / `yarn up` (`yarn workspace <name> add <pkg>@<version>` for one workspace), and let Yarn write the lockfile.
 - TypeScript runs directly on Node's type stripping (`node src/main.ts`), so use only erasable syntax (no enums, namespaces or parameter properties); `tsc` only typechecks.
 - Import `@effect/platform-node` modules by path (`@effect/platform-node/NodeRuntime`): its index also loads the Redis module, which needs the optional `redis` package.
 - Server tests run against a throwaway PostGIS container (`imresamu/postgis:17-3.5`), so Docker must be running.
 - Use Effect 4 (`effect` 4.x, AI modules under `effect/ai`). Model access goes through a config layer, not conditional imports.
 - Validate with Effect `Schema`, not Zod.
-- The `app` schema is defined with Drizzle in `backend/src/db/schema.ts`. Run `yarn workspace @policyhuis/backend db:generate` after changing it, which writes a SQL migration to `backend/drizzle/`; the backend applies pending migrations at startup. Applied migrations never change.
+- The `app` schema is defined with Drizzle in `backend/src/db/schema.ts`. Run `yarn workspace @policyhuis/backend db:generate` after changing it, which writes a SQL migration to `backend/drizzle/`; the backend applies pending migrations at startup. Applied migrations never change. **Never write or edit a Drizzle migration by hand**: every migration is exactly what `drizzle-kit generate` writes. If a generated migration cannot run (for example, a column type change Postgres cannot apply), stop and ask; the fix is to delete the unapplied migration, change `schema.ts`, and have the database owner drop and recreate the schema, never custom SQL.
 
 # Information Source Hierarchy
 

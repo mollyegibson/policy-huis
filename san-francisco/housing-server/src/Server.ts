@@ -4,27 +4,23 @@ import { fileURLToPath } from "node:url"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { PgClient } from "@effect/sql-pg"
-import { Config, ConfigProvider, Effect, Layer, Option } from "effect"
+import { Effect, Layer } from "effect"
 import { McpProtocol, McpServer } from "effect/ai"
 import { HttpRouter } from "effect/http"
+
+import { dotEnv } from "@policyhuis/node-config"
 
 import { SfHousingHandlers } from "./Handlers.ts"
 import { HousingRepo } from "./HousingRepo.ts"
 import { SfHousingToolkit } from "./Tools.ts"
 
-const ENV_FILE = fileURLToPath(new URL("../.env", import.meta.url))
-
-/** Configuration from this server's `.env`, which takes priority over the shell, then from the environment. */
-export const ConfigLive = ConfigProvider.layer(
-  Effect.gen(function* () {
-    const env = ConfigProvider.fromEnv()
-    const dotEnv = yield* ConfigProvider.fromDotEnv({ path: ENV_FILE }).pipe(Effect.option)
-    return Option.match(dotEnv, { onNone: () => env, onSome: (file) => file.pipe(ConfigProvider.orElse(env)) })
-  })
-).pipe(Layer.provide(NodeServices.layer))
+/** `san-francisco/housing-server/.env`: the read-only database URL and the port to serve on. */
+const ServerEnv = dotEnv(fileURLToPath(new URL("../.env", import.meta.url)))
 
 /** The read-only connection to the `sf` schema, as the `sf_housing_reader` role. */
-export const DatabaseLive = PgClient.layerConfig({ url: Config.Redacted("SF_HOUSING_READER_DATABASE_URL") })
+export const DatabaseLive = Layer.unwrap(
+  Effect.map(ServerEnv.secret("SF_HOUSING_READER_DATABASE_URL"), (url) => PgClient.layer({ url }))
+)
 
 /** The sf-housing tools, served by `McpServer` over Streamable HTTP at `/mcp`. */
 export const McpLive = McpServer.layerHttp({
@@ -39,7 +35,13 @@ export const McpLive = McpServer.layerHttp({
   )
 })
 
+/** Node's HTTP server on `SF_HOUSING_PORT`. */
+const HttpServerLive = Layer.unwrap(
+  Effect.map(ServerEnv.port("SF_HOUSING_PORT"), (port) => NodeHttpServer.layer(createServer, { port }))
+)
+
 export const ServerLive = HttpRouter.serve(McpLive).pipe(
-  Layer.provide(NodeHttpServer.layerConfig(createServer, { port: Config.Port("SF_HOUSING_PORT") })),
-  Layer.provide(ConfigLive)
+  Layer.provide(HttpServerLive),
+  Layer.provide(ServerEnv.layer),
+  Layer.provide(NodeServices.layer)
 )

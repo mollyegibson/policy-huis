@@ -1,7 +1,9 @@
 import { drizzle } from "drizzle-orm/node-postgres"
-import { Config, Context, Effect, Layer, Redacted, Schema } from "effect"
+import { Context, Duration, Effect, Layer, Redacted, Schema } from "effect"
 import pg from "pg"
 
+import { AgentConfig } from "../config/AgentConfig.ts"
+import { BackendEnv } from "../config/Env.ts"
 import { requests, toolCalls } from "../db/schema.ts"
 import type { Trace } from "./Trace.ts"
 import { traceErrorDetail, traceOutcome } from "./Trace.ts"
@@ -27,13 +29,27 @@ export class TraceStore extends Context.Service<
   TraceStore,
   { readonly write: (record: TraceRecord) => Effect.Effect<void, TraceWriteFailed> }
 >()("backend/TraceStore") {
-  /** Writes to the `app` schema with Drizzle, over a pool on `APP_DATABASE_URL`. */
+  /**
+   * Writes to the `app` schema with Drizzle, over a pool on `APP_DATABASE_URL`. A write that has not finished within
+   * `trace.writeTimeout` fails, and the pool gives up connecting or querying after the same time, so an unreachable
+   * database cannot hold a write open.
+   */
   static readonly layer = Layer.effect(
     this,
     Effect.gen(function* () {
-      const url = yield* Config.Redacted("APP_DATABASE_URL")
+      const config = yield* AgentConfig
+      const url = yield* BackendEnv.secret("APP_DATABASE_URL")
+      const timeout = config.trace.writeTimeout
+      const timeoutMillis = Duration.toMillis(timeout)
       const pool = yield* Effect.acquireRelease(
-        Effect.sync(() => new pg.Pool({ connectionString: Redacted.value(url) })),
+        Effect.sync(
+          () =>
+            new pg.Pool({
+              connectionString: Redacted.value(url),
+              connectionTimeoutMillis: timeoutMillis,
+              query_timeout: timeoutMillis
+            })
+        ),
         (opened) => Effect.promise(() => opened.end())
       )
       const db = drizzle(pool)
@@ -42,7 +58,15 @@ export class TraceStore extends Context.Service<
           Effect.tryPromise({
             try: () => db.transaction((tx) => insertTrace(tx, record)),
             catch: (cause) => new TraceWriteFailed({ message: String(cause) })
-          })
+          }).pipe(
+            Effect.timeoutOrElse({
+              duration: timeout,
+              orElse: () =>
+                Effect.fail(
+                  new TraceWriteFailed({ message: `not written within ${String(Duration.toSeconds(timeout))} seconds` })
+                )
+            })
+          )
       }
     })
   )
@@ -80,12 +104,13 @@ const insertTrace = async (db: Database, record: TraceRecord) => {
           {
             requestId: record.requestId,
             callId: call.callId,
+            providerCallId: call.providerCallId,
             step: call.step,
             tool: call.tool,
             arguments: call.arguments,
             outcome: call.outcome,
             result: call.result,
-            latencyMs: call.startedAt !== null && call.endedAt !== null ? call.endedAt - call.startedAt : 0
+            latencyMs: call.endedAt === null ? null : call.endedAt - call.startedAt
           }
         ]
   )

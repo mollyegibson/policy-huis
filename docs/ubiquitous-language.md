@@ -29,8 +29,15 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | **Data server** | The MCP server for one city's housing, demographic and climate data (`sf-housing` for San Francisco). |
 | **Tool** | One operation an MCP server exposes, with an input and output schema. |
 | **Tool prefix** | The server's prefix on every tool name (e.g. `sf_`, `ams_data_`), so the model can tell same-purpose tools apart across cities. |
-| **Tool error** | A typed failure returned as a tool's result (e.g. no data for that period), not a transport failure. |
-| **Directory file** | The file in the repo listing each server's name, address, owner and tool prefix. The agent connects to every server it lists. |
+| **Tool error** | A typed failure returned as a tool's result (e.g. no data for that period), not a transport failure. Every server that reads a database can return **`DatabaseUnavailable`** (it could not connect or log in) and **`DataUnavailable`** (it reached the database, but the data the tool reads is not loaded or could not be read). |
+| **Call ID** | The UUID the backend gives each tool call, sent to the browser and used as the call's key in the trace. The model's provider has its own ID for the call (the provider call ID), which the trace keeps but which need not be unique. |
+| **Directory file** | The file in the repo listing each server's name, address, owner and tool prefix (`backend/config/servers.yaml`, decoded as `ServerDirectory`). The agent connects to every server it lists. |
+| **Unavailable server** | A server in the directory file that the agent could not reach for a question: never connected, so its tools were left out, or a call to it failed in transport. The answer names it, and may be missing its data. |
+| **Step** | One model turn with tools and the resolution of the tool calls it makes; one `LanguageModel.streamText` call. A question takes at most `maxSteps` steps. |
+| **Final turn** | The model turn without tools that answers from what was gathered when a limit is reached (the step limit or the context budget). |
+| **Narration** | Text a model writes in a turn that also calls a tool ("Let me look that up"). It stays in the prompt but is never sent to the browser. |
+| **Context budget** | The tokens a prompt may use: the model's context length less the tokens reserved for its answer. The loop never sends a prompt estimated to exceed it. |
+| **Outcome** | How a question ended: `answered`, `step_limit`, `context_limit`, `truncated` or `failed`, and in the trace also `cancelled` when the browser disconnected first. Every outcome but `answered` carries a message for the user. |
 | **Model configuration** | Which model provides `LanguageModel` for a run: Local (the open-weight model on the agent host), Same model in the cloud (the same open-weight model at a cloud provider) or Frontier (a closed cloud model, as the accuracy ceiling). |
 | **Agent host** | The machine running the backend and the local model runtime. |
 | **Trace** | The record of one request in the `app` schema: model configuration, tool calls, token counts, latency and energy sample. |
@@ -62,6 +69,8 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | **Manifest** | The table of loads: what was fetched, when, from where, with which filters, and the archived file's hash. |
 | **Archive** | The object storage holding every downloaded source file, unchanged. The archived file's SHA-256 identifies the exact bytes. |
 | **Source version** | Which edition of a source a load came from, as the source exposes it (a release label, last-edited date or fetch time). |
+| **Snapshot** | One quarter of San Francisco's development pipeline as Planning published it (e.g. "2026 Q2"). Every snapshot loaded is kept; a tool answers from the latest, read once per call, and counts days in a status to the snapshot's source version. |
+| **Query key** | The first 16 hex characters of the SHA-256 of a tool name and its parameters as canonical JSON; the part of a dataset citation's ID that names the query, so the same query always has the same citation ID. |
 | **Filter** | Rows dropped as a load is parsed, such as a nationwide dataset filtered to one city. Set in the city's `config/sources.yaml` and recorded in the manifest. |
 | **raw_* / sf, ams / policy_text_* / app** | The database schemas: data as fetched per city; dbt models each data server reads; passages each legal-text server reads; agent traces and evaluation results. |
 

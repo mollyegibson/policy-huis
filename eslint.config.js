@@ -2,7 +2,7 @@ import js from "@eslint/js"
 import tseslint from "typescript-eslint"
 
 export default tseslint.config(
-  { ignores: ["**/node_modules/**", ".yarn/**", "**/.venv/**", "**/dbt/**", "research/**"] },
+  { ignores: ["**/node_modules/**", ".yarn/**", "**/.venv/**", "**/dbt/**", "docs/**"] },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   {

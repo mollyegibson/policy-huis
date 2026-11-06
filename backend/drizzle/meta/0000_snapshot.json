@@ -1,5 +1,5 @@
 {
-  "id": "7d8fc7b1-d4fd-4303-98d4-c1ab4eb8ade5",
+  "id": "af8ed792-8906-4ce1-8db5-d15a2ab4af61",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -124,6 +124,12 @@
         },
         "call_id": {
           "name": "call_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_call_id": {
+          "name": "provider_call_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -162,7 +168,7 @@
           "name": "latency_ms",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         }
       },
       "indexes": {},
@@ -172,8 +178,12 @@
           "tableFrom": "tool_calls",
           "tableTo": "requests",
           "schemaTo": "app",
-          "columnsFrom": ["request_id"],
-          "columnsTo": ["request_id"],
+          "columnsFrom": [
+            "request_id"
+          ],
+          "columnsTo": [
+            "request_id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -181,7 +191,10 @@
       "compositePrimaryKeys": {
         "tool_calls_request_id_call_id_pk": {
           "name": "tool_calls_request_id_call_id_pk",
-          "columns": ["request_id", "call_id"]
+          "columns": [
+            "request_id",
+            "call_id"
+          ]
         }
       },
       "uniqueConstraints": {},

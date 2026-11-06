@@ -2,7 +2,9 @@ import { fileURLToPath } from "node:url"
 
 import { Context, Duration, Effect, Layer, Schema } from "effect"
 
-import { decodeConfig, HttpUrl, readYaml } from "./ConfigFile.ts"
+import { ConfigFileError, loadYaml } from "@policyhuis/node-config"
+
+import { HttpUrl } from "./HttpUrl.ts"
 
 export const AGENT_CONFIG_FILE = fileURLToPath(new URL("../../config/agent.yaml", import.meta.url))
 
@@ -102,6 +104,10 @@ const ApiSection = Schema.Struct({
   keepaliveInterval: PositiveDuration
 })
 
+const TraceSection = Schema.Struct({
+  writeTimeout: PositiveDuration
+})
+
 const PromptSection = Schema.Struct({
   file: Schema.NonEmptyString,
   version: Schema.NonEmptyString
@@ -113,23 +119,27 @@ export const AgentConfigFile = Schema.Struct({
   loop: LoopSection,
   tools: ToolsSection,
   api: ApiSection,
+  trace: TraceSection,
   prompt: PromptSection
 })
 export type AgentConfigFile = typeof AgentConfigFile.Type
 
-export const loadAgentConfig = Effect.fn("AgentConfig.load")(function* (path: string) {
-  return yield* decodeConfig(AgentConfigFile)(path, yield* readYaml(path))
-})
+export const loadAgentConfig = loadYaml(AgentConfigFile)
 
 export class AgentConfig extends Context.Service<AgentConfig, AgentConfigFile>()("backend/AgentConfig") {
   static readonly layer = (path: string = AGENT_CONFIG_FILE) => Layer.effect(this, loadAgentConfig(path))
 }
 
-/** The selected model configuration's key and endpoint; the schema guarantees the endpoint exists. */
-export const activeModel = (config: AgentConfigFile) =>
-  Effect.gen(function* () {
-    const key = config.model.configuration
-    const endpoint = config.model.configurations[key]
-    if (endpoint === undefined) return yield* Effect.die(`no entry under configurations for "${key}"`)
-    return { key, endpoint }
-  })
+/**
+ * The selected model configuration's key and endpoint. The schema already rejects a selection with no entry; this
+ * reports one the same way if the config was built some other way.
+ */
+export const activeModel = (config: AgentConfigFile) => {
+  const key = config.model.configuration
+  const endpoint = config.model.configurations[key]
+  return endpoint === undefined
+    ? Effect.fail(
+        new ConfigFileError({ path: AGENT_CONFIG_FILE, message: `No entry under configurations for "${key}"` })
+      )
+    : Effect.succeed({ key, endpoint })
+}

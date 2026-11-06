@@ -7,6 +7,7 @@ import { HttpApiClient } from "effect/http-api"
 import type { AgentStreamEvent } from "@policyhuis/protocol/QuestionsApi"
 import { PolicyHuisApi, QuestionRequest } from "@policyhuis/protocol/QuestionsApi"
 
+import { Agent } from "../src/agent/Agent.ts"
 import { QuestionsApiLive } from "../src/api/QuestionsHandler.ts"
 import type { AgentConfigFile } from "../src/config/AgentConfig.ts"
 import { AgentConfig } from "../src/config/AgentConfig.ts"
@@ -48,26 +49,40 @@ const CONFIG: AgentConfigFile = {
     reconnectBaseDelay: Duration.millis(50),
     reconnectMaxDelay: Duration.millis(200)
   },
+  trace: {
+    writeTimeout: Duration.seconds(5)
+  },
   api: { keepaliveInterval: Duration.millis(300) },
   prompt: { file: "unused", version: "test" }
 }
 
 class Traces extends Context.Service<Traces, Ref.Ref<ReadonlyArray<TraceRecord>>>()("test/Traces") {}
 
-/** The question API on a local port with a scripted model, test MCP servers and an in-memory trace store. */
-const apiLayer = (script: ReadonlyArray<ScriptedTurn>, servers: ReadonlyArray<ServerEntry>) => {
+/**
+ * The question API on a local port with a scripted model, test MCP servers and an in-memory trace store; with
+ * `hangingTraceWrites`, every trace write never finishes.
+ */
+const apiLayer = (
+  script: ReadonlyArray<ScriptedTurn>,
+  servers: ReadonlyArray<ServerEntry>,
+  options: { readonly hangingTraceWrites?: boolean } = {}
+) => {
   const traces = Layer.effect(Traces, Ref.make<ReadonlyArray<TraceRecord>>([]))
   const store = Layer.effect(
     TraceStore,
     Effect.gen(function* () {
       const ref = yield* Traces
-      return { write: (record: TraceRecord) => Ref.update(ref, (all) => [...all, record]) }
+      return {
+        write: (record: TraceRecord) =>
+          options.hangingTraceWrites === true ? Effect.never : Ref.update(ref, (all) => [...all, record])
+      }
     })
   )
   const connections = Layer.effect(McpConnections, makeConnections(servers, CONFIG.tools)).pipe(
     Layer.provide(FetchHttpClient.layer)
   )
   return HttpRouter.serve(QuestionsApiLive, { disableListenLog: true, disableLogger: true }).pipe(
+    Layer.provide(Agent.layer),
     Layer.provide(
       Layer.mergeAll(
         store,
@@ -154,6 +169,28 @@ describe("POST /api/v1/questions", () => {
           const third = yield* collect(yield* ask("third"))
           expect(third.at(-1)?._tag).toBe("Complete")
         }).pipe(Effect.provide(apiLayer(script, [{ name: "a-data", prefix: "a_", url: server.url }])))
+        yield* server.stop
+      }).pipe(Effect.scoped),
+    30_000
+  )
+
+  it.live(
+    "admits the next question while the previous question's trace is still being written",
+    () =>
+      Effect.gen(function* () {
+        const server = yield* startTestServer(0)
+        const outcomes = yield* Effect.gen(function* () {
+          const first = yield* collect(yield* ask("What is the word?"))
+          const second = yield* collect(yield* ask("What is the word again?"))
+          return [first.at(-1), second.at(-1)].map((event) => (event?._tag === "Complete" ? event.outcome : null))
+        }).pipe(
+          Effect.provide(
+            apiLayer([...answerScript, ...answerScript], [{ name: "a-data", prefix: "a_", url: server.url }], {
+              hangingTraceWrites: true
+            })
+          )
+        )
+        expect(outcomes).toEqual(["answered", "answered"])
         yield* server.stop
       }).pipe(Effect.scoped),
     30_000

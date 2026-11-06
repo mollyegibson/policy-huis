@@ -1,8 +1,10 @@
 import { fileURLToPath } from "node:url"
 
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Layer, Schema } from "effect"
 
-import { decodeConfig, HttpUrl, readYaml } from "./ConfigFile.ts"
+import { loadYaml } from "@policyhuis/node-config"
+
+import { HttpUrl } from "./HttpUrl.ts"
 
 export const SERVER_DIRECTORY_FILE = fileURLToPath(new URL("../../config/servers.yaml", import.meta.url))
 
@@ -51,9 +53,7 @@ export const ServerDirectoryFile = Schema.Struct({
 })
 export type ServerDirectoryFile = typeof ServerDirectoryFile.Type
 
-export const loadServerDirectory = Effect.fn("ServerDirectory.load")(function* (path: string) {
-  return yield* decodeConfig(ServerDirectoryFile)(path, yield* readYaml(path))
-})
+export const loadServerDirectory = loadYaml(ServerDirectoryFile)
 
 export class ServerDirectory extends Context.Service<ServerDirectory, ServerDirectoryFile>()(
   "backend/ServerDirectory"

@@ -12,6 +12,7 @@
     "@effect/platform-node": "4.1.2",
     "@effect/sql-pg": "4.1.2",
     "@policyhuis/mcp-kit": "workspace:*",
+    "@policyhuis/node-config": "workspace:*",
     "@policyhuis/protocol": "workspace:*",
     "effect": "4.1.2"
   },

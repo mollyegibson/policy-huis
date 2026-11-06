@@ -53,27 +53,26 @@ describe("modelFailure", () => {
 })
 
 describe("messageFor", () => {
-  const context = {
-    requestId: "00000000-0000-4000-8000-000000000001",
-    maxSteps: 10,
-    stepTimeout: Duration.seconds(60),
-    requestTimeout: Duration.minutes(3)
-  }
+  const requestId = "00000000-0000-4000-8000-000000000001"
 
-  it("fills in the configured limits and the request ID", () => {
-    expect(messageFor(Failure.StepLimit(), context)).toContain("more than 10 rounds of data lookups")
-    expect(messageFor(Failure.StepTimedOut(), context)).toContain("longer than 60 seconds")
-    expect(messageFor(Failure.RequestTimedOut(), context)).toContain("longer than 180 seconds")
-    expect(messageFor(Failure.Internal({ detail: "boom" }), context)).toContain(context.requestId)
+  it("names the limit that was reached, and the request ID for backend errors", () => {
+    expect(messageFor(Failure.StepLimit({ maxSteps: 10 }), requestId)).toContain("more than 10 rounds of data lookups")
+    expect(messageFor(Failure.StepTimedOut({ timeout: Duration.seconds(60) }), requestId)).toContain(
+      "longer than 60 seconds"
+    )
+    expect(messageFor(Failure.RequestTimedOut({ timeout: Duration.minutes(3) }), requestId)).toContain(
+      "longer than 180 seconds"
+    )
+    expect(messageFor(Failure.Internal({ detail: "boom" }), requestId)).toContain(requestId)
   })
 
   it("has a distinct message for every failure", () => {
     const failures = [
-      Failure.StepLimit(),
-      Failure.ContextLimit(),
-      Failure.Truncated(),
-      Failure.StepTimedOut(),
-      Failure.RequestTimedOut(),
+      Failure.StepLimit({ maxSteps: 10 }),
+      Failure.ContextLimit({ estimatedTokens: 2_000, availableTokens: 1_000 }),
+      Failure.Truncated({ answerTokens: 100 }),
+      Failure.StepTimedOut({ timeout: Duration.seconds(60) }),
+      Failure.RequestTimedOut({ timeout: Duration.minutes(3) }),
       ...(
         [
           "ModelUnreachable",
@@ -81,6 +80,7 @@ describe("messageFor", () => {
           "AuthenticationFailed",
           "QuotaExhausted",
           "ContentRefused",
+          "UnexpectedFinish",
           "RequestRejected",
           "UnreadableResponse",
           "InvalidToolCalls",
@@ -89,12 +89,12 @@ describe("messageFor", () => {
         ] as const
       ).map((tag) => Failure[tag]({ detail: "raw" }))
     ]
-    const messages = new Set(failures.map((failure) => messageFor(failure, context)))
+    const messages = new Set(failures.map((failure) => messageFor(failure, requestId)))
     expect(messages.size).toBe(failures.length)
   })
 
   it("never shows the raw error", () => {
-    expect(messageFor(Failure.ModelStopped({ detail: "secret upstream detail" }), context)).not.toContain("secret")
+    expect(messageFor(Failure.ModelStopped({ detail: "secret upstream detail" }), requestId)).not.toContain("secret")
   })
 })
 

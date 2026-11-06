@@ -7,6 +7,7 @@
     "backend",
     "protocol",
     "shared/mcp-kit",
+    "shared/node-config",
     "san-francisco/housing-server"
   ],
   "scripts": {

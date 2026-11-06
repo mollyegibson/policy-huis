@@ -1,11 +1,12 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Duration, Effect, Schema } from "effect"
+import { Duration, Effect, Layer, Schema } from "effect"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { parse } from "yaml"
 
-import { AGENT_CONFIG_FILE, AgentConfigFile, loadAgentConfig } from "../src/config/AgentConfig.ts"
-import { ConfigFileError, decodeConfig } from "../src/config/ConfigFile.ts"
+import { AGENT_CONFIG_FILE, AgentConfig, AgentConfigFile, loadAgentConfig } from "../src/config/AgentConfig.ts"
+import { ConfigFileError, decodeConfig } from "@policyhuis/node-config"
 import { loadServerDirectory, SERVER_DIRECTORY_FILE, ServerDirectoryFile } from "../src/config/ServerDirectory.ts"
+import { SystemPrompt } from "../src/loop/SystemPrompt.ts"
 
 /** Synthetic values for decoding tests only; they are not the backend's configuration. */
 const AGENT_YAML = `
@@ -35,6 +36,8 @@ tools:
   reconnectMaxDelay: 1 minute
 api:
   keepaliveInterval: 15 seconds
+trace:
+  writeTimeout: 5 seconds
 prompt:
   file: prompts/system.v1.md
   version: v1
@@ -102,6 +105,16 @@ describe("checked-in agent.yaml", () => {
       const config = yield* loadAgentConfig(AGENT_CONFIG_FILE)
       expect(config.model.configurations[config.model.configuration]).toBeDefined()
     }).pipe(Effect.provide(NodeServices.layer))
+  )
+
+  it.effect("names a system prompt file that exists", () =>
+    Effect.gen(function* () {
+      const prompt = yield* SystemPrompt
+      expect(prompt.text.length).toBeGreaterThan(0)
+    }).pipe(
+      Effect.provide(SystemPrompt.layer.pipe(Layer.provide(AgentConfig.layer()))),
+      Effect.provide(NodeServices.layer)
+    )
   )
 })
 

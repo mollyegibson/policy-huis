@@ -1,10 +1,13 @@
 import { Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 
-import { IsoDate, NonNegativeInt, PositiveInt, UnknownValue } from "@policyhuis/mcp-kit"
+import { DataErrors, IsoDate, NonNegativeInt, PositiveInt, UnknownValue } from "@policyhuis/mcp-kit"
 import { Citation } from "@policyhuis/protocol/Citation"
 
 const Citations = Schema.Array(Citation)
+
+/** What a tool returns to the model instead of a result: an input the data does not contain, or data it cannot read. */
+const ToolFailure = Schema.Union([UnknownValue, ...DataErrors])
 
 const NeighborhoodName = Schema.String.annotate({
   description: "An analysis neighborhood name, such as appears in tool results"
@@ -82,7 +85,7 @@ export const DevelopmentPipelineProjects = Tool.make("development_pipeline_proje
     snapshot: Schema.String,
     citations: Citations
   }),
-  failure: UnknownValue,
+  failure: ToolFailure,
   failureMode: "return"
 })
 
@@ -106,7 +109,7 @@ export const DevelopmentPipelineSummary = Tool.make("development_pipeline_summar
     snapshot: Schema.String,
     citations: Citations
   }),
-  failure: UnknownValue,
+  failure: ToolFailure,
   failureMode: "return"
 })
 
@@ -127,23 +130,40 @@ export const AffordablePipelineProjects = Tool.make("affordable_pipeline_project
     dataAsOf: IsoDate,
     citations: Citations
   }),
-  failure: UnknownValue,
+  failure: ToolFailure,
   failureMode: "return"
 })
 
 export const AffordablePipelineSummary = Tool.make("affordable_pipeline_summary", {
   description:
-    "Total MOHCD's affordable pipeline projects and units by status, construction stage, neighborhood, district or income band.",
+    "Total MOHCD's affordable pipeline projects and their affordable units by status, construction stage, neighborhood or district. For units by income band, use affordable_pipeline_units_by_income_band.",
   parameters: Schema.Struct({
-    groupBy: Schema.Literals(["status", "construction_status", "neighborhood", "district", "ami_band"]),
+    groupBy: Schema.Literals(["status", "construction_status", "neighborhood", "district"]),
     status: Schema.optional(AffordableStatus)
   }),
   success: Schema.Struct({
-    groups: Schema.Array(Schema.Struct({ key: Schema.String, projects: NonNegativeInt, units: NonNegativeInt })),
+    groups: Schema.Array(
+      Schema.Struct({ key: Schema.String, projects: NonNegativeInt, affordableUnits: NonNegativeInt })
+    ),
     dataAsOf: IsoDate,
     citations: Citations
   }),
-  failure: UnknownValue,
+  failure: ToolFailure,
+  failureMode: "return"
+})
+
+export const AffordablePipelineUnitsByIncomeBand = Tool.make("affordable_pipeline_units_by_income_band", {
+  description:
+    "Total MOHCD's affordable pipeline units in each income band, as a share of area median income (AMI), with how many projects have units in that band. Bands are named as MOHCD's dataset names its columns, such as _50_ami for 50% of AMI. A project with units in several bands is counted in each, so the project counts do not add up to the number of projects.",
+  parameters: Schema.Struct({ status: Schema.optional(AffordableStatus) }),
+  success: Schema.Struct({
+    bands: Schema.Array(
+      Schema.Struct({ amiBand: Schema.String, projects: NonNegativeInt, unitsInBand: NonNegativeInt })
+    ),
+    dataAsOf: IsoDate,
+    citations: Citations
+  }),
+  failure: ToolFailure,
   failureMode: "return"
 })
 
@@ -174,7 +194,7 @@ export const ProjectHazardExposure = Tool.make("project_hazard_exposure", {
     ),
     citations: Citations
   }),
-  failure: UnknownValue,
+  failure: ToolFailure,
   failureMode: "return"
 })
 
@@ -196,7 +216,7 @@ export const DatasetInfo = Tool.make("dataset_info", {
     ),
     citations: Citations
   }),
-  failure: UnknownValue,
+  failure: ToolFailure,
   failureMode: "return"
 })
 
@@ -205,6 +225,7 @@ export const SfHousingToolkit = Toolkit.make(
   DevelopmentPipelineSummary,
   AffordablePipelineProjects,
   AffordablePipelineSummary,
+  AffordablePipelineUnitsByIncomeBand,
   ProjectHazardExposure,
   DatasetInfo
 )

@@ -7,7 +7,8 @@ import type { ServerEntry } from "../src/config/ServerDirectory.ts"
 import type { LoopSettings } from "../src/loop/AgentLoop.ts"
 import { runAgentLoop } from "../src/loop/AgentLoop.ts"
 import { makeConnections } from "../src/tools/McpConnections.ts"
-import { buildTurnTools } from "../src/tools/TurnToolkit.ts"
+import type { TurnTools } from "../src/tools/TurnToolkit.ts"
+import { turnTools } from "../src/tools/TurnToolkit.ts"
 import { finish, scriptedModel, text, toolCall } from "./support/ScriptedModel.ts"
 import { startTestServer } from "./support/TestMcpServer.ts"
 
@@ -33,7 +34,7 @@ const RECONNECT = {
 const entry = (name: string, prefix: string, url: string): ServerEntry => ({ name, prefix, url })
 
 /** Asks the scripted model to call `tool` with `word`, then answer, and returns the loop's `ToolEnd`. */
-const callThroughLoop = (tools: Effect.Success<ReturnType<typeof buildTurnTools>>, tool: string, word: string) =>
+const callThroughLoop = (tools: TurnTools, tool: string, word: string) =>
   runAgentLoop(Prompt.make("question"), tools.toolkit, SETTINGS).pipe(
     Stream.runCollect,
     Effect.map((events) => Array.from(events).find((event) => event._tag === "ToolEnd")),
@@ -63,7 +64,7 @@ describe("MCP connections", () => {
           [entry("a-data", "a_", a.url), entry("b-data", "b_", b.url)],
           RECONNECT
         )
-        const tools = yield* buildTurnTools(yield* connections.current, Duration.seconds(5))
+        const tools = turnTools(yield* connections.current)
         expect(Object.keys(tools.toolkit.tools).sort()).toEqual(["a_echo", "b_echo"])
         expect(tools.unavailable).toEqual([])
         expect(tools.serverOf("b_echo")).toBe("b-data")
@@ -83,7 +84,7 @@ describe("MCP connections", () => {
       Effect.gen(function* () {
         const server = yield* startTestServer(0)
         const connections = yield* makeConnections([entry("a-data", "a_", server.url)], RECONNECT)
-        const tools = yield* buildTurnTools(yield* connections.current, Duration.seconds(5))
+        const tools = turnTools(yield* connections.current)
 
         const unknown = yield* callThroughLoop(tools, "a_echo", "unknown")
         expect([unknown?.outcome, unknown?.error, unknown?.result]).toEqual(["failure", "UnknownWord", null])
@@ -104,13 +105,13 @@ describe("MCP connections", () => {
         yield* probe.stop
 
         const connections = yield* makeConnections([entry("a-data", "a_", probe.url)], RECONNECT)
-        const before = yield* buildTurnTools(yield* connections.current, Duration.seconds(5))
+        const before = turnTools(yield* connections.current)
         expect(before.unavailable).toEqual(["a-data"])
         expect(Object.keys(before.toolkit.tools)).toEqual([])
 
         const server = yield* startTestServer(port)
         yield* waitUntil(connections.current, (states) => states.every((s) => Option.isSome(s.connection)))
-        const after = yield* buildTurnTools(yield* connections.current, Duration.seconds(5))
+        const after = turnTools(yield* connections.current)
         expect(after.unavailable).toEqual([])
         expect(Object.keys(after.toolkit.tools)).toEqual(["a_echo"])
         yield* server.stop
@@ -124,7 +125,7 @@ describe("MCP connections", () => {
       Effect.gen(function* () {
         const first = yield* startTestServer(0)
         const connections = yield* makeConnections([entry("a-data", "a_", first.url)], RECONNECT)
-        const tools = yield* buildTurnTools(yield* connections.current, Duration.seconds(5))
+        const tools = turnTools(yield* connections.current)
         yield* first.stop
         const second = yield* startTestServer(first.port)
         const end = yield* callThroughLoop(tools, "a_echo", "again")

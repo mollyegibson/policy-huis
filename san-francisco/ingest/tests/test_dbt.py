@@ -36,6 +36,16 @@ def test_development_pipeline_keeps_parcels_with_several_projects(built_url: str
     ]
 
 
+def test_development_pipeline_carries_its_snapshot_source_version(built_url: str) -> None:
+    with psycopg.connect(built_url) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT d.snapshot, d.source_version = m.source_version "
+            "FROM sf.development_pipeline AS d JOIN raw_sf.load_manifest AS m ON m.load_id = d.load_id"
+        ).fetchall()
+
+    assert rows == [("2026 Q2", True)]
+
+
 def test_ami_units_unpivot_drops_empty_bands(built_url: str) -> None:
     with psycopg.connect(built_url) as conn:
         rows = conn.execute(

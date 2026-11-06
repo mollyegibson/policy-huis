@@ -12,7 +12,7 @@ export interface ScriptedTurn {
 
 export interface RecordedCall {
   readonly prompt: Prompt.Prompt
-  readonly toolChoice: unknown
+  readonly toolNames: ReadonlyArray<string>
 }
 
 export class ModelCalls extends Context.Service<ModelCalls, Ref.Ref<ReadonlyArray<RecordedCall>>>()(
@@ -61,7 +61,10 @@ export const scriptedModel = (script: ReadonlyArray<ScriptedTurn>) =>
             Effect.gen(function* () {
               const recorded = yield* Ref.updateAndGet(calls, (all) => [
                 ...all,
-                { prompt: options.prompt, toolChoice: options.toolChoice }
+                {
+                  prompt: options.prompt,
+                  toolNames: options.tools.map((tool) => Schema.decodeUnknownSync(Schema.String)(tool.name))
+                }
               ])
               const turn = script[recorded.length - 1]
               if (turn === undefined) return yield* Effect.die(`no scripted turn ${String(recorded.length)}`)

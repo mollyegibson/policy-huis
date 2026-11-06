@@ -4,17 +4,30 @@ import { TextChunk, ToolEnd, ToolStart } from "@policyhuis/protocol/QuestionsApi
 
 import { Failure } from "../src/loop/Failures.ts"
 import type { LoopEvent } from "../src/loop/LoopEvent.ts"
-import { Finished, ModelRetried, StepEnded, StepStarted, ToolFailed, ToolTimed } from "../src/loop/LoopEvent.ts"
+import {
+  Finished,
+  ModelRetried,
+  StepEnded,
+  StepStarted,
+  ToolCallEnded,
+  ToolCallStarted,
+  ToolFailed
+} from "../src/loop/LoopEvent.ts"
 import { emptyTrace, foldTrace, traceErrorDetail, traceOutcome } from "../src/trace/Trace.ts"
 
 const fold = (events: ReadonlyArray<LoopEvent>) => events.reduce(foldTrace, emptyTrace)
 
+const CALL = "0b6f5c1e-3c2a-4d8e-9f1a-2b3c4d5e6f70"
+
+const started = (args: unknown, at: number) =>
+  new ToolCallStarted({ callId: CALL, providerCallId: "call_0", tool: "sf_lookup", arguments: args, at })
+
 const toolStep: ReadonlyArray<LoopEvent> = [
   new StepStarted({ step: 0, final: false }),
-  ToolStart.make({ callId: "c1", tool: "sf_lookup", arguments: { key: "k" } }),
-  new ToolTimed({ callId: "c1", at: 1_000 }),
-  ToolEnd.make({ callId: "c1", tool: "sf_lookup", outcome: "success", result: { value: "v" }, error: null }),
-  new ToolTimed({ callId: "c1", at: 1_250 }),
+  ToolStart.make({ callId: CALL, tool: "sf_lookup", arguments: { key: "k" } }),
+  started({ key: "k" }, 1_000),
+  ToolEnd.make({ callId: CALL, tool: "sf_lookup", outcome: "success", result: { value: "v" }, error: null }),
+  new ToolCallEnded({ callId: CALL, at: 1_250 }),
   new StepEnded({ parts: [], finishReason: "tool-calls", inputTokens: 40, outputTokens: 5 })
 ]
 
@@ -35,7 +48,8 @@ describe("foldTrace", () => {
     expect([trace.inputTokens, trace.outputTokens]).toEqual([100, 13])
     expect(trace.toolCalls).toEqual([
       {
-        callId: "c1",
+        callId: CALL,
+        providerCallId: "call_0",
         step: 0,
         tool: "sf_lookup",
         arguments: { key: "k" },
@@ -61,9 +75,10 @@ describe("foldTrace", () => {
   it("keeps a failed call's full encoded error, which the browser does not receive", () => {
     const trace = fold([
       new StepStarted({ step: 0, final: false }),
-      ToolStart.make({ callId: "c1", tool: "sf_lookup", arguments: {} }),
-      ToolEnd.make({ callId: "c1", tool: "sf_lookup", outcome: "failure", result: null, error: "TransportError" }),
-      new ToolFailed({ callId: "c1", encodedError: { reason: { _tag: "TransportError", description: "refused" } } })
+      ToolStart.make({ callId: CALL, tool: "sf_lookup", arguments: {} }),
+      started({}, 1_000),
+      ToolEnd.make({ callId: CALL, tool: "sf_lookup", outcome: "failure", result: null, error: "TransportError" }),
+      new ToolFailed({ callId: CALL, encodedError: { reason: { _tag: "TransportError", description: "refused" } } })
     ])
     expect(trace.toolCalls[0]?.outcome).toBe("failure")
     expect(trace.toolCalls[0]?.result).toEqual({ reason: { _tag: "TransportError", description: "refused" } })

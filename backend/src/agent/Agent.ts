@@ -1,0 +1,150 @@
+import { Clock, Context, Data, Effect, Layer, Ref, Schema, Semaphore, Stream } from "effect"
+import { LanguageModel, Prompt } from "effect/ai"
+
+import { activeModel, AgentConfig } from "../config/AgentConfig.ts"
+import type { LoopSettings } from "../loop/AgentLoop.ts"
+import { runAgentLoop } from "../loop/AgentLoop.ts"
+import { messageFor } from "../loop/Failures.ts"
+import type { BrowserEvent, LoopEvent } from "../loop/LoopEvent.ts"
+import { isBrowserEvent } from "../loop/LoopEvent.ts"
+import type { Outcome } from "../loop/Outcome.ts"
+import { SystemPrompt } from "../loop/SystemPrompt.ts"
+import { McpConnections } from "../tools/McpConnections.ts"
+import { turnTools } from "../tools/TurnToolkit.ts"
+import type { Trace } from "../trace/Trace.ts"
+import { emptyTrace, foldTrace } from "../trace/Trace.ts"
+import { TraceStore } from "../trace/TraceStore.ts"
+
+/** The agent is already answering as many questions as its model configuration allows. */
+export class AgentBusy extends Schema.TaggedError<AgentBusy>()("AgentBusy", {}) {}
+
+/**
+ * A question's last event: how it ended, the message for the user when the answer is incomplete, and the data
+ * servers that could not be reached.
+ */
+export class QuestionEnded extends Data.TaggedClass("QuestionEnded")<{
+  readonly requestId: string
+  readonly outcome: Outcome
+  readonly message: string | null
+  readonly unavailableServers: ReadonlyArray<string>
+}> {}
+
+/** What a caller of the agent receives: the answer's events as they happen, then `QuestionEnded`. */
+export type AgentEvent = BrowserEvent | QuestionEnded
+
+/** Tool error types that mean the server itself could not be reached, not that the call was wrong. */
+const UNREACHABLE_ERRORS: ReadonlySet<string> = new Set(["TransportError", "ClosedError"])
+
+/** Appended to the system prompt when a server is unreachable, so the model can say what it could not check. */
+const unavailableNotice = (servers: ReadonlyArray<string>) =>
+  `These data servers are unreachable for this question: ${servers.join(", ")}. Say that your answer may be missing their data.`
+
+/**
+ * Answers questions: admits each one within the model configuration's limit, builds its tools and prompt, runs the
+ * loop, notes the servers a call showed to be unreachable, and writes the trace after the answer has ended.
+ */
+export class Agent extends Context.Service<
+  Agent,
+  { readonly ask: (question: string) => Effect.Effect<Stream.Stream<AgentEvent>, AgentBusy> }
+>()("backend/Agent") {
+  static readonly layer = Layer.effect(
+    this,
+    Effect.gen(function* () {
+      const config = yield* AgentConfig
+      const { key, endpoint } = yield* activeModel(config)
+      const connections = yield* McpConnections
+      const traces = yield* TraceStore
+      const systemPrompt = yield* SystemPrompt
+      const model = yield* LanguageModel.LanguageModel
+      const permits = yield* Semaphore.make(endpoint.maxConcurrentQuestions)
+      /** Owns the trace writes, which run after each answer has ended; closed when the agent stops. */
+      const background = yield* Effect.scope
+
+      const settings: LoopSettings = {
+        ...config.loop,
+        contextTokens: endpoint.contextTokens,
+        answerTokens: endpoint.answerTokens,
+        bytesPerToken: endpoint.bytesPerToken
+      }
+
+      const answer = Effect.fn("Agent.answer")(function* (question: string) {
+        const requestId = crypto.randomUUID()
+        const receivedAt = yield* Clock.currentTimeMillis
+        const tools = turnTools(yield* connections.current)
+        const system =
+          tools.unavailable.length === 0
+            ? systemPrompt.text
+            : `${systemPrompt.text}\n\n${unavailableNotice(tools.unavailable)}`
+        const prompt = Prompt.make([
+          { role: "system", content: system },
+          { role: "user", content: question }
+        ])
+
+        const trace = yield* Ref.make<Trace>(emptyTrace)
+        const unreachable = yield* Ref.make<ReadonlySet<string>>(new Set(tools.unavailable))
+
+        /** Records each event in the trace, and the servers a failed call showed to be unreachable. */
+        const observe = (event: LoopEvent) =>
+          Effect.gen(function* () {
+            yield* Ref.update(trace, (current) => foldTrace(current, event))
+            if (event._tag !== "ToolEnd" || event.error === null || !UNREACHABLE_ERRORS.has(event.error)) return
+            const server = tools.serverOf(event.tool)
+            if (server === undefined) return
+            yield* Ref.update(unreachable, (servers) => new Set([...servers, server]))
+          })
+
+        const toAgentEvents = (event: LoopEvent): Effect.Effect<ReadonlyArray<AgentEvent>> => {
+          if (isBrowserEvent(event)) return Effect.succeed([event])
+          if (event._tag !== "Finished") return Effect.succeed([])
+          return Effect.map(Ref.get(unreachable), (servers) => [
+            new QuestionEnded({
+              requestId,
+              outcome: event.outcome,
+              message: event.failure === null ? null : messageFor(event.failure, requestId),
+              unavailableServers: [...servers]
+            })
+          ])
+        }
+
+        const writeTrace = Effect.gen(function* () {
+          const endedAt = yield* Clock.currentTimeMillis
+          yield* traces
+            .write({
+              requestId,
+              receivedAt: new Date(receivedAt),
+              question,
+              modelConfig: key,
+              modelId: endpoint.modelId,
+              promptVersion: systemPrompt.version,
+              unavailableServers: [...(yield* Ref.get(unreachable))],
+              latencyMs: endedAt - receivedAt,
+              trace: yield* Ref.get(trace)
+            })
+            .pipe(Effect.catch((error) => Effect.logError(`Trace ${requestId} was not written`, error.message)))
+        })
+
+        return runAgentLoop(prompt, tools.toolkit, settings).pipe(
+          Stream.tap(observe),
+          Stream.mapEffect(toAgentEvents),
+          Stream.flatMap((batch) => Stream.fromIterable(batch)),
+          Stream.provideService(LanguageModel.LanguageModel, model),
+          Stream.ensuring(Effect.forkIn(writeTrace, background))
+        )
+      })
+
+      /**
+       * Takes a permit and returns the answer's events; the permit is released when the stream ends, however it
+       * ends, before the trace is written. The take and the stream's construction run uninterruptibly, so an
+       * interruption between them cannot leak a permit.
+       */
+      const ask = Effect.fn("Agent.ask")(function* (question: string) {
+        const admitted = yield* Semaphore.takeIfAvailable(permits, 1)
+        if (!admitted) return yield* new AgentBusy()
+        const events = yield* answer(question).pipe(Effect.onError(() => Semaphore.release(permits, 1)))
+        return events.pipe(Stream.ensuring(Semaphore.release(permits, 1)))
+      }, Effect.uninterruptible)
+
+      return { ask }
+    })
+  )
+}

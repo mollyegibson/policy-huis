@@ -1,55 +1,46 @@
 import { Data, Duration, Schema } from "effect"
 import { AiError } from "effect/ai"
 
-/** Failures at a limit the loop enforces; they carry no error. */
-type LimitTag = "StepLimit" | "ContextLimit" | "Truncated" | "StepTimedOut" | "RequestTimedOut"
-
-/** Failures caused by the model service, the model or the backend, each carrying the raw error for the trace. */
-type ErrorTag =
-  /** A network or provider server error, still failing after retries. */
-  | "ModelUnreachable"
-  /** The provider's rate limit, still hit after retries. */
-  | "RateLimited"
-  | "AuthenticationFailed"
-  | "QuotaExhausted"
-  /** The provider declined the question under its content policy. */
-  | "ContentRefused"
-  /** The provider rejected the request the backend built: a backend bug, not the user's question. */
-  | "RequestRejected"
-  /** The provider's response could not be read. */
-  | "UnreadableResponse"
-  /** The model kept writing tool calls that could not be run, after the correction retries. */
-  | "InvalidToolCalls"
-  /** The model failed after part of its answer had reached the browser. */
-  | "ModelStopped"
-  /** A defect in the backend. */
-  | "Internal"
-
-/** Why a question ended without a complete answer. Each has its own message for the user (`messageFor`). */
-export type Failure = { readonly _tag: LimitTag } | { readonly _tag: ErrorTag; readonly detail: string }
-
-const limit = (tag: LimitTag) => (): Failure => ({ _tag: tag })
-const withDetail =
-  (tag: ErrorTag) =>
-  ({ detail }: { readonly detail: string }): Failure => ({ _tag: tag, detail })
-
-export const Failure = {
-  StepLimit: limit("StepLimit"),
-  ContextLimit: limit("ContextLimit"),
-  Truncated: limit("Truncated"),
-  StepTimedOut: limit("StepTimedOut"),
-  RequestTimedOut: limit("RequestTimedOut"),
-  ModelUnreachable: withDetail("ModelUnreachable"),
-  RateLimited: withDetail("RateLimited"),
-  AuthenticationFailed: withDetail("AuthenticationFailed"),
-  QuotaExhausted: withDetail("QuotaExhausted"),
-  ContentRefused: withDetail("ContentRefused"),
-  RequestRejected: withDetail("RequestRejected"),
-  UnreadableResponse: withDetail("UnreadableResponse"),
-  InvalidToolCalls: withDetail("InvalidToolCalls"),
-  ModelStopped: withDetail("ModelStopped"),
-  Internal: withDetail("Internal")
+interface WithDetail {
+  /** The raw error, for the trace only. */
+  readonly detail: string
 }
+
+/**
+ * Why a question ended without a complete answer. A limit the loop enforces carries the limit, which its message
+ * names; a failure caused by the model service, the model or the backend carries the raw error for the trace. Each
+ * has its own message for the user (`messageFor`).
+ */
+export type Failure = Data.TaggedEnum<{
+  StepLimit: { readonly maxSteps: number }
+  /** The next step's prompt, estimated in tokens, would not leave room for an answer. */
+  ContextLimit: { readonly estimatedTokens: number; readonly availableTokens: number }
+  Truncated: { readonly answerTokens: number }
+  StepTimedOut: { readonly timeout: Duration.Duration }
+  RequestTimedOut: { readonly timeout: Duration.Duration }
+  /** A network or provider server error, still failing after retries. */
+  ModelUnreachable: WithDetail
+  /** The provider's rate limit, still hit after retries. */
+  RateLimited: WithDetail
+  AuthenticationFailed: WithDetail
+  QuotaExhausted: WithDetail
+  /** The provider declined the question under its content policy, or filtered the model's answer. */
+  ContentRefused: WithDetail
+  /** The model stopped for a reason other than finishing, such as an error or a pause, or gave no reason. */
+  UnexpectedFinish: WithDetail
+  /** The provider rejected the request the backend built: a backend bug, not the user's question. */
+  RequestRejected: WithDetail
+  /** The provider's response could not be read. */
+  UnreadableResponse: WithDetail
+  /** The model kept writing tool calls that could not be run, after the correction retries. */
+  InvalidToolCalls: WithDetail
+  /** The model failed after part of its answer had reached the browser. */
+  ModelStopped: WithDetail
+  /** A defect in the backend. */
+  Internal: WithDetail
+}>
+
+export const Failure = Data.taggedEnum<Failure>()
 
 /** Ends a question early; caught at the top of the loop and turned into its `Finished` event. */
 export class LoopFailure extends Data.TaggedError("LoopFailure")<{ readonly failure: Failure }> {}
@@ -122,47 +113,41 @@ export const modelFailure = (error: unknown, detail: string): Failure => {
   }
 }
 
-export interface MessageContext {
-  readonly requestId: string
-  readonly maxSteps: number
-  readonly stepTimeout: Duration.Duration
-  readonly requestTimeout: Duration.Duration
-}
+/** The message for a question turned away because the agent is answering as many as it can. */
+export const BUSY_MESSAGE = "Another question is being answered. Try again when it finishes."
 
 const seconds = (duration: Duration.Duration) => String(Math.round(Duration.toSeconds(duration)))
 
 /** The message the browser app shows for an incomplete answer, from the plan's Messages for the user. */
-export const messageFor = (failure: Failure, context: MessageContext): string => {
-  switch (failure._tag) {
-    case "StepLimit":
-      return `This answer is incomplete: the question needed more than ${String(context.maxSteps)} rounds of data lookups, so it was answered from the data gathered so far. Try a narrower question.`
-    case "ContextLimit":
-      return "This answer is incomplete: the data looked up was more than the model can read at once, so it was answered from part of it. Try a narrower question."
-    case "Truncated":
-      return "This answer is incomplete: it reached the model's length limit and was cut off. Try a narrower question."
-    case "StepTimedOut":
-      return `One step took longer than ${seconds(context.stepTimeout)} seconds, so the answer was stopped and is incomplete. Try a narrower question.`
-    case "RequestTimedOut":
-      return `The answer took longer than ${seconds(context.requestTimeout)} seconds, so it was stopped and is incomplete. Try a narrower question.`
-    case "ModelUnreachable":
-      return "The model service could not be reached, so no answer was produced. Try again in a moment."
-    case "RateLimited":
-      return "The model service is limiting how many requests it accepts right now, so no answer was produced. Try again in a minute."
-    case "AuthenticationFailed":
-      return "The backend could not sign in to the model service, so no answer was produced. Whoever runs the backend needs to check its API key."
-    case "QuotaExhausted":
-      return "The model service's usage quota has run out, so no answer was produced. Whoever runs the backend needs to check the account."
-    case "ContentRefused":
-      return "The model service declined to answer this question under its content policy."
-    case "RequestRejected":
-      return `The model service rejected the request the backend sent, so no answer was produced. This is a problem in the backend, not your question. Request ID: ${context.requestId}.`
-    case "UnreadableResponse":
-      return "The model service sent a response the backend could not read, so no answer was produced. Try again in a moment."
-    case "InvalidToolCalls":
-      return "The model kept asking for data in a form the tools could not accept, so no answer was produced. Try rephrasing the question."
-    case "ModelStopped":
-      return "The model stopped partway through, so this answer is incomplete. Try asking again."
-    case "Internal":
-      return `The backend hit an unexpected error while answering, so this answer is incomplete. Request ID: ${context.requestId}.`
-  }
-}
+export const messageFor = (failure: Failure, requestId: string): string =>
+  Failure.$match(failure, {
+    StepLimit: ({ maxSteps }) =>
+      `This answer is incomplete: the question needed more than ${String(maxSteps)} rounds of data lookups, so it was answered from the data gathered so far. Try a narrower question.`,
+    ContextLimit: () =>
+      "This answer is incomplete: the data looked up was more than the model can read at once, so it was answered from part of it. Try a narrower question.",
+    Truncated: () =>
+      "This answer is incomplete: it reached the model's length limit and was cut off. Try a narrower question.",
+    StepTimedOut: ({ timeout }) =>
+      `One step took longer than ${seconds(timeout)} seconds, so the answer was stopped and is incomplete. Try a narrower question.`,
+    RequestTimedOut: ({ timeout }) =>
+      `The answer took longer than ${seconds(timeout)} seconds, so it was stopped and is incomplete. Try a narrower question.`,
+    ModelUnreachable: () => "The model service could not be reached, so no answer was produced. Try again in a moment.",
+    RateLimited: () =>
+      "The model service is limiting how many requests it accepts right now, so no answer was produced. Try again in a minute.",
+    AuthenticationFailed: () =>
+      "The backend could not sign in to the model service, so no answer was produced. Whoever runs the backend needs to check its API key.",
+    QuotaExhausted: () =>
+      "The model service's usage quota has run out, so no answer was produced. Whoever runs the backend needs to check the account.",
+    ContentRefused: () => "The model service declined to answer this question under its content policy.",
+    UnexpectedFinish: () =>
+      "The model stopped without finishing its answer, so this answer may be incomplete. Try asking again.",
+    RequestRejected: () =>
+      `The model service rejected the request the backend sent, so no answer was produced. This is a problem in the backend, not your question. Request ID: ${requestId}.`,
+    UnreadableResponse: () =>
+      "The model service sent a response the backend could not read, so no answer was produced. Try again in a moment.",
+    InvalidToolCalls: () =>
+      "The model kept asking for data in a form the tools could not accept, so no answer was produced. Try rephrasing the question.",
+    ModelStopped: () => "The model stopped partway through, so this answer is incomplete. Try asking again.",
+    Internal: () =>
+      `The backend hit an unexpected error while answering, so this answer is incomplete. Request ID: ${requestId}.`
+  })

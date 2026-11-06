@@ -6,7 +6,7 @@ This plan covers the San Francisco build: its sources and its MCP servers. The a
 
 ## Summary
 
-- **Focus:** San Francisco's affordable housing pipeline. Two questions run through the demo: *where is it, and is it moving?* and *is it climate-ready?* The research behind this choice is in [*SF affordable housing challenges*](../../research/reports/SF%20affordable%20housing%20challenges.md) (November 4, 2026): money, not zoning, now holds projects back, and the figures cited in public debate are often real dataset totals with misleading labels, which is where cited answers help most.
+- **Focus:** San Francisco's affordable housing pipeline. Two questions run through the demo: *where is it, and is it moving?* and *is it climate-ready?* The research behind this choice is in [*SF affordable housing challenges*](../research/reports/SF%20affordable%20housing%20challenges.md) (November 4, 2026): money, not zoning, now holds projects back, and the figures cited in public debate are often real dataset totals with misleading labels, which is where cited answers help most.
 - **Users:** policy makers and residents. One answer style for now; the API is designed so an audience attribute can be added later without breaking callers.
 - **Phase 1, prototype:** the two project pipelines (Planning's and MOHCD's), two flood maps and the air-pollutant exposure zone, served by `sf-housing`, answered through the agent loop and shown in a simple web app. Answers cite datasets only.
 - **Phase 2, rules and evictions:** the legal-text server, with the inclusionary, all-electric and air-quality ordinances and the analysis reports that explain stalls, then the Rent Ordinance, the California tenant-protection statutes and the Eviction Notices dataset with its tools.
@@ -17,7 +17,7 @@ This plan covers the San Francisco build: its sources and its MCP servers. The a
 
 ## What already exists in San Francisco
 
-From the research report [*SF housing policy tools landscape*](../../research/reports/SF%20housing%20policy%20tools%20landscape.md) (November 3, 2026), which cites a source for each point:
+From the research report [*SF housing policy tools landscape*](../research/reports/SF%20housing%20policy%20tools%20landscape.md) (November 3, 2026), which cites a source for each point:
 
 - **No public tool answers San Francisco housing questions with citations that join the law, the city's housing data and climate risk.** That holds for policy makers and for residents.
 - **Law:** the official code host (American Legal Publishing) offers keyword search only, and no chatbot covers the Rent Ordinance or the Planning Code. The closest prior work is the City Attorney's use of Stanford RegLab's STARA to scan the whole Municipal Code, which was internal and not about housing.
@@ -142,12 +142,13 @@ Neon supports both extensions needed: PostGIS (3.5.7 on Postgres 17) and pgvecto
 
 ## Protocol and shared helpers
 
-Once servers run on their own devices, the only interface between a server and the backend is what the server exposes over MCP: its tool definitions and results. So no schema package is shared between servers and the backend. Two things are shared, for different reasons:
+Once servers run on their own devices, the only interface between a server and the backend is what the server exposes over MCP: its tool definitions and results. So no schema package is shared between servers and the backend. Three things are shared, for different reasons:
 
 | Package | Holds | Used by |
 |---|---|---|
 | `protocol/` | The API between the backend and the browser app: the question endpoint, the streamed events, and the citation schema the browser renders | The backend and the browser app, as in the reference project's `protocol` package. Servers produce citations that match its citation schema (published as JSON Schema), without importing it. |
-| `shared/mcp-kit/` | Helpers for building MCP servers: common formats, the `UnknownValue` error, citation ID construction, read-only database access, server setup | TypeScript MCP servers that choose to use it; a server in another language follows the same conventions without it |
+| `shared/mcp-kit/` | Helpers for building MCP servers: common formats, the tool errors (`UnknownValue`, `DatabaseUnavailable`, `DataUnavailable`) and `withDataErrors`, citation ID construction | TypeScript MCP servers that choose to use it; a server in another language follows the same conventions without it |
+| `shared/node-config/` | Reading a node's configuration: `ConfigFileError`, YAML files decoded with a `Schema`, and `dotEnv(path)`, the `.env`-first configuration provider with `secret` and `port` for required variables | Every TypeScript node (the backend and each server), installed as a library; it is not a contract between nodes |
 
 The code below is copied from the repo, where it typechecks against `effect` 4.1.2; the Phase 2 tool blocks are drafts until those servers are built.
 
@@ -256,35 +257,94 @@ export type Citation = typeof Citation.Type
 | Which version | `versionDate`: the "amended through" or effective date | `sourceVersion`: the dataset's `rowsUpdatedAt` or the layer's edit date, as `YYYY-MM-DD` |
 | Where it came from | `publisher`, `sourceUrl` (the copy loaded and quoted) | `publisher`, `sourceUrl`; the license is returned by `dataset_info` |
 
-**Tool errors.** Returned to the model as results (`failureMode: "return"`), so it can correct its call or say there is no data. The backend does not interpret them. `UnknownValue`, shared through `shared/mcp-kit`, always lists the valid values; errors specific to one server's tools (such as `PeriodOutOfRange` for eviction counts) are defined with those tools.
+**Tool errors.** Returned to the model as results (`failureMode: "return"`), so it can correct its call or say there is no data. The backend does not interpret them. Three are shared through `shared/mcp-kit`; errors specific to one server's tools (such as `PeriodOutOfRange` for eviction counts) are defined with those tools.
+
+- `UnknownValue` always lists the valid values.
+- `DatabaseUnavailable`: the server could not connect or log in to its database (`ConnectionError` or `AuthenticationError` from `effect/sql`). The same call may succeed later.
+- `DataUnavailable`: the database was reached, but the data the tool reads is not loaded (a dataset with no load, a zone with no row) or could not be read (any other query failure, or rows that do not decode). It names the datasets the tool reads.
+
+A database failure is never a defect: `withDataErrors`, passed to each handler's `Effect.fn`, turns `SqlError` and `SchemaError` into one of the two, and logs the cause for whoever runs the server.
 
 ```ts
 // shared/mcp-kit/src/ToolErrors.ts
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
+import { SqlError } from "effect/sql"
 
 export class UnknownValue extends Schema.TaggedError<UnknownValue>()("UnknownValue", {
   field: Schema.String,
   value: Schema.String,
   validValues: Schema.Array(Schema.String)
 }) {}
+
+/** The server could not connect or log in to its database; the same call may succeed later. */
+export class DatabaseUnavailable extends Schema.TaggedError<DatabaseUnavailable>()("DatabaseUnavailable", {}) {}
+
+/**
+ * The database was reached, but the data a tool reads is not loaded or could not be read. `datasets` names the
+ * datasets the tool reads; it is empty for a tool that reads the list of every dataset.
+ */
+export class DataUnavailable extends Schema.TaggedError<DataUnavailable>()("DataUnavailable", {
+  datasets: Schema.Array(Schema.String)
+}) {}
+
+/** The errors every tool that reads a database can return to the model. */
+export const DataErrors = [DatabaseUnavailable, DataUnavailable] as const
+
+const UNREACHABLE_REASONS: ReadonlySet<string> = new Set(["ConnectionError", "AuthenticationError"])
+
+/**
+ * Turns a database failure into the tool error the model reads, logging the cause for whoever runs the server: a
+ * failure to connect or log in is `DatabaseUnavailable`; any other query failure, or rows that do not decode, is
+ * `DataUnavailable` for `datasets`.
+ */
+export const toDataError = (datasets: ReadonlyArray<string>) =>
+  Effect.fnUntraced(function* (error: SqlError.SqlError | Schema.SchemaError) {
+    if (error._tag === "SqlError" && UNREACHABLE_REASONS.has(error.reason._tag)) {
+      yield* Effect.logWarning("The database could not be reached", error.reason)
+      return yield* new DatabaseUnavailable()
+    }
+    yield* Effect.logError(`Data for ${datasets.join(", ") || "every dataset"} could not be read`, error)
+    return yield* new DataUnavailable({ datasets })
+  })
+
+/**
+ * Maps the database failures of a tool handler to `DatabaseUnavailable` and `DataUnavailable` for the datasets the
+ * call reads, which `datasetsOf` derives from the handler's arguments. Pass it to `Effect.fn` after the handler body.
+ */
+export const withDataErrors =
+  <Args extends ReadonlyArray<unknown>>(datasetsOf: (...args: Args) => ReadonlyArray<string>) =>
+  <A, E, R>(
+    self: Effect.Effect<A, E | SqlError.SqlError | Schema.SchemaError, R>,
+    ...args: Args
+  ): Effect.Effect<A, E | DatabaseUnavailable | DataUnavailable, R> =>
+    Effect.catch(self, (error): Effect.Effect<never, E | DatabaseUnavailable | DataUnavailable> =>
+      SqlError.isSqlError(error) || Schema.isSchemaError(error)
+        ? toDataError(datasetsOf(...args))(error)
+        : Effect.fail(error)
+    )
 ```
 
 ## Data server tools
 
-Fixed tools, each backed by a tested dbt model or query. Servers name tools without a prefix; the agent's directory file gives each server its prefix (`sf_`), and `McpClient.toolkit(client, prefix)` applies it, so the model sees `sf_development_pipeline_projects`. Phase 1 gives the model six tools; Phase 2 adds two eviction tools and the legal-text server's two, for ten, which spike S2 tests for tool selection.
+Fixed tools, each backed by a tested dbt model or query. Servers name tools without a prefix; the agent's directory file gives each server its prefix (`sf_`), and `McpClient.toolkit(client, prefix)` applies it, so the model sees `sf_development_pipeline_projects`. Phase 1 gives the model seven tools; Phase 2 adds two eviction tools and the legal-text server's two, for eleven, which spike S2 tests for tool selection.
 
 | Tool (as the model sees it) | Phase | Answers | Errors |
 |---|---|---|---|
-| `sf_development_pipeline_projects` | 1 | Which projects are at a stage, since when, and with how many affordable units | `UnknownValue` |
-| `sf_development_pipeline_summary` | 1 | Totals by status, neighborhood, district or year of approval | `UnknownValue` |
-| `sf_affordable_pipeline_projects` | 1 | Which MOHCD projects, with units by income band and estimated dates | `UnknownValue` |
-| `sf_affordable_pipeline_summary` | 1 | Totals by status, construction stage, neighborhood, district or income band | `UnknownValue` |
-| `sf_project_hazard_exposure` | 1 | Which projects from either pipeline sit inside one flood or exposure zone, and how many units they hold | `UnknownValue` |
-| `sf_dataset_info` | 1 | How current each dataset is, its license, and the publisher's own description of it | `UnknownValue` |
-| `sf_eviction_notice_counts` | 2 | How many notices, when, where, for which grounds; a period with no notices returns zero counts | `UnknownValue`, `PeriodOutOfRange` |
-| `sf_eviction_grounds` | 2 | Which grounds exist and which Section 37.9 subsection each maps to | None |
+| `sf_development_pipeline_projects` | 1 | Which projects are at a stage, since when, and with how many affordable units | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_development_pipeline_summary` | 1 | Totals by status, neighborhood, district or year of approval | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_affordable_pipeline_projects` | 1 | Which MOHCD projects, with units by income band and estimated dates | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_affordable_pipeline_summary` | 1 | Projects and affordable units by status, construction stage, neighborhood or district | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_affordable_pipeline_units_by_income_band` | 1 | Units in each income band, and how many projects have units in it | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_project_hazard_exposure` | 1 | Which projects from either pipeline sit inside one flood or exposure zone, and how many units they hold | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_dataset_info` | 1 | How current each dataset is, its license, and the publisher's own description of it | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_eviction_notice_counts` | 2 | How many notices, when, where, for which grounds; a period with no notices returns zero counts | `UnknownValue`, `PeriodOutOfRange`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_eviction_grounds` | 2 | Which grounds exist and which Section 37.9 subsection each maps to | `DatabaseUnavailable`, `DataUnavailable` |
 
-**"Is it moving" is a filter, not a label.** `development_pipeline_projects` returns each project's status date and days in that status, and takes `inStatusSinceBefore` and `approvedBefore`, so a question such as "approved before 2020 and not yet under construction" is answered from the data. No tool decides what counts as stalled.
+**"Is it moving" is a filter, not a label.** `development_pipeline_projects` returns each project's status date and days in that status, counted to the snapshot's source version (the date its rows were published, which its citation carries) rather than to today, so the same query gives the same number for as long as the snapshot is current; it takes `inStatusSinceBefore` and `approvedBefore`, so a question such as "approved before 2020 and not yet under construction" is answered from the data. No tool decides what counts as stalled.
+
+**One field, one meaning.** Units by income band have their own tool rather than a `groupBy` value of `affordable_pipeline_summary`: summing a project's affordable units into each band it has units in would count it several times, and band totals are a different quantity (`unitsInBand`) from project totals (`affordableUnits`).
+
+**One snapshot per call.** A tool that reads the development pipeline reads the latest snapshot once, then filters every query behind its answer by that value, so the rows, the validation values and the `snapshot` it reports come from the same quarter even if dbt loads a new one meanwhile; dbt keeps every snapshot, so the value read first stays valid. A list tool's total and its rows come from one query (`count(*) OVER ()`), and each call reads the dataset list once for its citations.
 
 **Inputs are validated against the data, not the schema.** Neighborhood names, districts, statuses and grounds are plain strings in the schema and are checked against the loaded reference tables, so new values in the source need no contract change. Field descriptions, not patterns, reach the model: Effect's tool JSON Schema carries each field's `description` but not its `isPattern` check, so formats such as `YYYY-MM` are stated in the description and enforced on decode.
 
@@ -301,10 +361,13 @@ The answer rules (cite the snapshot, never say "stalled", notices are not evicti
 import { Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 
-import { IsoDate, NonNegativeInt, PositiveInt, UnknownValue } from "@policyhuis/mcp-kit"
+import { DataErrors, IsoDate, NonNegativeInt, PositiveInt, UnknownValue } from "@policyhuis/mcp-kit"
 import { Citation } from "@policyhuis/protocol/Citation"
 
 const Citations = Schema.Array(Citation)
+
+/** What a tool returns to the model instead of a result: an input the data does not contain, or data it cannot read. */
+const ToolFailure = Schema.Union([UnknownValue, ...DataErrors])
 
 const NeighborhoodName = Schema.String.annotate({
   description: "An analysis neighborhood name, such as appears in tool results"
@@ -382,7 +445,7 @@ export const DevelopmentPipelineProjects = Tool.make("development_pipeline_proje
     snapshot: Schema.String,
     citations: Citations
   }),
-  failure: UnknownValue,
+  failure: ToolFailure,
   failureMode: "return"
 })
 
@@ -406,7 +469,7 @@ export const DevelopmentPipelineSummary = Tool.make("development_pipeline_summar
     snapshot: Schema.String,
     citations: Citations
   }),
-  failure: UnknownValue,
+  failure: ToolFailure,
   failureMode: "return"
 })
 
@@ -427,23 +490,40 @@ export const AffordablePipelineProjects = Tool.make("affordable_pipeline_project
     dataAsOf: IsoDate,
     citations: Citations
   }),
-  failure: UnknownValue,
+  failure: ToolFailure,
   failureMode: "return"
 })
 
 export const AffordablePipelineSummary = Tool.make("affordable_pipeline_summary", {
   description:
-    "Total MOHCD's affordable pipeline projects and units by status, construction stage, neighborhood, district or income band.",
+    "Total MOHCD's affordable pipeline projects and their affordable units by status, construction stage, neighborhood or district. For units by income band, use affordable_pipeline_units_by_income_band.",
   parameters: Schema.Struct({
-    groupBy: Schema.Literals(["status", "construction_status", "neighborhood", "district", "ami_band"]),
+    groupBy: Schema.Literals(["status", "construction_status", "neighborhood", "district"]),
     status: Schema.optional(AffordableStatus)
   }),
   success: Schema.Struct({
-    groups: Schema.Array(Schema.Struct({ key: Schema.String, projects: NonNegativeInt, units: NonNegativeInt })),
+    groups: Schema.Array(
+      Schema.Struct({ key: Schema.String, projects: NonNegativeInt, affordableUnits: NonNegativeInt })
+    ),
     dataAsOf: IsoDate,
     citations: Citations
   }),
-  failure: UnknownValue,
+  failure: ToolFailure,
+  failureMode: "return"
+})
+
+export const AffordablePipelineUnitsByIncomeBand = Tool.make("affordable_pipeline_units_by_income_band", {
+  description:
+    "Total MOHCD's affordable pipeline units in each income band, as a share of area median income (AMI), with how many projects have units in that band. Bands are named as MOHCD's dataset names its columns, such as _50_ami for 50% of AMI. A project with units in several bands is counted in each, so the project counts do not add up to the number of projects.",
+  parameters: Schema.Struct({ status: Schema.optional(AffordableStatus) }),
+  success: Schema.Struct({
+    bands: Schema.Array(
+      Schema.Struct({ amiBand: Schema.String, projects: NonNegativeInt, unitsInBand: NonNegativeInt })
+    ),
+    dataAsOf: IsoDate,
+    citations: Citations
+  }),
+  failure: ToolFailure,
   failureMode: "return"
 })
 
@@ -474,7 +554,7 @@ export const ProjectHazardExposure = Tool.make("project_hazard_exposure", {
     ),
     citations: Citations
   }),
-  failure: UnknownValue,
+  failure: ToolFailure,
   failureMode: "return"
 })
 
@@ -496,7 +576,7 @@ export const DatasetInfo = Tool.make("dataset_info", {
     ),
     citations: Citations
   }),
-  failure: UnknownValue,
+  failure: ToolFailure,
   failureMode: "return"
 })
 
@@ -505,6 +585,7 @@ export const SfHousingToolkit = Toolkit.make(
   DevelopmentPipelineSummary,
   AffordablePipelineProjects,
   AffordablePipelineSummary,
+  AffordablePipelineUnitsByIncomeBand,
   ProjectHazardExposure,
   DatasetInfo
 )
@@ -548,7 +629,7 @@ export const EvictionNoticeCounts = Tool.make("eviction_notice_counts", {
     ),
     citations: Citations
   }),
-  failure: Schema.Union([UnknownValue, PeriodOutOfRange]),
+  failure: Schema.Union([UnknownValue, PeriodOutOfRange, ...DataErrors]),
   failureMode: "return"
 })
 
@@ -600,7 +681,7 @@ export const SearchPolicy = Tool.make("search_policy", {
     limit: Schema.optional(Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 10 }))))
   }),
   success: Schema.Struct({ passages: Schema.Array(Passage), citations: Citations }),
-  failure: UnknownValue,
+  failure: Schema.Union([UnknownValue, ...DataErrors]),
   failureMode: "return"
 })
 
@@ -611,7 +692,7 @@ export const GetProvision = Tool.make("get_provision", {
     provision: Schema.String.annotate({ description: "A section or subsection number, such as appears in search results" })
   }),
   success: Schema.Struct({ passages: Schema.Array(Passage), citations: Citations }),
-  failure: Schema.Union([UnknownValue, ProvisionNotFound]),
+  failure: Schema.Union([UnknownValue, ProvisionNotFound, ...DataErrors]),
   failureMode: "return"
 })
 
@@ -676,7 +757,7 @@ Each raw table has the same four columns: `load_id`, `row_number`, `record` (the
 | Model | Phase | Grain | Columns | Tests |
 |---|---|---|---|---|
 | `neighborhoods` | 1 | One per analysis neighborhood | `name` (PK) | Unique, not null |
-| `development_pipeline` | 1 | One per project in the snapshot | `project_key` (PK with `snapshot`: parcel, Planning case and permit application), `block_lot`, `name_or_address`, `status`, `status_since`, `planning_approved_on`, `net_units`, `affordable_units`, `units_extremely_low` … `units_moderate`, `neighborhood` (FK, nullable, names converted to the official spelling), `supervisor_district` (int, cast from text), `geom geometry(Point, 4326)` (nullable), `snapshot`, `load_id` | Unique per snapshot; status values are the six documented ones after mapping `BP BP Issued`; a warning test lists projects whose affordable units by level do not sum to `affordable_units` (18 on November 4, 2026) |
+| `development_pipeline` | 1 | One per project in the snapshot | `project_key` (PK with `snapshot`: parcel, Planning case and permit application), `block_lot`, `name_or_address`, `status`, `status_since`, `planning_approved_on`, `net_units`, `affordable_units`, `units_extremely_low` … `units_moderate`, `neighborhood` (FK, nullable, names converted to the official spelling), `supervisor_district` (int, cast from text), `geom geometry(Point, 4326)` (nullable), `snapshot`, `source_version` (the snapshot load's source version, from the manifest), `load_id` | Unique per snapshot; status values are the six documented ones after mapping `BP BP Issued`; no project's `status_since` is later than its `source_version`, since days in a status are counted to it; a warning test lists projects whose affordable units by level do not sum to `affordable_units` (18 on November 4, 2026) |
 | `affordable_pipeline` | 1 | One per project | `project_id` (PK), `name`, `status`, `construction_status`, `neighborhood` (FK), `supervisor_district` (int, cast from text), `total_units`, `affordable_units`, `estimated_start`, `estimated_completion`, `geom geometry(Point, 4326)`, `load_id` | Unique; every project has a location, or the build fails |
 | `affordable_pipeline_ami_units` | 1 | One per project and income band | `project_id`, `ami_band` (the source column name), `units` | Bands are an unpivot of the source's AMI columns; zero-unit rows are dropped |
 | `zones` | 1 | One per flood or exposure zone | `zone` (PK: `slr_66in_100yr_storm`, `sfpuc_100yr_storm`, `air_pollutant_exposure_zone`), `name`, `publisher`, `source_edited_at`, `publisher_description`, `geom` (polygons repaired with `ST_MakeValid`, then merged), `load_id` | Name, publisher, edit date and description come from each source's archived metadata; the zone key is the source's key in `san-francisco/ingest/config/sources.yaml` |
@@ -756,13 +837,17 @@ The browser app is the same for every city; its plan, including how tool calls a
 |---|---|---|
 | 1 | P1.1 Contracts | `protocol/` and the `shared/mcp-kit` helpers in [Protocol and shared helpers](#protocol-and-shared-helpers), the Phase 1 tools in [Data server tools](#data-server-tools) and [API contract](agent-loop.md#api-contract) in code, with decode tests; migrations for `raw_sf` and `app` written. |
 | 1 | P1.2 Data loaded | Both pipelines, the three zones and neighborhoods loaded with provenance; dbt models and tests pass; database size measured. |
-| 1 | P1.3 `sf-housing` server | The six Phase 1 tools pass tests through `McpTest` against a Postgres testcontainer. |
+| 1 | P1.3 `sf-housing` server | The seven Phase 1 tools pass tests through `McpTest` against a Postgres testcontainer. |
 | 1 | P1.4 First cited answer | The agent loop answers a "where is it, and is it moving" question and a climate-ready question through `POST /api/v1/questions`, with dataset citations and a trace in `app`. |
 | 1 | P1.5 Prototype | The browser app shows streamed answers, collapsible tool calls and linked citations against the running backend, as in the [Browser App Plan](browser-app.md). |
 | 2 | P2.1 Documents | The ordinances, reports and data dictionary loaded into `sf-legal-text`; the legal-text server answers with document citations labeled by type. |
 | 2 | P2.2 Rent Ordinance and statutes | Chapter 37 and the California sections loaded; the grounds-to-subsections mapping sourced. |
 | 2 | P2.3 Evictions | Eviction Notices loaded; the two eviction tools pass tests; a rule-plus-data eviction question is answered end to end. |
 | 3 | P3.1 Evaluation | The San Francisco questions run against the three model configurations, with answers checked by the San Francisco reviewer. |
+
+## Next steps
+
+- **Cache reference data in `sf-housing`.** Each tool call reads the dataset list, the latest snapshot and the values it validates inputs against (statuses, neighborhoods, districts) before its main query, each a round trip to Neon. These change only when a load runs, so the server could cache them per process, refreshed on a short interval or when a dataset's `source_version` changes, leaving one query per call. Counts and lists already come from one query (`count(*) OVER ()`).
 
 ## Open questions
 
@@ -774,7 +859,7 @@ The browser app is the same for every city; its plan, including how tool calls a
 
 ## References
 
-- Research reports: [SF housing policy tools landscape](../../research/reports/SF%20housing%20policy%20tools%20landscape.md), November 3, 2026; [SF affordable housing challenges](../../research/reports/SF%20affordable%20housing%20challenges.md), November 4, 2026
+- Research reports: [SF housing policy tools landscape](../research/reports/SF%20housing%20policy%20tools%20landscape.md), November 3, 2026; [SF affordable housing challenges](../research/reports/SF%20affordable%20housing%20challenges.md), November 4, 2026
 - DataSF: SF Development Pipeline <https://data.sf.gov/d/6jgi-cpb4>; MOHCD Affordable Housing Pipeline <https://data.sf.gov/d/aaxw-2cb8>; 100-year storm + 66 inches SLR <https://data.sf.gov/d/6ann-usi8>; Air Pollutant Exposure Zone <https://data.sf.gov/d/t65d-x6p8>; Analysis Neighborhoods <https://data.sf.gov/d/j2bu-swwd>; Eviction Notices <https://data.sf.gov/d/5cei-gny5>
 - SF Planning pipeline report and data dictionary: <https://sfplanning.org/project/pipeline-report>
 - SFPUC flood maps: <https://www.sfpuc.gov/learning/emergency-preparedness/flood-maps>; 2024 update service: <https://gis.sfpuc.org/server/rest/services/Hosted/100_Year_Storm_Flood_Risk_Map_2024_Update/FeatureServer>

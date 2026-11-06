@@ -1,11 +1,10 @@
 import { Data } from "effect"
 import type { Response } from "effect/ai"
 
-import type { Complete, TextChunk, ToolEnd, ToolStart } from "@policyhuis/protocol/QuestionsApi"
+import type { TextChunk, ToolEnd, ToolStart } from "@policyhuis/protocol/QuestionsApi"
 
 import type { Failure } from "./Failures.ts"
-
-export type Outcome = Complete["outcome"]
+import type { Outcome } from "./Outcome.ts"
 
 /** A model turn began; `final` marks the turn without tools that ends a question at a limit. */
 export class StepStarted extends Data.TaggedClass("StepStarted")<{
@@ -21,8 +20,20 @@ export class StepEnded extends Data.TaggedClass("StepEnded")<{
   readonly outputTokens: number | undefined
 }> {}
 
-/** When a tool call started or ended, in epoch milliseconds; the first event for a call is its start. */
-export class ToolTimed extends Data.TaggedClass("ToolTimed")<{
+/**
+ * A tool call started, in epoch milliseconds, with what the trace records about it. `callId` is the UUID the backend
+ * gave the call; `providerCallId` is the ID the model's provider gave it.
+ */
+export class ToolCallStarted extends Data.TaggedClass("ToolCallStarted")<{
+  readonly callId: string
+  readonly providerCallId: string
+  readonly tool: string
+  readonly arguments: unknown
+  readonly at: number
+}> {}
+
+/** A tool call's result arrived, in epoch milliseconds. */
+export class ToolCallEnded extends Data.TaggedClass("ToolCallEnded")<{
   readonly callId: string
   readonly at: number
 }> {}
@@ -47,7 +58,8 @@ export class Finished extends Data.TaggedClass("Finished")<{
 export type BrowserEvent = TextChunk | ToolStart | ToolEnd
 
 /** Everything the loop emits: the browser's events plus the internal events the trace is folded from. */
-export type LoopEvent = BrowserEvent | StepStarted | StepEnded | ToolTimed | ToolFailed | ModelRetried | Finished
+export type LoopEvent =
+  BrowserEvent | StepStarted | StepEnded | ToolCallStarted | ToolCallEnded | ToolFailed | ModelRetried | Finished
 
 export const isBrowserEvent = (event: LoopEvent): event is BrowserEvent =>
   event._tag === "TextChunk" || event._tag === "ToolStart" || event._tag === "ToolEnd"

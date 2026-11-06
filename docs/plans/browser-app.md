@@ -4,54 +4,340 @@ Draft, November 5, 2026.
 
 The browser app sends a question to the backend and shows the answer as it streams in: the agent's tool calls while it works, the answer text, and the sources behind each claim. Like the agent loop, it is the same for every city; it knows a city only through the tools and citations the backend streams to it.
 
-This plan covers the Phase 1 prototype, enough to show the agent working. It builds on the [Agent Loop Plan](agent-loop.md), whose [API contract](agent-loop.md#api-contract) defines everything the app receives. The full web app design (pages, Dutch originals beside machine translations, hosting, the energy dashboard) remains the MVP plan's [follow-up](mvp-technical-plan.md#follow-up).
+This plan covers the Phase 1 prototype, enough to show the agent working, built to be iterated on. It builds on the [Agent Loop Plan](agent-loop.md), whose [API contract](agent-loop.md#api-contract) defines everything the app receives. The full web app design (pages, Dutch originals beside machine translations, hosting, the energy dashboard) remains the MVP plan's [follow-up](mvp-technical-plan.md#follow-up).
+
+Code below is a sketch of the intended shape, not compiled code; anything still to confirm in the first implementation step is marked **(verify)**.
 
 ## Scope
 
-A minimal React app in `browser-app/`, following [Front-end Code Style](../front-end-code-style.md). It:
+A React app in `browser-app/`, following [Front-end Code Style](../front-end-code-style.md). It:
 
-- talks only to the backend's `POST /api/v1/questions`, through `HttpApiClient` and `protocol/`'s `QuestionsApi`, decoding every event with `AgentStreamEvent`;
-- keeps one question and its answer in memory; nothing is stored in the browser.
+- talks only to the backend's `POST /api/v1/questions`, through `HttpApiClient` and `protocol/`'s `PolicyHuisApi`, decoding every event with `AgentStreamEvent`;
+- holds one question and its answer in memory; nothing is stored in the browser, and asking again replaces the previous answer.
 
-Not in Phase 1: accounts, history, maps, and friendlier labels for tool names.
+Not in Phase 1: accounts, history, follow-up questions in a thread, maps, and hosting beyond the local dev server.
+
+## Stack
+
+| Concern | Choice |
+|---|---|
+| UI | React 19 and MUI (`@mui/material`), with MUI's default theme |
+| State | Effect atoms (`effect/reactivity`) with `@effect/atom-react`, whose version matches `effect` |
+| API client | `HttpApiClient.make(PolicyHuisApi)` over `FetchHttpClient` |
+| Markdown | `react-markdown`, which renders no raw HTML |
+| Build and dev server | Vite with `@vitejs/plugin-react` |
+| Checks | The repo's TypeScript, ESLint, Prettier and Vitest setup, like every other workspace |
+
+Exact package versions are pinned when the workspace is created.
+
+## How it follows the reference app
+
+The design follows the reference project's browser app (`browser-sdk-internal`) where its patterns fit, and departs from it where this app is simpler:
+
+| Reference app | This app | Why |
+|---|---|---|
+| A state atom updated by pure, exported reducers (`onMessageReducer`), unit-tested on their own | The same: one pure `reduce(state, event)` per event, unit-tested | The core of both designs |
+| Tool-call lifecycle kept apart from message text, updated by `callId` (`upsertToolCall`) | The same | Tool events must never leak into the answer |
+| Chunks carry the accumulated text, so the newer chunk replaces the text | `TextChunk` carries a delta, so the reducer appends it | Our protocol streams deltas |
+| An `Atom.fn` writes to a separate state atom through the registry, guarded by a `streamGeneration` counter so a stale stream cannot write | The atom function returns a stream of states (`Stream.scan(initialState, reduce)`), so its value is the latest state; asking again interrupts the previous run | One question at a time and no threads, so there is no stale stream to guard against. In Effect 4, writing a new argument to an `Atom.fn` interrupts the computation it replaces, and `Atom.Interrupt` cancels it |
+| `@effect-atom/atom-react` on Effect 3 | `effect/reactivity` and `@effect/atom-react` on Effect 4 | The atoms moved into Effect 4 |
+| `ToolsUsed`: a "Used N tools" toggle once the message is committed | A live list while the agent works, collapsing to "Used N tools" when the answer is complete | Shows progress during the 10 to 60 seconds an answer can take |
+| `humanizeToolName` strips the provider prefix | Humanizes the name but keeps the server prefix as a tag (`SF · Development pipeline summary`) | A tool from the wrong city's server stands out |
+| A private Markdown component | `react-markdown`, with citation markers turned into links before parsing | The private component is not available |
+| Client-side tools, approvals, interrupts, threads, artifacts, generated UI, auth, analytics | None | Not part of this app |
+
+## Files
+
+| File | Contents |
+|---|---|
+| `src/main.tsx` | Mounts `App` inside MUI's `ThemeProvider` and `CssBaseline`, and the atom `RegistryProvider` |
+| `src/App.tsx` | The page layout |
+| `src/api/ApiClient.ts` | The `ApiClient` service and its layer: the typed client for `PolicyHuisApi` |
+| `src/questions/QuestionState.ts` | `QuestionState`, `initialState` and the pure `reduce` |
+| `src/questions/askAtom.ts` | The atom runtime and `askAtom` |
+| `src/questions/useAsk.ts` | The hook components use: the current result, `ask` and `cancel` |
+| `src/questions/citations.ts` | Decoding citations from tool results; linking markers; grouping sources |
+| `src/questions/toolLabels.ts` | `toolLabel`: the server tag and humanized name |
+| `src/components/QuestionForm.tsx` | The question box and Ask button |
+| `src/components/ToolCalls.tsx`, `ToolCallRow.tsx` | The tool call list and each expandable row |
+| `src/components/Answer.tsx` | The answer as Markdown with linked citation markers |
+| `src/components/Sources.tsx` | The sources list |
+| `src/components/Notices.tsx` | Incomplete answers, unreachable servers, busy and offline states, and the logging note |
+| `*.unit.test.ts` | Beside each module they test |
+
+## Page state
+
+Everything the page shows comes from one value, folded from the event stream:
+
+```ts
+// src/questions/QuestionState.ts
+import { Option, Schema } from "effect"
+
+import { Citation } from "@policyhuis/protocol/Citation"
+import type { AgentStreamEvent, Complete } from "@policyhuis/protocol/QuestionsApi"
+
+export type ToolCallStatus = "running" | "done" | "failed" | "unfinished"
+
+export interface ToolCallView {
+  readonly callId: string
+  readonly tool: string
+  readonly arguments: unknown
+  readonly status: ToolCallStatus
+  /** The tool's `structuredContent`; null until it succeeds. */
+  readonly result: unknown
+  /** The failure's type only, such as `UnknownValue`; null unless it failed. */
+  readonly error: string | null
+}
+
+export interface QuestionState {
+  readonly answer: string
+  readonly toolCalls: ReadonlyArray<ToolCallView>
+  /** Every citation received so far, by `citationId`. */
+  readonly citations: ReadonlyMap<string, Citation>
+  /** Set by `Complete`, the last event of every stream that is not interrupted. */
+  readonly complete: Complete | null
+}
+
+export const initialState: QuestionState = { answer: "", toolCalls: [], citations: new Map(), complete: null }
+
+const ResultCitations = Schema.Struct({ citations: Schema.Array(Citation) })
+
+/** A successful result's citations; none when its `citations` field is missing or fails to decode. */
+const citationsOf = (result: unknown): ReadonlyArray<Citation> =>
+  Option.match(Schema.decodeUnknownOption(ResultCitations)(result), {
+    onNone: () => [],
+    onSome: ({ citations }) => citations
+  })
+
+const updateCall = (calls: ReadonlyArray<ToolCallView>, callId: string, update: (call: ToolCallView) => ToolCallView) =>
+  calls.map((call) => (call.callId === callId ? update(call) : call))
+
+export const reduce = (state: QuestionState, event: AgentStreamEvent): QuestionState => {
+  switch (event._tag) {
+    case "TextChunk":
+      return { ...state, answer: state.answer + event.text }
+    case "ToolStart":
+      return {
+        ...state,
+        toolCalls: [
+          ...state.toolCalls,
+          { callId: event.callId, tool: event.tool, arguments: event.arguments, status: "running", result: null, error: null }
+        ]
+      }
+    case "ToolEnd": {
+      const citations = new Map(state.citations)
+      for (const citation of event.outcome === "success" ? citationsOf(event.result) : []) {
+        citations.set(citation.citationId, citation)
+      }
+      return {
+        ...state,
+        citations,
+        toolCalls: updateCall(state.toolCalls, event.callId, (call) => ({
+          ...call,
+          status: event.outcome === "success" ? "done" : "failed",
+          result: event.result,
+          error: event.error
+        }))
+      }
+    }
+    case "Keepalive":
+      return state
+    case "Complete":
+      return {
+        ...state,
+        complete: event,
+        toolCalls: state.toolCalls.map((call) => (call.status === "running" ? { ...call, status: "unfinished" } : call))
+      }
+  }
+}
+```
+
+The `switch` is exhaustive over `AgentStreamEvent`, so a new event in `protocol/` fails the type check here until it is handled.
+
+## Asking a question
+
+The API client is a service, so the atom runtime provides it once:
+
+```ts
+// src/api/ApiClient.ts
+import { Context, Effect, Layer } from "effect"
+import { FetchHttpClient } from "effect/http"
+import { HttpApiClient } from "effect/http-api"
+
+import { PolicyHuisApi } from "@policyhuis/protocol/QuestionsApi"
+
+const makeClient = HttpApiClient.make(PolicyHuisApi, { baseUrl: window.location.origin })
+
+export class ApiClient extends Context.Service<ApiClient, Effect.Success<typeof makeClient>>()("browser-app/ApiClient") {
+  static readonly layer = Layer.effect(this, makeClient).pipe(Layer.provide(FetchHttpClient.layer))
+}
+```
+
+The ask atom is a function atom whose computation is a stream of states:
+
+```ts
+// src/questions/askAtom.ts
+import { Effect, Stream } from "effect"
+import { Atom } from "effect/reactivity"
+
+import { QuestionRequest } from "@policyhuis/protocol/QuestionsApi"
+
+import { ApiClient } from "../api/ApiClient.ts"
+import { initialState, reduce } from "./QuestionState.ts"
+
+const runtime = Atom.runtime(ApiClient.layer)
+
+/** Writing a question starts a new answer and interrupts the one before it. */
+export const askAtom = runtime.fn((question: string) =>
+  Stream.unwrap(
+    Effect.gen(function* () {
+      const client = yield* ApiClient
+      return yield* client.questions.ask({ payload: QuestionRequest.make({ question }) })
+    })
+  ).pipe(Stream.scan(initialState, reduce))
+)
+```
+
+- **While streaming**, the atom's value is `AsyncResult.Success` with the latest `QuestionState` and `waiting: true`. It starts with `initialState`, so the page clears at once.
+- **When the stream ends**, `waiting` turns false and the value holds the final state, with `complete` set.
+- **A `503`** fails the stream with `AgentUnavailable`, whose `message` the page shows.
+- **An unreachable backend, or a stream that breaks before `Complete`,** fails with an `HttpClientError`, and the page shows the offline notice. **(verify)** that the failure keeps the last state as its `previous` value, so a broken stream still shows the partial answer and tool calls.
+
+Components reach the atom through one hook, as the style guide requires:
+
+```ts
+// src/questions/useAsk.ts
+import { useAtomSet, useAtomValue } from "@effect/atom-react"
+import { Atom } from "effect/reactivity"
+
+import { askAtom } from "./askAtom.ts"
+
+export const useAsk = () => {
+  const result = useAtomValue(askAtom)
+  const write = useAtomSet(askAtom)
+  return {
+    result,
+    ask: (question: string) => write(question),
+    cancel: () => write(Atom.Interrupt)
+  }
+}
+```
+
+Stop, asking a new question, and leaving the page all interrupt the stream, which closes the connection. The backend's loop runs inside the response stream, so closing it interrupts the model call and any tool calls in flight, frees the question's slot and records the question as `cancelled`. Tokens the model has already generated are still billed.
 
 ## What the page shows
 
-- **One question box** and the answer streaming in below it, from `TextChunk` events.
-- **The agent's tool calls**, one entry per call, collapsed by default (see [Tool calls](#tool-calls)).
-- **Citations** linked from the markers in the answer (see [Citations](#citations)).
-- **Incomplete answers:** the `message` from `Complete` when the outcome is `step_limit`, `context_limit`, `truncated` or `failed`, shown as it is; the backend writes every message (see [Messages for the user](agent-loop.md#messages-for-the-user)).
-- **Unreachable data servers:** a note for each server in `Complete.unavailableServers`: "The {server} data server could not be reached, so this answer may be missing its data."
-- **A busy backend:** the `message` from a `503 AgentUnavailable`.
-- **An unreachable backend:** an "agent host offline" state when the request cannot be sent or the stream breaks before `Complete`.
-- **A note that questions are logged**, since every trace stores the question as asked.
+From top to bottom:
 
-`Keepalive` events are ignored.
+1. **The question box** (`QuestionForm`): a multi-line field of 1 to 2,000 characters, matching `QuestionRequest`, with an Ask button. While an answer streams, the button becomes Stop (`cancel`).
+2. **Tool calls** (see [Tool calls](#tool-calls)).
+3. **The answer**, rendered as Markdown as it arrives, with citation markers as links (see [Citations](#citations)). The backend never sends text from a turn that called a tool, so the answer comes after the tool calls. It usually arrives when its turn finishes; an answer written at a limit (`step_limit`, `context_limit`) streams as it is written (see [Narration](agent-loop.md#runagentloop)).
+4. **Sources**, grouped by source.
+5. **Notices** (`Notices`), from the state and the result:
+
+| Condition | Notice |
+|---|---|
+| `complete.outcome` is not `answered` | `complete.message`, as it is; the backend writes every message (see [Messages for the user](agent-loop.md#messages-for-the-user)) |
+| A server in `complete.unavailableServers` | "The {server} data server could not be reached, so this answer may be missing its data." |
+| The result failed with `AgentUnavailable` | Its `message` |
+| The result was interrupted by Stop (`Cause.hasInterruptsOnly`) | "Stopped.", below the partial answer and tool calls |
+| The result failed any other way | "The agent host could not be reached. It may be offline; try again shortly." |
+| Always | "Questions you ask are logged." |
 
 ## Tool calls
 
-The backend sends a `ToolStart` when the agent begins a tool call and a `ToolEnd` when it finishes, so the page can show the agent working while the answer is still to come. A question can make anywhere from no tool calls to several in each of up to `maxSteps` steps, so entries stay collapsed unless the user opens one.
+A question can make several tool calls in each of up to `maxSteps` steps. While the agent works, each call is a row, so the user sees progress; when `Complete` arrives, the rows collapse under a "Used N tools" toggle, so the answer leads.
 
-| Event | Collapsed entry | Expanded entry |
+| Status | Row | Expanded |
 |---|---|---|
-| `ToolStart` | The tool name, as the backend sends it (for example `sf_development_pipeline_summary`), and a "running" status | The call's arguments |
-| `ToolEnd`, `outcome: "success"` | The tool name and a "done" status | The arguments, and the full result (`ToolEnd.result`, the tool's `structuredContent`) as formatted JSON |
-| `ToolEnd`, `outcome: "failure"` | The tool name and a "failed" status | The arguments and the error type (`ToolEnd.error`, for example `UnknownValue` or `TransportError`); the backend never sends the error's details |
-| No `ToolEnd` by `Complete` | The tool name and a "did not finish" status | The arguments |
+| `running` | Label and a progress spinner | Tool name and arguments |
+| `done` | Label and a done mark | Tool name, arguments, and `result` (the tool's `structuredContent`) as formatted JSON |
+| `failed` | Label and a failed mark | Tool name, arguments, and the error type (for example `UnknownValue`) |
+| `unfinished` | Label and "did not finish" | Tool name and arguments |
 
-- **Order:** entries appear in the order their `ToolStart` events arrive. Calls the model makes in the same turn run at once, so their `ToolEnd` events may arrive in any order; each updates its own entry by `callId`.
-- **Placement:** the entries sit above the answer, so the answer stays easy to read, and remain after the answer is complete.
-- **Size:** a list result holds at most what the server returns (`sf-housing` returns up to 50 projects), so the expanded view needs scrolling but no paging.
+- **Labels** keep the server prefix as a tag, so a call to the wrong city's server is visible: `sf_development_pipeline_summary` shows as "SF · Development pipeline summary". The full tool name appears when the row is expanded.
+- **Order** is the order of `ToolStart` events. Calls from the same turn run at once, and each `ToolEnd` updates its own row by `callId`.
+- **Size:** results are formatted JSON in a scrolling block with a fixed maximum height, like the reference app's argument view; a list result holds at most what the server returns (`sf-housing` returns up to 50 projects).
+
+```ts
+// src/questions/toolLabels.ts
+/** "sf_development_pipeline_summary" → { tag: "SF", name: "Development pipeline summary" }. */
+export const toolLabel = (tool: string): { readonly tag: string | null; readonly name: string } => {
+  const match = /^([a-z][a-z0-9]*)_(.+)$/.exec(tool)
+  const [tag, rest] = match === null ? [null, tool] : [match[1].toUpperCase(), match[2]]
+  const words = rest.replace(/_/g, " ")
+  return { tag, name: words.charAt(0).toUpperCase() + words.slice(1) }
+}
+```
+
+The prefix rule matches the server directory's, so every prefix the backend can send splits the same way.
 
 ## Citations
 
-- **Source of citations:** each successful `ToolEnd`'s `result.citations`, decoded with `protocol/`'s `Citation` schema. A result whose citations fail to decode contributes none, and markers that point to them show as unlinked.
-- **Markers:** the model marks each claim with a `citationId` in square brackets. The app parses markers out of the text before rendering it as Markdown, since a marker followed by `(` would otherwise read as a link, and links each marker to the citation with that `citationId` among the results received so far.
-- **Sources list:** citations are grouped by `sourceId` (one dataset version or document version), showing the title, publisher and source link, with each query or provision used underneath. A marker that matches no citation is shown as unlinked.
-- **Versions:** each source shows the version cited and notes that the live link may show newer data, since users can open only the publisher's live link (`sourceUrl`), not our archived copy.
+- **Source of citations:** each successful `ToolEnd`'s `result.citations`, decoded with `protocol/`'s `Citation` schema in `reduce`. A result whose citations fail to decode contributes none.
+- **Markers:** the model writes each `citationId` in square brackets. Before the text goes to `react-markdown`, `linkCitations` replaces each marker with a Markdown link to `#cite-<n>`, numbered by source in order of first use, and the link component renders it as a small numbered chip that scrolls to the source. A marker whose ID matches no citation becomes a muted "?" chip, titled with the unmatched ID. Replacing markers before Markdown parsing also keeps a marker followed by `(` from being read as a link.
+- **While streaming,** a marker cut off mid-ID stays as plain text until the rest arrives.
+- **Sources list:** citations grouped by `sourceId` (one dataset or document version), numbered to match the chips, each showing the title, publisher and a link to `sourceUrl`, and underneath each query (dataset citations: the tool and its parameters) or provision (document citations) cited.
+- **Versions:** each source shows the version cited and notes that the live link may show newer data, since users can open only the publisher's live link, not our archived copy.
+
+```ts
+// src/questions/citations.ts
+import type { Citation } from "@policyhuis/protocol/Citation"
+
+/** A citation marker: a `citationId`, which is `<sourceId>#<part>`, in square brackets. */
+const MARKER = /\[([^[\]\s]+@[^[\]\s]+#[^[\]\s]+)\]/g
+
+/** Source numbers in order of first use in the answer, by `sourceId`. */
+export const sourceNumbers = (answer: string, citations: ReadonlyMap<string, Citation>): ReadonlyMap<string, number> => {
+  const numbers = new Map<string, number>()
+  for (const [, citationId] of answer.matchAll(MARKER)) {
+    const citation = citations.get(citationId)
+    if (citation !== undefined && !numbers.has(citation.sourceId)) numbers.set(citation.sourceId, numbers.size + 1)
+  }
+  return numbers
+}
+
+/** Replaces each marker with a Markdown link the answer's link component renders as a citation chip. */
+export const linkCitations = (
+  answer: string,
+  citations: ReadonlyMap<string, Citation>,
+  numbers: ReadonlyMap<string, number>
+): string =>
+  answer.replace(MARKER, (_, citationId: string) => {
+    const citation = citations.get(citationId)
+    const number = citation === undefined ? undefined : numbers.get(citation.sourceId)
+    return number === undefined ? `[?](#cite-missing)` : `[${String(number)}](#cite-${String(number)})`
+  })
+```
+
+## Running locally
+
+`browser-app/.env` (gitignored, with a `.env.example`) holds `BACKEND_URL`, for example `http://localhost:8080`. The Vite dev server proxies `/api` to it, so the browser calls the backend on the app's own origin and no CORS setup is needed while developing:
+
+```ts
+// browser-app/vite.config.ts
+import react from "@vitejs/plugin-react"
+import { defineConfig, loadEnv } from "vite"
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, import.meta.dirname, "")
+  return {
+    plugins: [react()],
+    server: { proxy: { "/api": { target: env.BACKEND_URL, changeOrigin: true } } }
+  }
+})
+```
+
+**(verify)** that the Vite proxy streams server-sent events without buffering them; if it buffers, the proxy needs response buffering turned off for `/api`. `yarn dev` at the repo root gains the browser app, so the data server, the backend and the app start together. Serving the built app from another origin needs CORS on the backend, decided with hosting.
 
 ## Testing
 
-- **Event handling:** a reducer from `AgentStreamEvent`s to page state, tested with recorded event sequences: tool calls that succeed, fail and never finish; calls finishing out of order; every `Complete` outcome; unavailable servers.
-- **Markers:** marker parsing and linking, including unlinked markers and markers next to Markdown links.
-- **Decoding:** every event and citation shape decodes with `protocol/`'s schemas, so a backend change that breaks the contract fails the browser app's tests.
+Pure modules carry the logic, so most tests need no browser:
+
+- **Notices:** which notice each result shows, including Stop (an interruption) as "Stopped." rather than the offline notice.
+- **`reduce`:** recorded event sequences: tool calls that succeed, fail and never finish; calls finishing out of order; text arriving after every tool call, in one chunk and in several; every `Complete` outcome; unavailable servers; a result whose citations fail to decode.
+- **`linkCitations` and `sourceNumbers`:** markers for known and unknown IDs; several markers for one source; a marker followed by `(`; a marker cut off mid-stream.
+- **`toolLabel`:** prefixed and unprefixed names.
+- **Decoding:** the recorded event sequences are decoded with `AgentStreamEvent`, so a backend change that breaks the contract fails these tests.
+
+Component tests (for example, that rows collapse when `Complete` arrives) are added if the components grow logic of their own.

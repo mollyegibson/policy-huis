@@ -2,8 +2,11 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import type { Fragment } from "effect/sql/Statement"
 
+import { IsoDate, NonNegativeInt, PositiveInt } from "@policyhuis/mcp-kit"
+
 const NullableText = Schema.NullOr(Schema.String)
-const NullableInt = Schema.NullOr(Schema.Int)
+const NullableDate = Schema.NullOr(IsoDate)
+const NullableCount = Schema.NullOr(NonNegativeInt)
 
 export const DatasetRow = Schema.Struct({
   datasetKey: Schema.String,
@@ -11,7 +14,7 @@ export const DatasetRow = Schema.Struct({
   publisher: NullableText,
   sourceUrl: Schema.String,
   license: NullableText,
-  sourceVersion: Schema.String,
+  sourceVersion: IsoDate,
   publisherDescription: NullableText
 })
 export type DatasetRow = typeof DatasetRow.Type
@@ -21,17 +24,17 @@ export const DevelopmentProjectRow = Schema.Struct({
   blockLot: Schema.String,
   nameOrAddress: Schema.String,
   status: Schema.String,
-  statusSince: NullableText,
-  daysInStatus: NullableInt,
-  planningApprovedOn: NullableText,
-  netUnits: NullableInt,
-  affordableUnits: NullableInt,
-  unitsExtremelyLow: NullableInt,
-  unitsVeryLow: NullableInt,
-  unitsLow: NullableInt,
-  unitsModerate: NullableInt,
+  statusSince: NullableDate,
+  daysInStatus: NullableCount,
+  planningApprovedOn: NullableDate,
+  netUnits: Schema.NullOr(Schema.Int),
+  affordableUnits: NullableCount,
+  unitsExtremelyLow: NullableCount,
+  unitsVeryLow: NullableCount,
+  unitsLow: NullableCount,
+  unitsModerate: NullableCount,
   neighborhood: NullableText,
-  supervisorDistrict: NullableInt
+  supervisorDistrict: Schema.NullOr(PositiveInt)
 })
 export type DevelopmentProjectRow = typeof DevelopmentProjectRow.Type
 
@@ -41,50 +44,60 @@ export const AffordableProjectRow = Schema.Struct({
   status: Schema.String,
   constructionStatus: Schema.String,
   neighborhood: Schema.String,
-  supervisorDistrict: Schema.Int,
-  totalUnits: Schema.Int,
-  affordableUnits: Schema.Int,
-  estimatedConstructionStart: NullableText,
-  estimatedCompletion: NullableText,
-  unitsByAmi: Schema.Array(Schema.Struct({ amiBand: Schema.String, units: Schema.Int }))
+  supervisorDistrict: PositiveInt,
+  totalUnits: NonNegativeInt,
+  affordableUnits: NonNegativeInt,
+  estimatedConstructionStart: NullableDate,
+  estimatedCompletion: NullableDate,
+  unitsByAmi: Schema.Array(Schema.Struct({ amiBand: Schema.String, units: NonNegativeInt }))
 })
 export type AffordableProjectRow = typeof AffordableProjectRow.Type
 
 const GroupRow = Schema.Struct({
   key: Schema.String,
-  projects: Schema.Int,
+  projects: NonNegativeInt,
   netUnits: Schema.Int,
-  affordableUnits: Schema.Int
+  affordableUnits: NonNegativeInt
 })
 
-const AffordableGroupRow = Schema.Struct({ key: Schema.String, projects: Schema.Int, units: Schema.Int })
+const AffordableGroupRow = Schema.Struct({
+  key: Schema.String,
+  projects: NonNegativeInt,
+  affordableUnits: NonNegativeInt
+})
+
+const IncomeBandRow = Schema.Struct({ amiBand: Schema.String, projects: NonNegativeInt, unitsInBand: NonNegativeInt })
 
 export const ZoneRow = Schema.Struct({
   key: Schema.String,
   name: Schema.String,
   publisher: NullableText,
-  sourceEditedAt: Schema.String,
+  sourceEditedAt: IsoDate,
   publisherDescription: NullableText
 })
 export type ZoneRow = typeof ZoneRow.Type
 
 const ExposureTotalsRow = Schema.Struct({
-  projectsChecked: Schema.Int,
-  projectsWithoutLocation: Schema.Int,
-  totalInside: Schema.Int,
+  projectsChecked: NonNegativeInt,
+  projectsWithoutLocation: NonNegativeInt,
+  totalInside: NonNegativeInt,
   unitsInside: Schema.Int,
-  affordableUnitsInside: Schema.Int
+  affordableUnitsInside: NonNegativeInt
 })
 
 const ExposedProjectRow = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   status: Schema.String,
-  affordableUnits: Schema.Int
+  affordableUnits: NonNegativeInt
 })
 
 const Value = Schema.Struct({ value: Schema.String })
-const Count = Schema.Struct({ total: Schema.Int })
+const NullableValue = Schema.Struct({ value: NullableText })
+
+/** A row of a list query that also carries the number of rows matching before the limit, from `count(*) OVER ()`. */
+const Counted = <F extends Schema.Struct.Fields>(row: Schema.Struct<F>) =>
+  Schema.Struct({ ...row.fields, total: NonNegativeInt })
 
 export interface DevelopmentFilters {
   readonly status?: string | undefined
@@ -104,18 +117,32 @@ export interface AffordableFilters {
 }
 
 export type DevelopmentGroupBy = "status" | "neighborhood" | "district" | "approval_year"
-export type AffordableGroupBy = "status" | "construction_status" | "neighborhood" | "district" | "ami_band"
+export type AffordableGroupBy = "status" | "construction_status" | "neighborhood" | "district"
 export type ProjectSource = "development_pipeline" | "affordable_pipeline"
 
-/** Read-only queries over the `sf` schema that the San Francisco ingestion project builds. */
+/** The projects an exposure query reads: one development pipeline snapshot, or the MOHCD pipeline. */
+export type ExposureProjects =
+  { readonly source: "development_pipeline"; readonly snapshot: string } | { readonly source: "affordable_pipeline" }
+
+/** The rows of a list query and how many rows matched before its limit. */
+const withTotal = <A extends { readonly total: number }>(found: ReadonlyArray<A>) => ({
+  total: found[0]?.total ?? 0,
+  rows: found.map(({ total: _total, ...row }) => row)
+})
+
+/**
+ * Read-only queries over the `sf` schema that the San Francisco ingestion project builds. Queries over the
+ * development pipeline take the snapshot to read, which the caller resolves once with `snapshot`, so every query
+ * behind one answer reads the same quarter even if a new one is loaded meanwhile.
+ */
 export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
   make: Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
 
     const rows = <S extends Schema.Top>(schema: S) => Schema.decodeUnknownEffect(Schema.Array(schema))
+    /** Decodes a query that always returns exactly one row, such as an aggregate. */
+    const oneRow = <S extends Schema.Top>(schema: S) => Schema.decodeUnknownEffect(Schema.Tuple([schema]))
     const where = (clauses: ReadonlyArray<Fragment>) => (clauses.length === 0 ? sql`TRUE` : sql.and(clauses))
-
-    const latestSnapshot = sql`(SELECT max(snapshot) FROM sf.development_pipeline)`
 
     const datasets = Effect.fn("HousingRepo.datasets")(function* () {
       return yield* rows(DatasetRow)(
@@ -131,8 +158,8 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       return found.map((r) => r.value).sort()
     })
 
-    const developmentStatuses = () =>
-      values(sql`SELECT status AS value FROM sf.development_pipeline WHERE snapshot = ${latestSnapshot}`)
+    const developmentStatuses = (snapshot: string) =>
+      values(sql`SELECT status AS value FROM sf.development_pipeline WHERE snapshot = ${snapshot}`)
     const affordableStatuses = () => values(sql`SELECT status AS value FROM sf.affordable_pipeline`)
     const neighborhoods = () => values(sql`SELECT name AS value FROM sf.neighborhoods`)
     const districts = () =>
@@ -140,14 +167,15 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
         SELECT supervisor_district::text AS value FROM sf.development_pipeline
         UNION SELECT supervisor_district::text FROM sf.affordable_pipeline`)
 
+    /** The latest loaded development pipeline snapshot, or null when none is loaded. */
     const snapshot = Effect.fn("HousingRepo.snapshot")(function* () {
-      const [row] = yield* rows(Value)(yield* sql`SELECT ${latestSnapshot} AS value`)
-      return row?.value ?? null
+      const [row] = yield* oneRow(NullableValue)(yield* sql`SELECT max(snapshot) AS value FROM sf.development_pipeline`)
+      return row.value
     })
 
-    const developmentWhere = (f: DevelopmentFilters) =>
+    const developmentWhere = (snapshot: string, f: DevelopmentFilters) =>
       where([
-        sql`snapshot = ${latestSnapshot}`,
+        sql`snapshot = ${snapshot}`,
         ...(f.status === undefined ? [] : [sql`status = ${f.status}`]),
         ...(f.neighborhood === undefined ? [] : [sql`neighborhood = ${f.neighborhood}`]),
         ...(f.supervisorDistrict === undefined ? [] : [sql`supervisor_district = ${f.supervisorDistrict}`]),
@@ -157,30 +185,29 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       ])
 
     const developmentProjects = Effect.fn("HousingRepo.developmentProjects")(function* (
+      snapshot: string,
       filters: DevelopmentFilters,
       limit: number
     ) {
-      const condition = developmentWhere(filters)
-      const [count] = yield* rows(Count)(
-        yield* sql`SELECT count(*)::int AS total FROM sf.development_pipeline WHERE ${condition}`
-      )
-      const projects = yield* rows(DevelopmentProjectRow)(
+      const found = yield* rows(Counted(DevelopmentProjectRow))(
         yield* sql`
           SELECT project_key AS "projectKey", block_lot AS "blockLot", name_or_address AS "nameOrAddress", status,
-                 status_since::text AS "statusSince", (current_date - status_since) AS "daysInStatus",
+                 status_since::text AS "statusSince", (source_version - status_since) AS "daysInStatus",
                  planning_approved_on::text AS "planningApprovedOn", net_units AS "netUnits",
                  affordable_units AS "affordableUnits", units_extremely_low AS "unitsExtremelyLow",
                  units_very_low AS "unitsVeryLow", units_low AS "unitsLow", units_moderate AS "unitsModerate",
-                 neighborhood, supervisor_district AS "supervisorDistrict"
+                 neighborhood, supervisor_district AS "supervisorDistrict", count(*) OVER ()::int AS total
           FROM sf.development_pipeline
-          WHERE ${condition}
+          WHERE ${developmentWhere(snapshot, filters)}
           ORDER BY status_since NULLS LAST, project_key
           LIMIT ${limit}`
       )
-      return { total: count?.total ?? 0, projects }
+      const { total, rows: projects } = withTotal(found)
+      return { total, projects }
     })
 
     const developmentSummary = Effect.fn("HousingRepo.developmentSummary")(function* (
+      snapshot: string,
       groupBy: DevelopmentGroupBy,
       status: string | undefined,
       affordableOnly: boolean
@@ -197,7 +224,7 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
                  coalesce(sum(net_units), 0)::int AS "netUnits",
                  coalesce(sum(affordable_units), 0)::int AS "affordableUnits"
           FROM sf.development_pipeline
-          WHERE ${developmentWhere({ status })} ${affordableOnly ? sql`AND affordable_units > 0` : sql``}
+          WHERE ${developmentWhere(snapshot, { status })} ${affordableOnly ? sql`AND affordable_units > 0` : sql``}
           GROUP BY 1 ORDER BY 1`
       )
     })
@@ -215,11 +242,7 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       filters: AffordableFilters,
       limit: number
     ) {
-      const condition = affordableWhere(filters)
-      const [count] = yield* rows(Count)(
-        yield* sql`SELECT count(*)::int AS total FROM sf.affordable_pipeline AS a WHERE ${condition}`
-      )
-      const projects = yield* rows(AffordableProjectRow)(
+      const found = yield* rows(Counted(AffordableProjectRow))(
         yield* sql`
           SELECT a.project_id AS "projectId", a.name, a.status, a.construction_status AS "constructionStatus",
                  a.neighborhood, a.supervisor_district AS "supervisorDistrict", a.total_units AS "totalUnits",
@@ -230,30 +253,21 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
                    (SELECT json_agg(json_build_object('amiBand', u.ami_band, 'units', u.units) ORDER BY u.ami_band)
                     FROM sf.affordable_pipeline_ami_units AS u WHERE u.project_id = a.project_id),
                    '[]'::json
-                 ) AS "unitsByAmi"
+                 ) AS "unitsByAmi",
+                 count(*) OVER ()::int AS total
           FROM sf.affordable_pipeline AS a
-          WHERE ${condition}
+          WHERE ${affordableWhere(filters)}
           ORDER BY a.project_id
           LIMIT ${limit}`
       )
-      return { total: count?.total ?? 0, projects }
+      const { total, rows: projects } = withTotal(found)
+      return { total, projects }
     })
 
     const affordableSummary = Effect.fn("HousingRepo.affordableSummary")(function* (
       groupBy: AffordableGroupBy,
       status: string | undefined
     ) {
-      const condition = affordableWhere({ status })
-      if (groupBy === "ami_band") {
-        return yield* rows(AffordableGroupRow)(
-          yield* sql`
-            SELECT u.ami_band AS key, count(DISTINCT u.project_id)::int AS projects, sum(u.units)::int AS units
-            FROM sf.affordable_pipeline_ami_units AS u
-            JOIN sf.affordable_pipeline AS a ON a.project_id = u.project_id
-            WHERE ${condition}
-            GROUP BY 1 ORDER BY 1`
-        )
-      }
       const key = {
         status: sql`a.status`,
         construction_status: sql`a.construction_status`,
@@ -262,9 +276,24 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       }[groupBy]
       return yield* rows(AffordableGroupRow)(
         yield* sql`
-          SELECT ${key} AS key, count(*)::int AS projects, coalesce(sum(a.affordable_units), 0)::int AS units
+          SELECT ${key} AS key, count(*)::int AS projects,
+                 coalesce(sum(a.affordable_units), 0)::int AS "affordableUnits"
           FROM sf.affordable_pipeline AS a
-          WHERE ${condition}
+          WHERE ${affordableWhere({ status })}
+          GROUP BY 1 ORDER BY 1`
+      )
+    })
+
+    const affordableUnitsByIncomeBand = Effect.fn("HousingRepo.affordableUnitsByIncomeBand")(function* (
+      status: string | undefined
+    ) {
+      return yield* rows(IncomeBandRow)(
+        yield* sql`
+          SELECT u.ami_band AS "amiBand", count(DISTINCT u.project_id)::int AS projects,
+                 sum(u.units)::int AS "unitsInBand"
+          FROM sf.affordable_pipeline_ami_units AS u
+          JOIN sf.affordable_pipeline AS a ON a.project_id = u.project_id
+          WHERE ${affordableWhere({ status })}
           GROUP BY 1 ORDER BY 1`
       )
     })
@@ -279,38 +308,46 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       return row ?? null
     })
 
+    /** The projects from one pipeline inside one zone; dbt builds zone membership for the latest snapshot. */
     const exposure = Effect.fn("HousingRepo.exposure")(function* (
       zoneKey: string,
-      source: ProjectSource,
+      from: ExposureProjects,
       affordableOnly: boolean,
       limit: number
     ) {
+      const source: ProjectSource = from.source
       const projects =
-        source === "development_pipeline"
+        from.source === "development_pipeline"
           ? sql`
               SELECT project_key AS id, name_or_address AS name, status, coalesce(affordable_units, 0) AS affordable,
                      coalesce(net_units, 0) AS units, geom
-              FROM sf.development_pipeline WHERE snapshot = ${latestSnapshot}`
+              FROM sf.development_pipeline WHERE snapshot = ${from.snapshot}`
           : sql`
               SELECT project_id AS id, name, status, affordable_units AS affordable, total_units AS units, geom
               FROM sf.affordable_pipeline`
-      const candidates = sql`SELECT * FROM (${projects}) AS p ${affordableOnly ? sql`WHERE p.affordable > 0` : sql``}`
-      const inside = sql`
-        SELECT c.* FROM (${candidates}) AS c
-        JOIN sf.project_zone_exposure AS e
-          ON e.project_source = ${source} AND e.project_id = c.id AND e.zone = ${zoneKey}`
-      const [totals] = yield* rows(ExposureTotalsRow)(
+      const scope = sql`
+        WITH candidates AS (
+          SELECT * FROM (${projects}) AS p ${affordableOnly ? sql`WHERE p.affordable > 0` : sql``}
+        ),
+        inside AS (
+          SELECT c.* FROM candidates AS c
+          JOIN sf.project_zone_exposure AS e
+            ON e.project_source = ${source} AND e.project_id = c.id AND e.zone = ${zoneKey}
+        )`
+      const [totals] = yield* oneRow(ExposureTotalsRow)(
         yield* sql`
-          SELECT (SELECT count(*)::int FROM (${candidates}) AS c) AS "projectsChecked",
-                 (SELECT count(*)::int FROM (${candidates}) AS c WHERE c.geom IS NULL) AS "projectsWithoutLocation",
-                 (SELECT count(*)::int FROM (${inside}) AS i) AS "totalInside",
-                 (SELECT coalesce(sum(i.units), 0)::int FROM (${inside}) AS i) AS "unitsInside",
-                 (SELECT coalesce(sum(i.affordable), 0)::int FROM (${inside}) AS i) AS "affordableUnitsInside"`
+          ${scope}
+          SELECT (SELECT count(*)::int FROM candidates) AS "projectsChecked",
+                 (SELECT count(*)::int FROM candidates WHERE geom IS NULL) AS "projectsWithoutLocation",
+                 (SELECT count(*)::int FROM inside) AS "totalInside",
+                 (SELECT coalesce(sum(units), 0)::int FROM inside) AS "unitsInside",
+                 (SELECT coalesce(sum(affordable), 0)::int FROM inside) AS "affordableUnitsInside"`
       )
       const list = yield* rows(ExposedProjectRow)(
         yield* sql`
-          SELECT i.id, i.name, i.status, i.affordable::int AS "affordableUnits"
-          FROM (${inside}) AS i ORDER BY i.affordable DESC, i.id LIMIT ${limit}`
+          ${scope}
+          SELECT id, name, status, affordable::int AS "affordableUnits"
+          FROM inside ORDER BY affordable DESC, id LIMIT ${limit}`
       )
       return { totals, projects: list }
     })
@@ -326,6 +363,7 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       developmentSummary,
       affordableProjects,
       affordableSummary,
+      affordableUnitsByIncomeBand,
       zone,
       exposure
     } as const
