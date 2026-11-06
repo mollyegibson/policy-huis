@@ -3,6 +3,7 @@
 Conventions for the React web app. The app's design (pages, components, how citations are displayed, hosting) is planned separately; see [MVP Technical Plan § Follow-up](./plans/mvp-technical-plan.md#follow-up). These rules apply from its first commit.
 
 - Strict type safety (`any` can only be used in type constraints).
+- Follow the Rules of Hooks. ESLint runs React's hooks rules (`eslint-plugin-react-hooks`, its recommended set, with missing hook dependencies as an error) on `browser-app/`, and `yarn lint` fails on any warning.
 - Functional programming patterns take precedence over OOP.
 - All state is extracted into standalone hook files, except tight-loop animation-like state, which can be inline in components.
 - Always define and program against interfaces rather than implementations. Components talk to the backend API through a client typed by `protocol/`, never with ad hoc `fetch` calls and hand-written types.

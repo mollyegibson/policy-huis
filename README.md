@@ -90,7 +90,7 @@ docs/                    plans, architecture and style guides
 
 ## Running locally
 
-The San Francisco data server and the backend run as two processes. Requires Node 26, Corepack and the loaded `sf-housing` database (see [`san-francisco/ingest/`](./san-francisco/ingest/README.md)).
+The San Francisco data server, the backend and the browser app run as three processes. Requires Node 26, Corepack and the loaded `sf-housing` database (see [`san-francisco/ingest/`](./san-francisco/ingest/README.md)).
 
 1. **Install** from the repo root: `corepack enable && yarn install`.
 2. **Configure the data server:** `cp san-francisco/housing-server/.env.example san-francisco/housing-server/.env`, then set `SF_HOUSING_READER_DATABASE_URL` (the read-only `sf_housing_reader` connection string) and `SF_HOUSING_PORT` (for example `8081`).
@@ -100,12 +100,13 @@ The San Francisco data server and the backend run as two processes. Requires Nod
    - the API key of the model configuration selected in `backend/config/agent.yaml` (`FRONTIER_API_KEY` for `frontier`).
 
    Check that the `sf-housing` URL in `backend/config/servers.yaml` uses the data server's port.
-4. **Start both**, from the repo root:
-   - in one terminal, `yarn dev`, which runs both and interleaves their logs;
-   - or in two terminals, `yarn workspace @policyhuis/sf-housing-server start` and `yarn workspace @policyhuis/backend start`.
+4. **Configure the browser app:** `cp browser-app/.env.example browser-app/.env`, then set `BACKEND_URL` to the backend's address (for example `http://localhost:8080`). The app's dev server proxies `/api` to it.
+5. **Start everything**, from the repo root:
+   - in one terminal, `yarn dev`, which runs the data server, the backend and the browser app and interleaves their logs;
+   - or in separate terminals, `yarn workspace @policyhuis/sf-housing-server start`, `yarn workspace @policyhuis/backend start` and `yarn workspace @policyhuis/browser-app start`.
 
-   Either can start first: the backend retries a data server it cannot reach and offers its tools once it connects.
-5. **Ask a question:**
+   They can start in any order: the backend retries a data server it cannot reach and offers its tools once it connects, and the browser app shows the agent host as offline until the backend is up.
+6. **Ask a question** in the browser at the URL the app's dev server prints (`http://localhost:5173` by default), or from the command line:
 
    ```sh
    curl -N -X POST http://localhost:8080/api/v1/questions \
