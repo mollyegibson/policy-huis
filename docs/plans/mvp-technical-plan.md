@@ -192,7 +192,7 @@ A Python package (uv, ruff, pytest) owns everything that loads or transforms dat
 | `raw_sf`, `raw_ams` | Python loaders | Alembic (raw SQL) | dbt |
 | `sf`, `ams` | dbt | dbt | The city's data server |
 | `policy_text_sf`, `policy_text_ams` | Python passage pipeline | Alembic | The matching legal-text server |
-| `app` | Backend | `effect/sql` Migrator | Backend, evaluation reports |
+| `app` | Backend | Drizzle (`backend/drizzle/`) | Backend, evaluation reports |
 
 No server reads another server's schema. Moving a server to its own database later is then a connection-string change.
 
@@ -325,7 +325,7 @@ Each spike answers one question and records its result in `docs/plans/spikes/`. 
 
 | ID | Question | Method | Decision it informs |
 |---|---|---|---|
-| S1 | Do tool calls and streaming work with each local runtime and model? | In a scratch Effect 4 project, point `@effect/ai-openai-compat` at Ollama, LM Studio, `mlx_lm.server` and llama.cpp; run a streamed two-tool round trip, including parallel tool calls, with each candidate model, and time two and four questions answered in parallel against one, with the tools served by a stub `McpServer` and bound through `McpClient.toolkit` | Local runtime; candidate models whose tool calling works; how many questions the runtime answers in parallel, at what time per answer and memory, which sets the backend's `api.maxConcurrentQuestions`; whether it honors `toolChoice: "none"`; whether Effect's MCP server and client (marked unstable and experimental in Effect 4.1) hold up, including whether `McpServer` publishes `outputSchema` and returns `structuredContent` from a tool's result schema and `McpClient` passes it through |
+| S1 | Do tool calls and streaming work with each local runtime and model? | In a scratch Effect 4 project, point `@effect/ai-openai-compat` at Ollama, LM Studio, `mlx_lm.server` and llama.cpp; run a streamed two-tool round trip, including parallel tool calls, with each candidate model, and time two and four questions answered in parallel against one, with the tools served by a stub `McpServer` and bound through `McpClient.toolkit` | Local runtime; candidate models whose tool calling works; how many questions the runtime answers in parallel, at what time per answer and memory, which sets the local configuration's `maxConcurrentQuestions` in the backend; whether it honors `toolChoice: "none"`; whether Effect's MCP server and client (marked unstable and experimental in Effect 4.1) hold up, including whether `McpServer` publishes `outputSchema` and returns `structuredContent` from a tool's result schema and `McpClient` passes it through |
 | S2 | Can a small model pick the right tool among about 12, and copy citation IDs exactly? | Mock MCP servers with realistic tool descriptions and citations; 20 routing questions; candidate models that fit a 24 GB M4; count markers that do not match a returned `citationId` | Base model; tool design and naming; whether the agent needs short citation aliases |
 | S3 | Which model translates Dutch legal text well enough, under a usable license? | Translate sample passages from the Huisvestingsverordening and national rent law with candidates: dedicated translation models (for example [OPUS-MT](https://huggingface.co/Helsinki-NLP/opus-mt-nl-en), MADLAD-400) and a general open model prompted to translate. Have a Dutch reader grade a sample, and check each license, including whether it allows commercial use. Test whether the Dutch identifier search adds value. | Translation model; whether the identifier search is kept |
 | S4 | Which embedding model, and how much storage? | Run hybrid search on a sample corpus in both languages with candidate multilingual embedding models; for Amsterdam, compare embedding the Dutch original versus the English translation; compare against vector-only and keyword-only to confirm each search adds value; measure storage per passage in Neon | Embedding model; which Amsterdam text is embedded; whether the storage escape hatch is needed |
@@ -379,7 +379,7 @@ San Francisco work (source proposal, ingestion, corpus, `sf-housing`) is owned b
 
 Planned separately from this backend plan:
 
-1. **Web app design and implementation.** The React app's pages and components, how answers and citations are displayed (including Dutch originals beside their machine translations), loading and streaming states, and hosting.
+1. **Web app design and implementation.** The Phase 1 prototype is planned in the [Browser App Plan](browser-app.md). The full design covers the React app's pages and components, how answers and citations are displayed (including Dutch originals beside their machine translations), loading and streaming states, and hosting.
 2. **Energy dashboard in the web app.** Compares energy per query for the local model against the cloud baselines, especially the frontier model. Points to settle in that plan:
    - **Data.** It reads evaluation runs and request traces from the `app` schema through new read endpoints on the backend API.
    - **Measured vs. estimated.** Local figures are measured; cloud figures are EcoLogits estimates. The dashboard shows the difference, and the estimates' uncertainty ranges, visually.

@@ -116,7 +116,7 @@ Contexts communicate through published contracts (database schemas, MCP tools an
 - Server tests run against a throwaway PostGIS container (`imresamu/postgis:17-3.5`), so Docker must be running.
 - Use Effect 4 (`effect` 4.x, AI modules under `effect/ai`). Model access goes through a config layer, not conditional imports.
 - Validate with Effect `Schema`, not Zod.
-- The `app` schema is migrated with the Migrator from `effect/sql`.
+- The `app` schema is defined with Drizzle in `backend/src/db/schema.ts`. Run `yarn workspace @policyhuis/backend db:generate` after changing it, which writes a SQL migration to `backend/drizzle/`; the backend applies pending migrations at startup. Applied migrations never change.
 
 # Information Source Hierarchy
 
@@ -137,6 +137,7 @@ When guidance conflicts, higher sources win:
 - [MVP Technical Plan](./docs/plans/mvp-technical-plan.md): the backend design: agent, MCP servers, data layer, network, evaluation and energy
 - [San Francisco Plan](./docs/plans/sf-plan.md): San Francisco sources, servers and tools
 - [Agent Loop Plan](./docs/plans/agent-loop.md): the backend's agent loop, question API and `app` schema, shared by every city
+- [Browser App Plan](./docs/plans/browser-app.md): the browser app's Phase 1 prototype: the streamed answer, tool calls and citations, shared by every city
 - [Netherlands Ingestion and Tools Plan](./docs/plans/netherlands-ingestion.md): loading the Dutch sources and designing the Dutch data server's tools
 - [Provisional Questions](./docs/plans/provisional-questions.md): the draft question set, pending confirmation from the research team
 

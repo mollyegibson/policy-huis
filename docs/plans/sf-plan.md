@@ -167,14 +167,14 @@ export const PositiveInt = Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0))
 export const NonNegativeInt = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
 ```
 
-**Citations.** Every tool result carries the citations behind it in its `structuredContent` (see [Tool results](agent-loop.md#tool-results-and-the-result-guard)). A citation is either a passage from a document (a law, a report or a reference) or a dataset query. Phase 1 uses dataset citations only; document citations arrive with the legal-text server in Phase 2. Every citation carries two stable IDs, assigned by the tool that returns it:
+**Citations.** Every tool result carries the citations behind it in its `structuredContent` (see [Tool results](agent-loop.md#tool-results)). A citation is either a passage from a document (a law, a report or a reference) or a dataset query. Phase 1 uses dataset citations only; document citations arrive with the legal-text server in Phase 2. Every citation carries two stable IDs, assigned by the tool that returns it:
 
 - **`sourceId`** names one version of a source: `<documentId>@<versionDate>` for a document (`rent_ordinance@2026-06-29`), `<datasetKey>@<sourceVersion>` for a dataset (`sf.development_pipeline@2026-08-28`). Every citation of the same dataset or PDF version, from any call, has the same `sourceId`.
 - **`citationId`** names the part of that source a claim rests on: `<sourceId>#<provision>` for a document (`rent_ordinance@2026-06-29#37.9(a)(8)`), `<sourceId>#<queryKey>` for a dataset. `queryKey` is the first 16 hex characters of the SHA-256 of the tool name and its decoded parameters as canonical JSON (keys sorted, absent optional fields omitted), so the same query always gets the same ID.
 
 Both IDs are derived from the citation's own fields, so they are the same across calls, requests, model configurations and evaluation runs. The schema rejects a citation whose IDs do not match its fields, so anything decoding citations (the browser app, the evaluation) can rely on the rule. The model cites claims with the full `citationId` (see [Citations in answers](agent-loop.md#citations-in-answers)).
 
-**The archived file's hash is not in the citation.** Users can only open the publisher's live link (`sourceUrl`), not our archive, so the hash would cost the model tokens in every tool result without anything a user could check. It stays in `raw_sf.load_manifest`, where `sourceId` leads to the archived file and its hash for reproducing an answer or detecting that the publisher replaced a file. The web app shows the version cited and notes that the live link may show newer data. Serving archived public-domain files by `sourceId` can be added later without changing the citation.
+**The archived file's hash is not in the citation.** Users can only open the publisher's live link (`sourceUrl`), not our archive, so the hash would cost the model tokens in every tool result without anything a user could check. It stays in `raw_sf.load_manifest`, where `sourceId` leads to the archived file and its hash for reproducing an answer or detecting that the publisher replaced a file. The browser app shows the version cited and notes that the live link may show newer data (see [Browser App Plan](browser-app.md#citations)). Serving archived public-domain files by `sourceId` can be added later without changing the citation.
 
 The citation schema is in `protocol/`, because the browser app decodes it to show each source. `shared/mcp-kit` builds the IDs for TypeScript servers.
 
@@ -628,7 +628,7 @@ Three Neon projects (see [Data servers](#data-servers)), each with its own schem
 | `sf-housing` | `sf` | dbt | dbt | `sf-housing` server (role `sf_housing_reader`) |
 | `sf-legal-text` (Phase 2) | `raw_sf` | Python loaders | Alembic | Passage pipeline |
 | `sf-legal-text` (Phase 2) | `policy_text_sf` | Python passage pipeline | Alembic | Legal-text server (role `sf_legal_text_reader`) |
-| `app` | `app` | Backend | `effect/sql` Migrator | Backend, evaluation reports; see [The `app` schema](agent-loop.md#the-app-schema) |
+| `app` | `app` | Backend | Drizzle (`backend/drizzle/`) | Backend, evaluation reports; see [The `app` schema](agent-loop.md#the-app-schema) |
 
 Each reader role has `USAGE` on its schema and `SELECT` on its tables, and nothing else.
 
@@ -746,17 +746,9 @@ The San Francisco build sets patterns that the Dutch product reuses unchanged:
 - **Data servers by source, with the place as a parameter**, rather than one server per city, once more than one place shares a source.
 - **The agent loop and API are place-independent.** Adding the Netherlands adds servers to the directory file.
 
-## Browser app (Phase 1)
+## Browser app
 
-A minimal React app in `browser-app/`, following [Front-end Code Style](../front-end-code-style.md), enough to show the prototype working:
-
-- one question box and a streamed answer, decoded with the contract's `AgentStreamEvent`;
-- tool status lines from `ToolStart` and `ToolEnd` ("Checking the development pipeline…");
-- citation markers in the answer linked to the citations in the `ToolEnd` results, decoded with `protocol/`'s citation schema and grouped by source (dataset or document version, publisher, source link) with each query or provision used underneath; markers that match no citation shown as unlinked. Markers are parsed out of the text before it is rendered as Markdown, since a marker followed by `(` would otherwise read as a link;
-- the `message` from `Complete` when the outcome is `step_limit`, `context_limit`, `truncated` or `failed`, a note for each server in `Complete.unavailableServers`, the `message` from a `503`, and an "agent host offline" state when the API cannot be reached;
-- a note that questions are logged.
-
-No accounts, history or maps in Phase 1. The full web app design remains the MVP plan's follow-up.
+The browser app is the same for every city; its plan, including how tool calls and citations are shown, is the [Browser App Plan](browser-app.md).
 
 ## Milestones
 
@@ -765,8 +757,8 @@ No accounts, history or maps in Phase 1. The full web app design remains the MVP
 | 1 | P1.1 Contracts | `protocol/` and the `shared/mcp-kit` helpers in [Protocol and shared helpers](#protocol-and-shared-helpers), the Phase 1 tools in [Data server tools](#data-server-tools) and [API contract](agent-loop.md#api-contract) in code, with decode tests; migrations for `raw_sf` and `app` written. |
 | 1 | P1.2 Data loaded | Both pipelines, the three zones and neighborhoods loaded with provenance; dbt models and tests pass; database size measured. |
 | 1 | P1.3 `sf-housing` server | The six Phase 1 tools pass tests through `McpTest` against a Postgres testcontainer. |
-| 1 | P1.4 First cited answer | The agent loop answers a "where is it, and is it moving" question and a climate-ready question through `POST /questions`, with dataset citations and a trace in `app`. |
-| 1 | P1.5 Prototype | The browser app shows streamed answers, tool status and linked citations against the running backend. |
+| 1 | P1.4 First cited answer | The agent loop answers a "where is it, and is it moving" question and a climate-ready question through `POST /api/v1/questions`, with dataset citations and a trace in `app`. |
+| 1 | P1.5 Prototype | The browser app shows streamed answers, collapsible tool calls and linked citations against the running backend, as in the [Browser App Plan](browser-app.md). |
 | 2 | P2.1 Documents | The ordinances, reports and data dictionary loaded into `sf-legal-text`; the legal-text server answers with document citations labeled by type. |
 | 2 | P2.2 Rent Ordinance and statutes | Chapter 37 and the California sections loaded; the grounds-to-subsections mapping sourced. |
 | 2 | P2.3 Evictions | Eviction Notices loaded; the two eviction tools pass tests; a rule-plus-data eviction question is answered end to end. |

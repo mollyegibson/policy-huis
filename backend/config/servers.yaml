@@ -1,0 +1,5 @@
+# The MCP servers this backend answers from. A server's tools are offered to the model as <prefix><tool name>.
+servers:
+  - name: sf-housing
+    url: http://localhost:8081/mcp
+    prefix: sf_

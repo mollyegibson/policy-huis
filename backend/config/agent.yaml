@@ -1,0 +1,36 @@
+# The backend's declared choices. Secrets never go here; they live in backend/.env.
+# Values marked provisional are set until spikes S1 and S2 measure them (see docs/plans/agent-loop.md#configuration).
+
+model:
+  configuration: frontier
+  configurations:
+    frontier:
+      baseUrl: https://api.openai.com/v1
+      modelId: gpt-6-luna
+      contextTokens: 32000 # provisional: near a laptop model's budget, far below the model's published 1,050,000
+      answerTokens: 4000 # provisional
+      bytesPerToken: 3 # provisional, to be measured on real tool results
+      maxConcurrentQuestions: 4 # provisional, within the provider's rate limits
+      outputTokensParameter: max_completion_tokens # gpt-6-luna rejects max_tokens (checked November 5, 2026)
+      requestOptions:
+        reasoning_effort: none # Chat Completions supports function calling for this model only with reasoning off
+
+loop:
+  maxSteps: 10 # provisional
+  stepTimeout: 60 seconds # provisional
+  requestTimeout: 3 minutes # provisional
+  modelRetries: 2
+  modelRetryBaseDelay: 1 second
+  toolConcurrency: 4
+
+tools:
+  callTimeout: 15 seconds
+  reconnectBaseDelay: 1 second # first delay before retrying a server that could not be reached
+  reconnectMaxDelay: 1 minute # longest delay between retries
+
+api:
+  keepaliveInterval: 20 seconds
+
+prompt:
+  file: prompts/system.v1.md
+  version: v1

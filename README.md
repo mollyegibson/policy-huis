@@ -88,6 +88,33 @@ evaluation/              question set and expected answers
 docs/                    plans, architecture and style guides
 ```
 
+## Running locally
+
+The San Francisco data server and the backend run as two processes. Requires Node 26, Corepack and the loaded `sf-housing` database (see [`san-francisco/ingest/`](./san-francisco/ingest/README.md)).
+
+1. **Install** from the repo root: `corepack enable && yarn install`.
+2. **Configure the data server:** `cp san-francisco/housing-server/.env.example san-francisco/housing-server/.env`, then set `SF_HOUSING_READER_DATABASE_URL` (the read-only `sf_housing_reader` connection string) and `SF_HOUSING_PORT` (for example `8081`).
+3. **Configure the backend:** `cp backend/.env.example backend/.env`, then set:
+   - `APP_DATABASE_URL`: the owner connection string of the `app` Neon project; the backend creates the `app` schema on first start;
+   - `BACKEND_PORT`: the port for the question API (for example `8080`);
+   - the API key of the model configuration selected in `backend/config/agent.yaml` (`FRONTIER_API_KEY` for `frontier`).
+
+   Check that the `sf-housing` URL in `backend/config/servers.yaml` uses the data server's port.
+4. **Start both**, from the repo root:
+   - in one terminal, `yarn dev`, which runs both and interleaves their logs;
+   - or in two terminals, `yarn workspace @policyhuis/sf-housing-server start` and `yarn workspace @policyhuis/backend start`.
+
+   Either can start first: the backend retries a data server it cannot reach and offers its tools once it connects.
+5. **Ask a question:**
+
+   ```sh
+   curl -N -X POST http://localhost:8080/api/v1/questions \
+     -H 'content-type: application/json' \
+     -d '{"question": "How many affordable units are in the development pipeline, by status?"}'
+   ```
+
+   The answer streams back as server-sent events: one `ToolStart` and `ToolEnd` per tool call, the answer in `TextChunk`s, and `Complete` last. Each question's trace is written to `app.requests` and `app.tool_calls`.
+
 ## Tooling
 
 | Area | Tooling |
@@ -108,6 +135,7 @@ San Francisco work (sources, ingestion, corpus, `sf-housing`) is owned by Molly;
 - [Provisional Questions](./docs/plans/provisional-questions.md): the draft question set
 - [San Francisco Plan](./docs/plans/sf-plan.md): San Francisco phases, sources, tools, contracts and schemas
 - [Agent Loop Plan](./docs/plans/agent-loop.md): the backend's agent loop, question API and `app` schema, shared by every city
+- [Browser App Plan](./docs/plans/browser-app.md): the browser app's Phase 1 prototype: the streamed answer, tool calls and citations, shared by every city
 - [Netherlands Ingestion and Tools Plan](./docs/plans/netherlands-ingestion.md): loading the Dutch sources and designing the Dutch data server's tools
 - [Domain-Driven Design and Hexagonal Architecture](./docs/domain-driven-design.md): where code belongs and why
 - [Working Agreement](./docs/working-agreement.md): the rules we hold each other to in review
