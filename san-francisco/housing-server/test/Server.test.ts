@@ -69,6 +69,8 @@ layer(TestServer.layer, { timeout: 120_000 })("sf-housing server", (it) => {
         "dataset_info",
         "development_pipeline_projects",
         "development_pipeline_summary",
+        "eviction_grounds",
+        "eviction_notice_counts",
         "project_hazard_exposure"
       ])
       for (const tool of tools) expect(tool.outputSchema).toBeDefined()
@@ -76,6 +78,19 @@ layer(TestServer.layer, { timeout: 120_000 })("sf-housing server", (it) => {
   )
 
   describe("development_pipeline_projects", () => {
+    it.effect("treats a parameter sent as null as one not given", () =>
+      Effect.gen(function* () {
+        const content = yield* structured("development_pipeline_projects", {
+          approvedBefore: "2020-01-01",
+          status: null,
+          neighborhood: null,
+          supervisorDistrict: null,
+          limit: null
+        })
+        expect(content["totalMatching"]).toBe(1)
+      })
+    )
+
     it.effect("filters the latest snapshot and reports days in status up to the snapshot's source version", () =>
       Effect.gen(function* () {
         const content = yield* structured("development_pipeline_projects", { approvedBefore: "2020-01-01" })
@@ -205,6 +220,92 @@ layer(TestServer.layer, { timeout: 120_000 })("sf-housing server", (it) => {
     })
   )
 
+  describe("eviction_notice_counts", () => {
+    it.effect("counts notices in the month range, and a notice once per ground when grouped by ground", () =>
+      Effect.gen(function* () {
+        const content = yield* structured("eviction_notice_counts", {
+          from: "2024-01",
+          to: "2025-08",
+          groupBy: ["ground"]
+        })
+        expect(content["totalNotices"]).toBe(4)
+        expect(content["dataAsOf"]).toBe("2026-11-06")
+        expect(content["groups"]).toEqual([
+          { key: { ground: "breach" }, notices: 2 },
+          { key: { ground: "owner_move_in" }, notices: 2 }
+        ])
+        expect(citationsOf(content).map((c) => c.sourceId)).toEqual(["sf.eviction_notices@2026-11-06"])
+      })
+    )
+
+    it.effect("filters to notices giving any listed ground, and groups by two fields", () =>
+      Effect.gen(function* () {
+        const content = yield* structured("eviction_notice_counts", {
+          from: "2024-01",
+          to: "2025-08",
+          grounds: ["breach"],
+          groupBy: ["year", "neighborhood"]
+        })
+        expect(content["totalNotices"]).toBe(2)
+        expect(content["groups"]).toEqual([
+          { key: { year: "2024", neighborhood: "Mission Bay" }, notices: 1 },
+          { key: { year: "2025", neighborhood: "Castro/Upper Market" }, notices: 1 }
+        ])
+      })
+    )
+
+    it.effect("groups notices without a district as unknown", () =>
+      Effect.gen(function* () {
+        const content = yield* structured("eviction_notice_counts", {
+          from: "2025-01",
+          to: "2025-08",
+          groupBy: ["district"]
+        })
+        expect(content["groups"]).toEqual([
+          { key: { district: "8" }, notices: 1 },
+          { key: { district: "unknown" }, notices: 1 }
+        ])
+      })
+    )
+
+    it.effect("returns months outside the data as PeriodOutOfRange with the months covered", () =>
+      Effect.gen(function* () {
+        const result = yield* call("eviction_notice_counts", { from: "2023-01", to: "2024-06" })
+        expect(result.isError).toBe(true)
+        const text = JSON.stringify(result.content)
+        expect(text).toContain("PeriodOutOfRange")
+        expect(text).toContain("2024-01")
+        expect(text).toContain("2025-08")
+      })
+    )
+
+    it.effect("returns an unknown ground as UnknownValue listing the ground keys", () =>
+      Effect.gen(function* () {
+        const result = yield* call("eviction_notice_counts", { from: "2024-01", to: "2024-12", grounds: ["eviction"] })
+        expect(result.isError).toBe(true)
+        const text = JSON.stringify(result.content)
+        expect(text).toContain("UnknownValue")
+        expect(text).toContain("owner_move_in")
+      })
+    )
+  })
+
+  it.effect("lists each ground with the report's label and section, citing the data and the report", () =>
+    Effect.gen(function* () {
+      const content = yield* structured("eviction_grounds", {})
+      expect(content["grounds"]).toEqual([
+        { key: "breach", label: "breach of rental agreement", section: "37.9(a)(2)" },
+        { key: "other_cause", label: "other or no reason given", section: null },
+        { key: "owner_move_in", label: "owner/relative move-in", section: "37.9(a)(8)" },
+        { key: "roommate_same_unit", label: "roommate eviction", section: "37.9(b)" }
+      ])
+      expect(citationsOf(content).map((c) => c.sourceId)).toEqual([
+        "sf.eviction_notices@2026-11-06",
+        "sf.eviction_report@2026-04-08"
+      ])
+    })
+  )
+
   it.effect("describes each dataset with the publisher's own description", () =>
     Effect.gen(function* () {
       const content = yield* structured("dataset_info", { dataset: "sfpuc_100yr_storm" })
@@ -238,7 +339,12 @@ const unreachableRepo = Layer.succeed(HousingRepo, {
   affordableSummary: () => Effect.fail(refused),
   affordableUnitsByIncomeBand: () => Effect.fail(refused),
   zone: () => Effect.fail(refused),
-  exposure: () => Effect.fail(refused)
+  exposure: () => Effect.fail(refused),
+  evictionPeriod: () => Effect.fail(refused),
+  evictionGroundKeys: () => Effect.fail(refused),
+  evictionDistricts: () => Effect.fail(refused),
+  evictionGrounds: () => Effect.fail(refused),
+  evictionCounts: () => Effect.fail(refused)
 })
 
 class UnreachableServer extends Context.Service<UnreachableServer, McpTest.Client>()("test/UnreachableServer") {
@@ -262,7 +368,9 @@ layer(UnreachableServer.layer)("sf-housing server without its database", (it) =>
         ["affordable_pipeline_summary", { groupBy: "status" }],
         ["affordable_pipeline_units_by_income_band", {}],
         ["project_hazard_exposure", { zone: "sfpuc_100yr_storm", projects: "development_pipeline" }],
-        ["dataset_info", {}]
+        ["dataset_info", {}],
+        ["eviction_notice_counts", { from: "2024-01", to: "2024-12" }],
+        ["eviction_grounds", {}]
       ]
       for (const [name, args] of calls) {
         const result = yield* client.callTool({ name, arguments: args })

@@ -63,7 +63,7 @@ def test_reader_role_can_read_sf_but_not_raw(migrated_url: str) -> None:
     assert sf == (True,)
 
 
-def test_config_declares_the_phase_1_sources() -> None:
+def test_config_declares_the_sources() -> None:
     assert set(load_sources(SOURCES_FILE)) == {
         "development_pipeline",
         "affordable_pipeline",
@@ -71,4 +71,6 @@ def test_config_declares_the_phase_1_sources() -> None:
         "slr_66in_100yr_storm",
         "air_pollutant_exposure_zone",
         "sfpuc_100yr_storm",
+        "eviction_notices",
+        "eviction_report",
     }

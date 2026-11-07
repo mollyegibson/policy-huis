@@ -118,9 +118,16 @@ The Rent Ordinance PDF's text extracts cleanly. Each section starts with a "Sec.
 
 | Source | DataSF ID | License | Updated | Size and shape | Notes |
 |---|---|---|---|---|---|
-| Eviction Notices | [`5cei-gny5`](https://data.sf.gov/d/5cei-gny5) | ODC Public Domain (PDDL) | Monthly; rows updated November 4, 2026 | About 49,000 notices filed since January 2, 1997; 21 ground flags per notice, block-level address, supervisor district, analysis neighborhood, point location | Notices filed with the Rent Board under Section 37.9(c). A notice is not an eviction. A notice can carry several grounds. A duplicate-row issue was fixed on February 27, 2024. |
+| Eviction Notices | [`5cei-gny5`](https://data.sf.gov/d/5cei-gny5) | ODC Public Domain (PDDL) | Monthly; rows updated November 6, 2026 | 49,159 notices filed from January 2, 1997 to October 29, 2026; 19 ground flags per notice, block-level address, supervisor district, analysis neighborhood, point location | Notices filed with the Rent Board under Section 37.9(c). A notice is not an eviction. A notice can carry several grounds. A duplicate-row issue was fixed on February 27, 2024. On November 6, 2026: `eviction_id` is unique; every neighborhood name is in the Analysis Neighborhoods list; 96 notices have no neighborhood, 89 no supervisor district and 77 no location; 331 have no ground flag set. |
 
-**Mapping eviction grounds to the ordinance.** The dataset names each ground in words ("owner move in", "Ellis Act withdrawal") but does not give the Section 37.9 subsection it corresponds to. Linking a ground to its subsection is what makes rule-plus-data answers possible, so the mapping is a declared table in `san-francisco/ingest/config/`, with a source cited for each row (for example, the Rent Board's eviction notice form or its annual eviction report), reviewed by pull request and pinned by a test. It is not written from memory. Grounds the dataset marks as "other cause" map to no subsection.
+| Rent Board Annual Report on Eviction Notices, 2025-2026 | San Francisco Residential Rent Stabilization and Arbitration Board, [sf.gov](https://media.api.sf.gov/documents/Rent_Board_Annual_Eviction_Report_25-26_2HGK2Cl.pdf) | None stated | Dated April 8, 2026; yearly, required by Section 37.6(j); past reports listed at [sf.gov](https://sf.gov/information/rent-board-statistics-and-reports) | PDF, 4 pages. Page 2 lists each eviction reason with its "Ordinance Section" (20 reasons, 37.9(a)(1) to 37.9(a)(17), 37.9(b), and "other or no reason given" with no section) | Its introduction describes its data in the same words as the Eviction Notices dataset. It reports that an ordinance effective February 9, 2026 added 37.9(a)(17) (demolition of a whole building for redevelopment) and narrowed 37.9(a)(10) to a single unit; the dataset has no column for (a)(17). |
+
+**Linking eviction grounds to the ordinance.** The dataset names each ground in its own words ("owner move in") and gives no section. The annual eviction report gives each of its reasons with its Ordinance section, so the sections come from the loaded report, never typed by hand: `eviction_report_grounds` parses the report's table. Only the pairing of each dataset column with a report reason is ours, because no source states it: the dbt macro `eviction_ground_reason` pairs them by wording (`owner_move_in` with "owner/relative move-in"), and `eviction_grounds` joins the two. A column with no reason, or a reason missing from the report, fails the build; a report reason with no column (today, 37.9(a)(17)) is listed by a warning. Tools return each ground's label and section as the report gives them and do not sort grounds into categories. On November 6, 2026 the pairing was checked against the 2024-25 and 2025-26 reports and the Rent Ordinance amended through June 29, 2026. Where the pairing has limits:
+
+- The report gives 37.9(a)(1) for both non-payment and habitual late payment; the ordinance's (A) and (B) split is not used.
+- A subletting dispute can be filed as `unapproved_subtenant` (37.9(a)(7)) or as `breach` (37.9(a)(2)), and rehabilitation work under 37.9(a)(11) or (a)(12): the landlord's checkbox decides.
+- "Other or no reason given" is broader than the dataset's description of `other_cause`.
+- Sections (a)(14) to (a)(17) were added after 1997; the section numbering for older notices was not checked.
 
 ## Data servers
 
@@ -147,10 +154,10 @@ Once servers run on their own devices, the only interface between a server and t
 | Package | Holds | Used by |
 |---|---|---|
 | `protocol/` | The API between the backend and the browser app: the question endpoint, the streamed events, and the citation schema the browser renders | The backend and the browser app, as in the reference project's `protocol` package. Servers produce citations that match its citation schema (published as JSON Schema), without importing it. |
-| `shared/mcp-kit/` | Helpers for building MCP servers: common formats, the tool errors (`UnknownValue`, `DatabaseUnavailable`, `DataUnavailable`) and `withDataErrors`, citation ID construction | TypeScript MCP servers that choose to use it; a server in another language follows the same conventions without it |
+| `shared/mcp-kit/` | Helpers for building MCP servers: common formats, `OptionalParam` for optional tool inputs, the tool errors (`UnknownValue`, `DatabaseUnavailable`, `DataUnavailable`) and `withDataErrors`, citation ID construction | TypeScript MCP servers that choose to use it; a server in another language follows the same conventions without it |
 | `shared/node-config/` | Reading a node's configuration: `ConfigFileError`, YAML files decoded with a `Schema`, and `dotEnv(path)`, the `.env`-first configuration provider with `secret` and `port` for required variables | Every TypeScript node (the backend and each server), installed as a library; it is not a contract between nodes |
 
-The code below is copied from the repo, where it typechecks against `effect` 4.1.2; the Phase 2 tool blocks are drafts until those servers are built.
+The code below is copied from the repo, where it typechecks against `effect` 4.1.2; the legal-text tool block is a draft until that server is built.
 
 **Formats.** Months, dates and counts as tool inputs and results.
 
@@ -166,6 +173,28 @@ export const YearMonth = Schema.String.pipe(
 
 export const PositiveInt = Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0)))
 export const NonNegativeInt = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
+```
+
+**Optional parameters.** Models often send `null` for a parameter they leave unset, which a plain optional field rejects, so the call fails and the model retries. Every optional tool input is an `OptionalParam`: its published schema allows `null`, and `null` decodes as not given.
+
+```ts
+// shared/mcp-kit/src/Params.ts
+import { Option, Schema, SchemaTransformation } from "effect"
+
+/**
+ * An optional tool parameter that also accepts `null`, which models often send for a parameter they leave unset.
+ * The published input schema allows `null`, and `null` decodes as an absent key, so handlers see a value or nothing.
+ */
+export const OptionalParam = <S extends Schema.Top>(schema: S) =>
+  Schema.optionalKey(Schema.NullOr(schema)).pipe(
+    Schema.decodeTo(
+      Schema.optionalKey(Schema.toType(schema)),
+      SchemaTransformation.transformOptional({
+        decode: (value) => Option.filter(value, (v): v is S["Type"] => v !== null),
+        encode: (value) => value
+      })
+    )
+  )
 ```
 
 **Citations.** Every tool result carries the citations behind it in its `structuredContent` (see [Tool results](agent-loop.md#tool-results)). A citation is either a passage from a document (a law, a report or a reference) or a dataset query. Phase 1 uses dataset citations only; document citations arrive with the legal-text server in Phase 2. Every citation carries two stable IDs, assigned by the tool that returns it:
@@ -338,7 +367,7 @@ Fixed tools, each backed by a tested dbt model or query. Servers name tools with
 | `sf_project_hazard_exposure` | 1 | Which projects from either pipeline sit inside one flood or exposure zone, and how many units they hold | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
 | `sf_dataset_info` | 1 | How current each dataset is, its license, and the publisher's own description of it | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
 | `sf_eviction_notice_counts` | 2 | How many notices, when, where, for which grounds; a period with no notices returns zero counts | `UnknownValue`, `PeriodOutOfRange`, `DatabaseUnavailable`, `DataUnavailable` |
-| `sf_eviction_grounds` | 2 | Which grounds exist and which Section 37.9 subsection each maps to | `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_eviction_grounds` | 2 | Which grounds the data records, each with the reason and Rent Ordinance section the Rent Board's annual eviction report gives for it | `DatabaseUnavailable`, `DataUnavailable` |
 
 **"Is it moving" is a filter, not a label.** `development_pipeline_projects` returns each project's status date and days in that status, counted to the snapshot's source version (the date its rows were published, which its citation carries) rather than to today, so the same query gives the same number for as long as the snapshot is current; it takes `inStatusSinceBefore` and `approvedBefore`, so a question such as "approved before 2020 and not yet under construction" is answered from the data. No tool decides what counts as stalled.
 
@@ -361,7 +390,15 @@ The answer rules (cite the snapshot, never say "stalled", notices are not evicti
 import { Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 
-import { DataErrors, IsoDate, NonNegativeInt, PositiveInt, UnknownValue } from "@policyhuis/mcp-kit"
+import {
+  DataErrors,
+  IsoDate,
+  NonNegativeInt,
+  OptionalParam,
+  PositiveInt,
+  UnknownValue,
+  YearMonth
+} from "@policyhuis/mcp-kit"
 import { Citation } from "@policyhuis/protocol/Citation"
 
 const Citations = Schema.Array(Citation)
@@ -431,13 +468,13 @@ export const DevelopmentPipelineProjects = Tool.make("development_pipeline_proje
   description:
     "List projects in the Planning Department's development pipeline, with each project's status, the date it reached that status, and its affordable units. The data is one quarterly snapshot: say which. Report how long a project has held its status; do not call a project stalled.",
   parameters: Schema.Struct({
-    status: Schema.optional(DevelopmentStatus),
-    neighborhood: Schema.optional(NeighborhoodName),
-    supervisorDistrict: Schema.optional(SupervisorDistrict),
-    minAffordableUnits: Schema.optional(NonNegativeInt),
-    inStatusSinceBefore: Schema.optional(IsoDate),
-    approvedBefore: Schema.optional(IsoDate),
-    limit: Schema.optional(Limit)
+    status: OptionalParam(DevelopmentStatus),
+    neighborhood: OptionalParam(NeighborhoodName),
+    supervisorDistrict: OptionalParam(SupervisorDistrict),
+    minAffordableUnits: OptionalParam(NonNegativeInt),
+    inStatusSinceBefore: OptionalParam(IsoDate),
+    approvedBefore: OptionalParam(IsoDate),
+    limit: OptionalParam(Limit)
   }),
   success: Schema.Struct({
     totalMatching: NonNegativeInt,
@@ -454,8 +491,8 @@ export const DevelopmentPipelineSummary = Tool.make("development_pipeline_summar
     "Total the development pipeline's projects, net units and affordable units by status, neighborhood, district or year of Planning approval, from one quarterly snapshot: say which.",
   parameters: Schema.Struct({
     groupBy: Schema.Literals(["status", "neighborhood", "district", "approval_year"]),
-    status: Schema.optional(DevelopmentStatus),
-    affordableOnly: Schema.optional(Schema.Boolean)
+    status: OptionalParam(DevelopmentStatus),
+    affordableOnly: OptionalParam(Schema.Boolean)
   }),
   success: Schema.Struct({
     groups: Schema.Array(
@@ -477,12 +514,12 @@ export const AffordablePipelineProjects = Tool.make("affordable_pipeline_project
   description:
     "List MOHCD-supported affordable housing projects, with units by income band and construction dates. Construction start and completion dates are MOHCD's estimates and some have passed: say so when you use them.",
   parameters: Schema.Struct({
-    status: Schema.optional(AffordableStatus),
-    neighborhood: Schema.optional(NeighborhoodName),
-    supervisorDistrict: Schema.optional(SupervisorDistrict),
-    minUnits: Schema.optional(PositiveInt),
-    estimatedStartBefore: Schema.optional(IsoDate),
-    limit: Schema.optional(Limit)
+    status: OptionalParam(AffordableStatus),
+    neighborhood: OptionalParam(NeighborhoodName),
+    supervisorDistrict: OptionalParam(SupervisorDistrict),
+    minUnits: OptionalParam(PositiveInt),
+    estimatedStartBefore: OptionalParam(IsoDate),
+    limit: OptionalParam(Limit)
   }),
   success: Schema.Struct({
     totalMatching: NonNegativeInt,
@@ -499,7 +536,7 @@ export const AffordablePipelineSummary = Tool.make("affordable_pipeline_summary"
     "Total MOHCD's affordable pipeline projects and their affordable units by status, construction stage, neighborhood or district. For units by income band, use affordable_pipeline_units_by_income_band.",
   parameters: Schema.Struct({
     groupBy: Schema.Literals(["status", "construction_status", "neighborhood", "district"]),
-    status: Schema.optional(AffordableStatus)
+    status: OptionalParam(AffordableStatus)
   }),
   success: Schema.Struct({
     groups: Schema.Array(
@@ -515,7 +552,7 @@ export const AffordablePipelineSummary = Tool.make("affordable_pipeline_summary"
 export const AffordablePipelineUnitsByIncomeBand = Tool.make("affordable_pipeline_units_by_income_band", {
   description:
     "Total MOHCD's affordable pipeline units in each income band, as a share of area median income (AMI), with how many projects have units in that band. Bands are named as MOHCD's dataset names its columns, such as _50_ami for 50% of AMI. A project with units in several bands is counted in each, so the project counts do not add up to the number of projects.",
-  parameters: Schema.Struct({ status: Schema.optional(AffordableStatus) }),
+  parameters: Schema.Struct({ status: OptionalParam(AffordableStatus) }),
   success: Schema.Struct({
     bands: Schema.Array(
       Schema.Struct({ amiBand: Schema.String, projects: NonNegativeInt, unitsInBand: NonNegativeInt })
@@ -533,8 +570,8 @@ export const ProjectHazardExposure = Tool.make("project_hazard_exposure", {
   parameters: Schema.Struct({
     zone: HazardZoneKey,
     projects: ProjectSource,
-    affordableOnly: Schema.optional(Schema.Boolean),
-    limit: Schema.optional(Limit)
+    affordableOnly: OptionalParam(Schema.Boolean),
+    limit: OptionalParam(Limit)
   }),
   success: Schema.Struct({
     zone: Schema.Struct({
@@ -561,7 +598,7 @@ export const ProjectHazardExposure = Tool.make("project_hazard_exposure", {
 export const DatasetInfo = Tool.make("dataset_info", {
   description:
     "Describe the loaded datasets: source, license, version, load date, and the publisher's own description, which states the data's limits in the publisher's words. Quote it when a user asks how current or reliable the data is.",
-  parameters: Schema.Struct({ dataset: Schema.optional(Schema.String) }),
+  parameters: Schema.Struct({ dataset: OptionalParam(Schema.String) }),
   success: Schema.Struct({
     datasets: Schema.Array(
       Schema.Struct({
@@ -580,21 +617,7 @@ export const DatasetInfo = Tool.make("dataset_info", {
   failureMode: "return"
 })
 
-export const SfHousingToolkit = Toolkit.make(
-  DevelopmentPipelineProjects,
-  DevelopmentPipelineSummary,
-  AffordablePipelineProjects,
-  AffordablePipelineSummary,
-  AffordablePipelineUnitsByIncomeBand,
-  ProjectHazardExposure,
-  DatasetInfo
-)
-```
-
-Phase 2 adds the eviction tools to the same server:
-
-```ts
-// san-francisco/housing-server/src/EvictionTools.ts
+/** A month range outside the months the Eviction Notices data covers. */
 export class PeriodOutOfRange extends Schema.TaggedError<PeriodOutOfRange>()("PeriodOutOfRange", {
   requestedFrom: YearMonth,
   requestedTo: YearMonth,
@@ -602,31 +625,26 @@ export class PeriodOutOfRange extends Schema.TaggedError<PeriodOutOfRange>()("Pe
   coveredTo: YearMonth
 }) {}
 
-const GroundKey = Schema.String.annotate({ description: "A ground key from eviction_grounds" })
+const GroundKey = Schema.String.annotate({ description: "A ground key, as listed by eviction_grounds" })
+export const EvictionGroupBy = Schema.Literals(["ground", "neighborhood", "district", "year", "month"])
 
 export const EvictionNoticeCounts = Tool.make("eviction_notice_counts", {
   description:
-    "Count eviction notices filed with the San Francisco Rent Board, by month range, optionally filtered and grouped. A notice is not an eviction. A notice can give several grounds, so counts by ground do not sum to the total.",
+    "Count eviction notices filed with the San Francisco Rent Board in a range of months, optionally filtered to notices giving any of the listed grounds, a neighborhood or a supervisor district, and grouped by up to two of ground, neighborhood, district, year or month. A notice is a landlord's filing, not a completed eviction: say so. A notice can give several grounds, so counts by ground can add up to more than the total, and a notice that gives no ground is in the total but in no ground's count. Landlords need not file non-payment notices with the Rent Board, so those are undercounted.",
   parameters: Schema.Struct({
     from: YearMonth,
     to: YearMonth,
-    grounds: Schema.optional(Schema.Array(GroundKey)),
-    neighborhood: Schema.optional(NeighborhoodName),
-    supervisorDistrict: Schema.optional(SupervisorDistrict),
-    groupBy: Schema.optional(
-      Schema.Array(Schema.Literals(["ground", "neighborhood", "district", "year", "month"])).pipe(
-        Schema.check(Schema.isMaxLength(2))
-      )
-    )
+    grounds: OptionalParam(Schema.Array(GroundKey)),
+    neighborhood: OptionalParam(NeighborhoodName),
+    supervisorDistrict: OptionalParam(SupervisorDistrict),
+    groupBy: OptionalParam(Schema.Array(EvictionGroupBy).pipe(Schema.check(Schema.isMaxLength(2))))
   }),
   success: Schema.Struct({
     from: YearMonth,
     to: YearMonth,
     dataAsOf: IsoDate,
     totalNotices: NonNegativeInt,
-    groups: Schema.Array(
-      Schema.Struct({ key: Schema.Record(Schema.String, Schema.String), notices: NonNegativeInt })
-    ),
+    groups: Schema.Array(Schema.Struct({ key: Schema.Record(Schema.String, Schema.String), notices: NonNegativeInt })),
     citations: Citations
   }),
   failure: Schema.Union([UnknownValue, PeriodOutOfRange, ...DataErrors]),
@@ -634,22 +652,29 @@ export const EvictionNoticeCounts = Tool.make("eviction_notice_counts", {
 })
 
 export const EvictionGrounds = Tool.make("eviction_grounds", {
-  description: "List the grounds an eviction notice can give, each with its Rent Ordinance Section 37.9 subsection where one is mapped.",
+  description:
+    "List the grounds an eviction notice can give, as the Eviction Notices data names them, each with the reason and Rent Ordinance section that the Rent Board's annual report on eviction notices gives for it. Use the label and section as given; do not characterize the grounds.",
   success: Schema.Struct({
     grounds: Schema.Array(
-      Schema.Struct({
-        key: Schema.String,
-        label: Schema.String,
-        subsection: Schema.NullOr(Schema.String),
-        mappingSource: Schema.NullOr(Schema.String)
-      })
+      Schema.Struct({ key: Schema.String, label: Schema.String, section: Schema.NullOr(Schema.String) })
     ),
     citations: Citations
   }),
+  failure: Schema.Union([...DataErrors]),
   failureMode: "return"
 })
 
-export const SfHousingToolkitWithEvictions = Toolkit.merge(SfHousingToolkit, Toolkit.make(EvictionNoticeCounts, EvictionGrounds))
+export const SfHousingToolkit = Toolkit.make(
+  DevelopmentPipelineProjects,
+  DevelopmentPipelineSummary,
+  AffordablePipelineProjects,
+  AffordablePipelineSummary,
+  AffordablePipelineUnitsByIncomeBand,
+  ProjectHazardExposure,
+  DatasetInfo,
+  EvictionNoticeCounts,
+  EvictionGrounds
+)
 ```
 
 ### Legal-text tools (Phase 2)
@@ -677,8 +702,8 @@ export const SearchPolicy = Tool.make("search_policy", {
   description: "Search the loaded laws and policies for passages relevant to a question.",
   parameters: Schema.Struct({
     query: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(500))),
-    documentId: Schema.optional(DocumentId),
-    limit: Schema.optional(Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 10 }))))
+    documentId: OptionalParam(DocumentId),
+    limit: OptionalParam(Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 10 }))))
   }),
   success: Schema.Struct({ passages: Schema.Array(Passage), citations: Citations }),
   failure: Schema.Union([UnknownValue, ...DataErrors]),
@@ -748,7 +773,8 @@ Each raw table has the same four columns: `load_id`, `row_number`, `record` (the
 | `raw_sf.slr_66in_100yr_storm` | 1 | `6ann-usi8` | geometry → `geom` |
 | `raw_sf.sfpuc_100yr_storm` | 1 | SFPUC FeatureServer layer 2 | `objectid`, `acres`, geometry → `geom` |
 | `raw_sf.air_pollutant_exposure_zone` | 1 | `t65d-x6p8` | geometry → `geom` |
-| `raw_sf.eviction_notices` | 2 | `5cei-gny5` | `eviction_id`, `file_date`, the 21 ground flags (`non_payment` … `good_samaritan_ends`), `neighborhood`, `supervisor_district`, `shape`, `data_as_of` |
+| `raw_sf.eviction_notices` | 2 | `5cei-gny5` | `eviction_id`, `file_date`, the 19 ground flags (`non_payment` … `good_samaritan_ends`, the dataset's true-or-false fields), `neighborhood`, `supervisor_district`, `shape` |
+| `raw_sf.eviction_report` | 2 | The annual eviction report PDF | One row per page: `page`, `text` |
 | `raw_sf.document_pages` (`sf-legal-text`) | 2 | Each ordinance, report and the Rent Ordinance PDF | `document_key`, `page_number`, `text` |
 | `raw_sf.ca_code_sections` (`sf-legal-text`) | 2 | Legislature bulk download | The section's code, number, heading, text and the bulk file's own version fields, named as in the bulk file |
 
@@ -763,9 +789,10 @@ Each raw table has the same four columns: `load_id`, `row_number`, `record` (the
 | `zones` | 1 | One per flood or exposure zone | `zone` (PK: `slr_66in_100yr_storm`, `sfpuc_100yr_storm`, `air_pollutant_exposure_zone`), `name`, `publisher`, `source_edited_at`, `publisher_description`, `geom` (polygons repaired with `ST_MakeValid`, then merged), `load_id` | Name, publisher, edit date and description come from each source's archived metadata; the zone key is the source's key in `san-francisco/ingest/config/sources.yaml` |
 | `project_zone_exposure` | 1 | One per project, source and zone it falls inside | `project_source` (`development_pipeline` or `affordable_pipeline`), `project_id`, `zone` | `ST_Intersects`, for the latest pipeline snapshot; tests pin synthetic projects inside and outside a zone |
 | `datasets` | 1 | One per loaded dataset | `dataset_key`, `title`, `publisher`, `source_url`, `license`, `source_version`, `publisher_description` | Built from the latest manifest row per source and its archived metadata |
-| `eviction_grounds` | 2 | One per ground | `ground_key` (PK, the source column name), `label`, `subsection` (nullable), `mapping_source` | Every ground flag column in `raw_sf.eviction_notices` has a row |
-| `eviction_notices` | 2 | One per notice | `eviction_id` (PK), `file_date`, `file_month`, `neighborhood` (FK → `neighborhoods`, nullable), `supervisor_district` (int), `geom`, `load_id` | Unique; neighborhoods not in `neighborhoods` fail the build |
-| `eviction_notice_grounds` | 2 | One per notice and ground | `eviction_id`, `ground_key` (FK) | A notice with no ground flag is kept in `eviction_notices` and counted by a test, not dropped silently |
+| `eviction_report_grounds` | 2 | One per reason in the latest report's table | `reason`, `section` (null for "other or no reason given"), `page`, `load_id` | Reasons unique; a warning lists reasons no ground column records |
+| `eviction_grounds` | 2 | One per ground flag in the latest Eviction Notices load | `ground_key` (the source column name), `label` (the report's reason), `section` (nullable), `report_load_id` | Unique; every ground has a reason found in the report |
+| `eviction_notices` | 2 | One per notice | `eviction_id` (PK), `file_date`, `file_month`, `neighborhood` (FK → `neighborhoods`, nullable), `supervisor_district` (int, nullable), `geom` (nullable), `load_id` | Unique; neighborhoods not in `neighborhoods` fail the build |
+| `eviction_notice_grounds` | 2 | One per notice and ground it gives | `eviction_id` (FK), `ground_key` (FK) | A notice with no ground flag is kept in `eviction_notices` and listed by a warning, not dropped silently (331 on November 6, 2026) |
 
 **Snapshots are kept.** `development_pipeline` keeps every loaded quarter, keyed by `snapshot`, so later loads can show movement between quarters. Phase 1 loads the current public quarter; past quarters are being requested from the dataset owner (open question 3).
 
@@ -810,7 +837,7 @@ Python, in [`san-francisco/ingest/`](../../san-francisco/ingest/README.md), buil
 |---|---|---|---|---|
 | DataSF datasets | 1 (pipelines, zones, neighborhoods); 2 (evictions) | Each full export (CSV or GeoJSON) and the dataset's metadata (`/api/views/<id>.json`) | One `raw_sf` table per dataset; the metadata's name, attribution and description in `raw_sf.load_manifest` | Source version is the dataset's `rowsUpdatedAt` |
 | SFPUC flood map | 1 | GeoJSON export of the 2024 update's zone layer (layer 2) and the layer's JSON metadata | `raw_sf.sfpuc_100yr_storm` | Source version is the layer's edit date |
-| Document PDFs | 2 | Each PDF, with its SHA-256 | `raw_sf.document_pages` | Source version is the date printed in the document ("amended through", "amended in Board", report date) |
+| PDF documents (`kind: pdf` in `sources.yaml`) | 2 (the annual eviction report) | Each PDF, and a metadata file holding the PDF's own information record and the printed date matched | `raw_sf.<source key>`, one row per page of text extracted by pypdf | Title and publisher are declared as printed in the document, since PDFs rarely carry them. Source version is the date printed in the document: `version_pattern` must match it exactly once or the load fails. The legal-text corpus's loader (`raw_sf.document_pages`, P2.1) is to reuse this source type. |
 | California statutes | 2 | The bulk database file | `raw_sf.ca_code_sections` | Only sections listed in the corpus file are loaded; source version is the bulk file's date |
 
 The dbt models are listed in [Database schemas](#sf-dbt-models).
@@ -841,8 +868,8 @@ The browser app is the same for every city; its plan, including how tool calls a
 | 1 | P1.4 First cited answer | The agent loop answers a "where is it, and is it moving" question and a climate-ready question through `POST /api/v1/questions`, with dataset citations and a trace in `app`. |
 | 1 | P1.5 Prototype | The browser app shows streamed answers, collapsible tool calls and linked citations against the running backend, as in the [Browser App Plan](browser-app.md). |
 | 2 | P2.1 Documents | The ordinances, reports and data dictionary loaded into `sf-legal-text`; the legal-text server answers with document citations labeled by type. |
-| 2 | P2.2 Rent Ordinance and statutes | Chapter 37 and the California sections loaded; the grounds-to-subsections mapping sourced. |
-| 2 | P2.3 Evictions | Eviction Notices loaded; the two eviction tools pass tests; a rule-plus-data eviction question is answered end to end. |
+| 2 | P2.2 Rent Ordinance and statutes | Chapter 37 and the California sections loaded. |
+| 2 | P2.3 Evictions | Eviction Notices and the annual eviction report loaded, with each ground's section taken from the report; the two eviction tools pass tests; a rule-plus-data eviction question is answered end to end. |
 | 3 | P3.1 Evaluation | The San Francisco questions run against the three model configurations, with answers checked by the San Francisco reviewer. |
 
 ## Next steps

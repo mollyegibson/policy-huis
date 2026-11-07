@@ -4,7 +4,7 @@ import { datasetCitation, DataUnavailable, UnknownValue, withDataErrors } from "
 
 import type { DatasetRow } from "./HousingRepo.ts"
 import { HousingRepo } from "./HousingRepo.ts"
-import { SfHousingToolkit } from "./Tools.ts"
+import { PeriodOutOfRange, SfHousingToolkit } from "./Tools.ts"
 
 /** Results list at most this many projects when the caller gives no limit; totals always cover every match. */
 const DEFAULT_LIMIT = 20
@@ -14,6 +14,8 @@ const citationKey = (datasetKey: string) => `sf.${datasetKey}`
 
 const DEVELOPMENT = ["development_pipeline"]
 const AFFORDABLE = ["affordable_pipeline"]
+const EVICTIONS = ["eviction_notices"]
+const EVICTION_GROUNDS = ["eviction_notices", "eviction_report"]
 
 export const SfHousingHandlers = SfHousingToolkit.toLayer(
   Effect.gen(function* () {
@@ -198,6 +200,49 @@ export const SfHousingHandlers = SfHousingToolkit.toLayer(
           }
         },
         withDataErrors((params) => [params.projects, params.zone])
+      ),
+
+      eviction_notice_counts: Effect.fn("SfHousing.eviction_notice_counts")(
+        function* (params) {
+          const datasets = yield* repo.datasets()
+          const notices = yield* loadedDataset(datasets, "eviction_notices")
+          const { coveredFrom, coveredTo } = yield* repo.evictionPeriod()
+          if (coveredFrom === null || coveredTo === null) return yield* new DataUnavailable({ datasets: EVICTIONS })
+          if (params.from > params.to || params.from < coveredFrom || params.to > coveredTo) {
+            return yield* new PeriodOutOfRange({
+              requestedFrom: params.from,
+              requestedTo: params.to,
+              coveredFrom,
+              coveredTo
+            })
+          }
+          const groundKeys = repo.evictionGroundKeys()
+          for (const ground of params.grounds ?? []) yield* check("grounds", ground, groundKeys)
+          yield* check("neighborhood", params.neighborhood, repo.neighborhoods())
+          yield* check("supervisorDistrict", params.supervisorDistrict, repo.evictionDistricts())
+          const { total, groups } = yield* repo.evictionCounts(params, params.groupBy ?? [])
+          return {
+            from: params.from,
+            to: params.to,
+            dataAsOf: notices.sourceVersion,
+            totalNotices: total,
+            groups,
+            citations: yield* cite(datasets, EVICTIONS, "eviction_notice_counts", params)
+          }
+        },
+        withDataErrors(() => EVICTIONS)
+      ),
+
+      eviction_grounds: Effect.fn("SfHousing.eviction_grounds")(
+        function* (params) {
+          const datasets = yield* repo.datasets()
+          const grounds = yield* repo.evictionGrounds()
+          return {
+            grounds,
+            citations: yield* cite(datasets, EVICTION_GROUNDS, "eviction_grounds", params)
+          }
+        },
+        withDataErrors(() => EVICTION_GROUNDS)
       ),
 
       dataset_info: Effect.fn("SfHousing.dataset_info")(

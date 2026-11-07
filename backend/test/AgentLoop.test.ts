@@ -224,6 +224,14 @@ describe("runAgentLoop", () => {
     })
   )
 
+  it.effect("fails a turn whose response ended without a finish event, telling it apart from an unknown reason", () =>
+    Effect.gen(function* () {
+      const { events } = yield* run([{ parts: [...text("a", "partial")] }])
+      expect(last(events).outcome).toBe("failed")
+      expect(last(events).failure?._tag).toBe("MissingFinish")
+    })
+  )
+
   it.effect("ends with a final turn without tools at maxSteps", () =>
     Effect.gen(function* () {
       const { events, calls } = yield* run([lookup("c1", "a"), lookup("c2", "b"), lookup("c3", "c"), answer])

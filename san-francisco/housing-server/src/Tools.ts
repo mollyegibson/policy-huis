@@ -1,7 +1,15 @@
 import { Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 
-import { DataErrors, IsoDate, NonNegativeInt, PositiveInt, UnknownValue } from "@policyhuis/mcp-kit"
+import {
+  DataErrors,
+  IsoDate,
+  NonNegativeInt,
+  OptionalParam,
+  PositiveInt,
+  UnknownValue,
+  YearMonth
+} from "@policyhuis/mcp-kit"
 import { Citation } from "@policyhuis/protocol/Citation"
 
 const Citations = Schema.Array(Citation)
@@ -71,13 +79,13 @@ export const DevelopmentPipelineProjects = Tool.make("development_pipeline_proje
   description:
     "List projects in the Planning Department's development pipeline, with each project's status, the date it reached that status, and its affordable units. The data is one quarterly snapshot: say which. Report how long a project has held its status; do not call a project stalled.",
   parameters: Schema.Struct({
-    status: Schema.optional(DevelopmentStatus),
-    neighborhood: Schema.optional(NeighborhoodName),
-    supervisorDistrict: Schema.optional(SupervisorDistrict),
-    minAffordableUnits: Schema.optional(NonNegativeInt),
-    inStatusSinceBefore: Schema.optional(IsoDate),
-    approvedBefore: Schema.optional(IsoDate),
-    limit: Schema.optional(Limit)
+    status: OptionalParam(DevelopmentStatus),
+    neighborhood: OptionalParam(NeighborhoodName),
+    supervisorDistrict: OptionalParam(SupervisorDistrict),
+    minAffordableUnits: OptionalParam(NonNegativeInt),
+    inStatusSinceBefore: OptionalParam(IsoDate),
+    approvedBefore: OptionalParam(IsoDate),
+    limit: OptionalParam(Limit)
   }),
   success: Schema.Struct({
     totalMatching: NonNegativeInt,
@@ -94,8 +102,8 @@ export const DevelopmentPipelineSummary = Tool.make("development_pipeline_summar
     "Total the development pipeline's projects, net units and affordable units by status, neighborhood, district or year of Planning approval, from one quarterly snapshot: say which.",
   parameters: Schema.Struct({
     groupBy: Schema.Literals(["status", "neighborhood", "district", "approval_year"]),
-    status: Schema.optional(DevelopmentStatus),
-    affordableOnly: Schema.optional(Schema.Boolean)
+    status: OptionalParam(DevelopmentStatus),
+    affordableOnly: OptionalParam(Schema.Boolean)
   }),
   success: Schema.Struct({
     groups: Schema.Array(
@@ -117,12 +125,12 @@ export const AffordablePipelineProjects = Tool.make("affordable_pipeline_project
   description:
     "List MOHCD-supported affordable housing projects, with units by income band and construction dates. Construction start and completion dates are MOHCD's estimates and some have passed: say so when you use them.",
   parameters: Schema.Struct({
-    status: Schema.optional(AffordableStatus),
-    neighborhood: Schema.optional(NeighborhoodName),
-    supervisorDistrict: Schema.optional(SupervisorDistrict),
-    minUnits: Schema.optional(PositiveInt),
-    estimatedStartBefore: Schema.optional(IsoDate),
-    limit: Schema.optional(Limit)
+    status: OptionalParam(AffordableStatus),
+    neighborhood: OptionalParam(NeighborhoodName),
+    supervisorDistrict: OptionalParam(SupervisorDistrict),
+    minUnits: OptionalParam(PositiveInt),
+    estimatedStartBefore: OptionalParam(IsoDate),
+    limit: OptionalParam(Limit)
   }),
   success: Schema.Struct({
     totalMatching: NonNegativeInt,
@@ -139,7 +147,7 @@ export const AffordablePipelineSummary = Tool.make("affordable_pipeline_summary"
     "Total MOHCD's affordable pipeline projects and their affordable units by status, construction stage, neighborhood or district. For units by income band, use affordable_pipeline_units_by_income_band.",
   parameters: Schema.Struct({
     groupBy: Schema.Literals(["status", "construction_status", "neighborhood", "district"]),
-    status: Schema.optional(AffordableStatus)
+    status: OptionalParam(AffordableStatus)
   }),
   success: Schema.Struct({
     groups: Schema.Array(
@@ -155,7 +163,7 @@ export const AffordablePipelineSummary = Tool.make("affordable_pipeline_summary"
 export const AffordablePipelineUnitsByIncomeBand = Tool.make("affordable_pipeline_units_by_income_band", {
   description:
     "Total MOHCD's affordable pipeline units in each income band, as a share of area median income (AMI), with how many projects have units in that band. Bands are named as MOHCD's dataset names its columns, such as _50_ami for 50% of AMI. A project with units in several bands is counted in each, so the project counts do not add up to the number of projects.",
-  parameters: Schema.Struct({ status: Schema.optional(AffordableStatus) }),
+  parameters: Schema.Struct({ status: OptionalParam(AffordableStatus) }),
   success: Schema.Struct({
     bands: Schema.Array(
       Schema.Struct({ amiBand: Schema.String, projects: NonNegativeInt, unitsInBand: NonNegativeInt })
@@ -173,8 +181,8 @@ export const ProjectHazardExposure = Tool.make("project_hazard_exposure", {
   parameters: Schema.Struct({
     zone: HazardZoneKey,
     projects: ProjectSource,
-    affordableOnly: Schema.optional(Schema.Boolean),
-    limit: Schema.optional(Limit)
+    affordableOnly: OptionalParam(Schema.Boolean),
+    limit: OptionalParam(Limit)
   }),
   success: Schema.Struct({
     zone: Schema.Struct({
@@ -201,7 +209,7 @@ export const ProjectHazardExposure = Tool.make("project_hazard_exposure", {
 export const DatasetInfo = Tool.make("dataset_info", {
   description:
     "Describe the loaded datasets: source, license, version, load date, and the publisher's own description, which states the data's limits in the publisher's words. Quote it when a user asks how current or reliable the data is.",
-  parameters: Schema.Struct({ dataset: Schema.optional(Schema.String) }),
+  parameters: Schema.Struct({ dataset: OptionalParam(Schema.String) }),
   success: Schema.Struct({
     datasets: Schema.Array(
       Schema.Struct({
@@ -220,6 +228,53 @@ export const DatasetInfo = Tool.make("dataset_info", {
   failureMode: "return"
 })
 
+/** A month range outside the months the Eviction Notices data covers. */
+export class PeriodOutOfRange extends Schema.TaggedError<PeriodOutOfRange>()("PeriodOutOfRange", {
+  requestedFrom: YearMonth,
+  requestedTo: YearMonth,
+  coveredFrom: YearMonth,
+  coveredTo: YearMonth
+}) {}
+
+const GroundKey = Schema.String.annotate({ description: "A ground key, as listed by eviction_grounds" })
+export const EvictionGroupBy = Schema.Literals(["ground", "neighborhood", "district", "year", "month"])
+
+export const EvictionNoticeCounts = Tool.make("eviction_notice_counts", {
+  description:
+    "Count eviction notices filed with the San Francisco Rent Board in a range of months, optionally filtered to notices giving any of the listed grounds, a neighborhood or a supervisor district, and grouped by up to two of ground, neighborhood, district, year or month. A notice is a landlord's filing, not a completed eviction: say so. A notice can give several grounds, so counts by ground can add up to more than the total, and a notice that gives no ground is in the total but in no ground's count. Landlords need not file non-payment notices with the Rent Board, so those are undercounted.",
+  parameters: Schema.Struct({
+    from: YearMonth,
+    to: YearMonth,
+    grounds: OptionalParam(Schema.Array(GroundKey)),
+    neighborhood: OptionalParam(NeighborhoodName),
+    supervisorDistrict: OptionalParam(SupervisorDistrict),
+    groupBy: OptionalParam(Schema.Array(EvictionGroupBy).pipe(Schema.check(Schema.isMaxLength(2))))
+  }),
+  success: Schema.Struct({
+    from: YearMonth,
+    to: YearMonth,
+    dataAsOf: IsoDate,
+    totalNotices: NonNegativeInt,
+    groups: Schema.Array(Schema.Struct({ key: Schema.Record(Schema.String, Schema.String), notices: NonNegativeInt })),
+    citations: Citations
+  }),
+  failure: Schema.Union([UnknownValue, PeriodOutOfRange, ...DataErrors]),
+  failureMode: "return"
+})
+
+export const EvictionGrounds = Tool.make("eviction_grounds", {
+  description:
+    "List the grounds an eviction notice can give, as the Eviction Notices data names them, each with the reason and Rent Ordinance section that the Rent Board's annual report on eviction notices gives for it. Use the label and section as given; do not characterize the grounds.",
+  success: Schema.Struct({
+    grounds: Schema.Array(
+      Schema.Struct({ key: Schema.String, label: Schema.String, section: Schema.NullOr(Schema.String) })
+    ),
+    citations: Citations
+  }),
+  failure: Schema.Union([...DataErrors]),
+  failureMode: "return"
+})
+
 export const SfHousingToolkit = Toolkit.make(
   DevelopmentPipelineProjects,
   DevelopmentPipelineSummary,
@@ -227,5 +282,7 @@ export const SfHousingToolkit = Toolkit.make(
   AffordablePipelineSummary,
   AffordablePipelineUnitsByIncomeBand,
   ProjectHazardExposure,
-  DatasetInfo
+  DatasetInfo,
+  EvictionNoticeCounts,
+  EvictionGrounds
 )

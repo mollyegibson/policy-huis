@@ -12,10 +12,13 @@ export class StepStarted extends Data.TaggedClass("StepStarted")<{
   readonly final: boolean
 }> {}
 
-/** A model turn ended, with every part it produced, for the next prompt and the context budget. */
+/**
+ * A model turn ended, with every part it produced, for the next prompt and the context budget. `finishReason` is null
+ * when the response ended without a finish event.
+ */
 export class StepEnded extends Data.TaggedClass("StepEnded")<{
   readonly parts: ReadonlyArray<Response.AnyPart>
-  readonly finishReason: Response.FinishReason
+  readonly finishReason: Response.FinishReason | null
   readonly inputTokens: number | undefined
   readonly outputTokens: number | undefined
 }> {}

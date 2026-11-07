@@ -92,6 +92,17 @@ const ExposedProjectRow = Schema.Struct({
   affordableUnits: NonNegativeInt
 })
 
+const EvictionGroupRow = Schema.Struct({
+  key: Schema.Record(Schema.String, Schema.String),
+  notices: NonNegativeInt
+})
+
+const EvictionGroundRow = Schema.Struct({ key: Schema.String, label: Schema.String, section: NullableText })
+
+const PeriodRow = Schema.Struct({ coveredFrom: NullableText, coveredTo: NullableText })
+
+const Count = Schema.Struct({ count: NonNegativeInt })
+
 const Value = Schema.Struct({ value: Schema.String })
 const NullableValue = Schema.Struct({ value: NullableText })
 
@@ -115,6 +126,16 @@ export interface AffordableFilters {
   readonly minUnits?: number | undefined
   readonly estimatedStartBefore?: string | undefined
 }
+
+export interface EvictionFilters {
+  readonly from: string
+  readonly to: string
+  readonly grounds?: ReadonlyArray<string> | undefined
+  readonly neighborhood?: string | undefined
+  readonly supervisorDistrict?: number | undefined
+}
+
+export type EvictionGroupBy = "ground" | "neighborhood" | "district" | "year" | "month"
 
 export type DevelopmentGroupBy = "status" | "neighborhood" | "district" | "approval_year"
 export type AffordableGroupBy = "status" | "construction_status" | "neighborhood" | "district"
@@ -352,6 +373,73 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       return { totals, projects: list }
     })
 
+    /** The first and last months with a filed notice, as YYYY-MM, or nulls when no notices are loaded. */
+    const evictionPeriod = Effect.fn("HousingRepo.evictionPeriod")(function* () {
+      const [row] = yield* oneRow(PeriodRow)(
+        yield* sql`
+          SELECT to_char(min(file_month), 'YYYY-MM') AS "coveredFrom", to_char(max(file_month), 'YYYY-MM') AS "coveredTo"
+          FROM sf.eviction_notices`
+      )
+      return row
+    })
+
+    const evictionGroundKeys = () => values(sql`SELECT ground_key AS value FROM sf.eviction_grounds`)
+    const evictionDistricts = () => values(sql`SELECT supervisor_district::text AS value FROM sf.eviction_notices`)
+
+    const evictionGrounds = Effect.fn("HousingRepo.evictionGrounds")(function* () {
+      return yield* rows(EvictionGroundRow)(
+        yield* sql`SELECT ground_key AS key, label, section FROM sf.eviction_grounds ORDER BY ground_key`
+      )
+    })
+
+    const evictionWhere = (f: EvictionFilters) =>
+      where([
+        sql`n.file_month BETWEEN to_date(${f.from}, 'YYYY-MM') AND to_date(${f.to}, 'YYYY-MM')`,
+        ...(f.neighborhood === undefined ? [] : [sql`n.neighborhood = ${f.neighborhood}`]),
+        ...(f.supervisorDistrict === undefined ? [] : [sql`n.supervisor_district = ${f.supervisorDistrict}`]),
+        ...(f.grounds === undefined
+          ? []
+          : [
+              sql`EXISTS (SELECT 1 FROM sf.eviction_notice_grounds AS any_ground
+                          WHERE any_ground.eviction_id = n.eviction_id AND any_ground.ground_key IN ${sql.in(f.grounds)})`
+            ])
+      ])
+
+    /**
+     * The number of notices matching `filters`, and their counts grouped by `groupBy`. Grouping by ground counts a
+     * notice once for each ground it gives, among the filtered grounds when `grounds` is given.
+     */
+    const evictionCounts = Effect.fn("HousingRepo.evictionCounts")(function* (
+      filters: EvictionFilters,
+      groupBy: ReadonlyArray<EvictionGroupBy>
+    ) {
+      const [total] = yield* oneRow(Count)(
+        yield* sql`SELECT count(*)::int AS count FROM sf.eviction_notices AS n WHERE ${evictionWhere(filters)}`
+      )
+      if (groupBy.length === 0) return { total: total.count, groups: [] }
+      const byGround = groupBy.includes("ground")
+      const keyOf = {
+        ground: sql`g.ground_key`,
+        neighborhood: sql`coalesce(n.neighborhood, 'unknown')`,
+        district: sql`coalesce(n.supervisor_district::text, 'unknown')`,
+        year: sql`to_char(n.file_month, 'YYYY')`,
+        month: sql`to_char(n.file_month, 'YYYY-MM')`
+      }
+      const keys = groupBy.map((field) => sql`${field}::text, ${keyOf[field]}`)
+      const groupKeys = groupBy.map((field) => keyOf[field])
+      const groups = yield* rows(EvictionGroupRow)(
+        yield* sql`
+          SELECT json_build_object(${sql.csv(keys)}) AS key, count(DISTINCT n.eviction_id)::int AS notices
+          FROM sf.eviction_notices AS n
+          ${byGround ? sql`JOIN sf.eviction_notice_grounds AS g ON g.eviction_id = n.eviction_id` : sql``}
+          WHERE ${evictionWhere(filters)}
+            ${byGround && filters.grounds !== undefined ? sql`AND g.ground_key IN ${sql.in(filters.grounds)}` : sql``}
+          GROUP BY ${sql.csv(groupKeys)}
+          ORDER BY ${sql.csv(groupKeys)}`
+      )
+      return { total: total.count, groups }
+    })
+
     return {
       datasets,
       snapshot,
@@ -365,7 +453,12 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       affordableSummary,
       affordableUnitsByIncomeBand,
       zone,
-      exposure
+      exposure,
+      evictionPeriod,
+      evictionGroundKeys,
+      evictionDistricts,
+      evictionGrounds,
+      evictionCounts
     } as const
   })
 }) {

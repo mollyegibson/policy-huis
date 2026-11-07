@@ -1,4 +1,7 @@
+import io
 import json
+import logging
+import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -6,6 +9,7 @@ from typing import Annotated, Literal, Protocol
 
 import yaml
 from pydantic import BaseModel, ConfigDict, StringConstraints
+from pypdf import PdfReader
 
 
 class SocrataSource(BaseModel):
@@ -29,11 +33,31 @@ class ArcGisLayerSource(BaseModel):
     format: Literal["geojson"]
 
 
-type Source = SocrataSource | ArcGisLayerSource
+class PdfSource(BaseModel):
+    """A PDF document, loaded as one row per page of extracted text.
+
+    A PDF's own metadata rarely names it, so `title` and `publisher` are declared, as printed in the document. The
+    version is the date printed in it: `version_pattern` is a regular expression with one group capturing that date,
+    which must match exactly once in the text (`^` and `$` match at each line), and `version_format` is the group's
+    `strptime` format.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["pdf"]
+    url: str
+    title: str
+    publisher: str
+    version_pattern: str
+    version_format: str
+    format: Literal["pdf"]
+
+
+type Source = SocrataSource | ArcGisLayerSource | PdfSource
 
 
 class _SourcesFile(BaseModel):
-    sources: dict[str, SocrataSource | ArcGisLayerSource]
+    sources: dict[str, SocrataSource | ArcGisLayerSource | PdfSource]
 
 
 def load_sources(path: Path) -> dict[str, Source]:
@@ -74,6 +98,24 @@ def _blank_to_none(value: object) -> str | None:
     return value.strip() or None if isinstance(value, str) else None
 
 
+def pdf_pages(data: bytes) -> list[str]:
+    """The text of each page of a PDF, in page order, as extracted by pypdf."""
+    pypdf_logger = logging.getLogger("pypdf")
+    level = pypdf_logger.level
+    pypdf_logger.setLevel(logging.ERROR)
+    try:
+        return [page.extract_text() for page in PdfReader(io.BytesIO(data)).pages]
+    finally:
+        pypdf_logger.setLevel(level)
+
+
+def _printed_version(source: PdfSource, pages: list[str]) -> str:
+    matches = [m.group(1) for page in pages for m in re.finditer(source.version_pattern, page, re.MULTILINE)]
+    if len(matches) != 1:
+        raise ValueError(f"{source.url}: version_pattern matched {len(matches)} times, expected exactly once")
+    return matches[0]
+
+
 def download(source: Source, fetcher: Fetcher) -> Download:
     """Fetch a source's full data and its metadata."""
     match source:
@@ -92,6 +134,16 @@ def download(source: Source, fetcher: Fetcher) -> Download:
             data = fetcher.get(data_url)
             metadata = fetcher.get(f"{layer_url}?f=json")
             return Download(data=data, data_extension="geojson", metadata=metadata, data_url=data_url)
+        case PdfSource(url=url):
+            data = fetcher.get(url)
+            reader_info = PdfReader(io.BytesIO(data)).metadata or {}
+            metadata = json.dumps(
+                {
+                    "pdf_info": {str(k): str(v) for k, v in reader_info.items()},
+                    "printed_version": _printed_version(source, pdf_pages(data)),
+                }
+            ).encode()
+            return Download(data=data, data_extension="pdf", metadata=metadata, data_url=url)
 
 
 def parse_metadata(source: Source, metadata: bytes) -> SourceMetadata:
@@ -117,6 +169,15 @@ def parse_metadata(source: Source, metadata: bytes) -> SourceMetadata:
                 source_version=_utc_date(doc["editingInfo"]["lastEditDate"] / 1000),
                 source_url=layer_url,
             )
+        case PdfSource(url=url, title=title, publisher=publisher, version_format=version_format):
+            return SourceMetadata(
+                title=title,
+                publisher=publisher,
+                description=None,
+                license=None,
+                source_version=datetime.strptime(doc["printed_version"], version_format).date(),
+                source_url=url,
+            )
 
 
 @dataclass(frozen=True)
@@ -126,7 +187,10 @@ class RawRow:
 
 
 def parse_rows(source: Source, data: bytes) -> list[RawRow]:
-    """Split a source's data into rows: properties as the record, and the geometry when the format has one."""
+    """Split a source's data into rows: properties as the record, and the geometry when the format has one. A PDF
+    gives one row per page, with its page number and text."""
+    if source.format == "pdf":
+        return [RawRow(record={"page": n, "text": text}, geometry=None) for n, text in enumerate(pdf_pages(data), 1)]
     doc = json.loads(data)
     if source.format == "geojson":
         return [RawRow(record=f["properties"], geometry=f["geometry"]) for f in doc["features"]]

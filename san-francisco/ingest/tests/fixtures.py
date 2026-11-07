@@ -3,6 +3,8 @@
 import json
 from datetime import UTC, datetime
 
+from policyhuis_ingest.testing import pdf
+
 DATASF = "https://data.sf.gov"
 SFPUC_LAYER = (
     "https://gis.sfpuc.org/server/rest/services/Hosted/100_Year_Storm_Flood_Risk_Map_2024_Update/FeatureServer/2"
@@ -89,6 +91,97 @@ def affordable_rows() -> list[dict[str, object]]:
     return [row("2024-001", INSIDE), row("2024-002", OUTSIDE)]
 
 
+EVICTION_GROUNDS = (
+    "non_payment",
+    "breach",
+    "nuisance",
+    "illegal_use",
+    "failure_to_sign_renewal",
+    "access_denial",
+    "unapproved_subtenant",
+    "owner_move_in",
+    "demolition",
+    "capital_improvement",
+    "substantial_rehab",
+    "ellis_act_withdrawal",
+    "condo_conversion",
+    "roommate_same_unit",
+    "other_cause",
+    "late_payments",
+    "lead_remediation",
+    "development",
+    "good_samaritan_ends",
+)
+
+
+def eviction_rows() -> list[dict[str, object]]:
+    def row(
+        eviction_id: str, file_date: str, grounds: set[str], nhood: str | None, district: str | None
+    ) -> dict[str, object]:
+        r: dict[str, object] = {
+            "eviction_id": eviction_id,
+            "address": "0 Block Of Test St",
+            "file_date": f"{file_date}T00:00:00.000",
+            **{ground: ground in grounds for ground in EVICTION_GROUNDS},
+            "shape": {"type": "Point", "coordinates": list(INSIDE)},
+            "data_as_of": "2026-11-06T00:00:00.000",
+        }
+        if nhood:
+            r["neighborhood"] = nhood
+        if district:
+            r["supervisor_district"] = district
+        return r
+
+    return [
+        row("M000001", "2024-01-15", {"owner_move_in"}, "Mission Bay", "6"),
+        row("M000002", "2024-02-03", {"breach", "nuisance"}, "Castro/Upper Market", "8"),
+        row("M000003", "2025-07-30", set(), None, None),
+    ]
+
+
+EVICTION_REPORT = "https://media.api.sf.gov/documents/Rent_Board_Annual_Eviction_Report_25-26_2HGK2Cl.pdf"
+
+# Lines from the 2025-26 report's table of reasons and Ordinance sections, as pypdf extracts them.
+EVICTION_REPORT_TABLE = [
+    "415 *  non-payment of rent 37.9(a)(1)",
+    "9      habitual late payment of rent 37.9(a)(1)",
+    "331  breach of rental agreement 37.9(a)(2)",
+    "405  committing a nuisance 37.9(a)(3)",
+    "6  illegal use of rental unit 37.9(a)(4)",
+    "2  failure to renew agreement 37.9(a)(5)",
+    "12  failure to permit landlord access 37.9(a)(6)",
+    "29  unapproved subtenant 37.9(a)(7)",
+    "98  owner/relative move-in 37.9(a)(8)",
+    "0  condo conversion sale 37.9(a)(9)",
+    "0  demolition (single unit) 37.9(a)(10)",
+    "93  capital improvement work 37.9(a)(11)",
+    "0  substantial rehabilitation  37.9(a)(12)",
+    "50  Ellis (withdrawal of unit) 37.9(a)(13)",
+    "1   lead remediation  37.9(a)(14)",
+    "0   development agreement 37.9(a)(15)",
+    "0   Good Samaritan 37.9(a)(16)",
+    "0   demolition (redevelopment) 37.9(a)(17)",
+    "20  roommate eviction 37.9(b)",
+    "17                                                       other or no reason given",
+]
+
+
+def eviction_report() -> bytes:
+    return pdf(
+        [
+            ["Residential Rent Stabilization", "and Arbitration Board", "April 8, 2026", "Angela Calvillo"],
+            [
+                "Page 2 of the 2025-2026 Rent Board Annual Report on Eviction Notices",
+                "Number                Reason                Ordinance Section",
+                *EVICTION_REPORT_TABLE,
+                "1,488   Total Eviction Notices",
+                "*The Rent Ordinance does not require the filing of Non-Payment of rent notices with the department.",
+                "Breach of rental agreement 151        331          +119%",
+            ],
+        ]
+    )
+
+
 def geojson(features: list[dict[str, object]]) -> bytes:
     return json.dumps({"type": "FeatureCollection", "features": features}).encode()
 
@@ -137,6 +230,18 @@ def all_responses() -> dict[str, bytes]:
         geojson(zone_feature),
         datasf_metadata("t65d-x6p8", "Air Pollutant Exposure Zone", "APEZ.", "2025-03-19", "Public Domain"),
     )
+    responses |= datasf_responses(
+        "5cei-gny5",
+        eviction_rows(),
+        datasf_metadata(
+            "5cei-gny5",
+            "Eviction Notices",
+            "Data includes eviction notices filed with the San Francisco Rent Board.",
+            "2026-11-06",
+            "Open Data Commons Public Domain Dedication and License",
+        ),
+    )
+    responses[EVICTION_REPORT] = eviction_report()
     responses[f"{SFPUC_LAYER}/query"] = geojson(zone_feature)
     responses[f"{SFPUC_LAYER}?f=json"] = json.dumps(
         {

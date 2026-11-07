@@ -1,6 +1,7 @@
 # Sources loaded into raw_sf. Each key is also the raw table's name.
-# kind: socrata reads a dataset from a Socrata portal (DataSF is data.sf.gov); arcgis_layer reads an ArcGIS FeatureServer layer.
-# format: json for rows with no geometry column used at load; geojson for layers whose geometry is loaded.
+# kind: socrata reads a dataset from a Socrata portal (DataSF is data.sf.gov); arcgis_layer reads an ArcGIS FeatureServer layer;
+# pdf reads a document, one row per page of text, with its title and publisher as printed and its version the date printed in it.
+# format: json for rows with no geometry column used at load; geojson for layers whose geometry is loaded; pdf for documents.
 
 development_pipeline:
   kind: socrata
@@ -36,3 +37,18 @@ sfpuc_100yr_storm:
   kind: arcgis_layer
   layer_url: https://gis.sfpuc.org/server/rest/services/Hosted/100_Year_Storm_Flood_Risk_Map_2024_Update/FeatureServer/2
   format: geojson
+
+eviction_notices:
+  kind: socrata
+  domain: data.sf.gov
+  dataset_id: 5cei-gny5
+  format: json
+
+eviction_report:
+  kind: pdf
+  url: https://media.api.sf.gov/documents/Rent_Board_Annual_Eviction_Report_25-26_2HGK2Cl.pdf
+  title: 2025-2026 Rent Board Annual Report on Eviction Notices # from the page headers
+  publisher: San Francisco Residential Rent Stabilization and Arbitration Board # from the letterhead
+  version_pattern: '^\s*([A-Z][a-z]+ \d{1,2}, \d{4})\s*$' # the letter's date, on a line of its own
+  version_format: '%B %d, %Y'
+  format: pdf

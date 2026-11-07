@@ -81,6 +81,7 @@ describe("messageFor", () => {
           "QuotaExhausted",
           "ContentRefused",
           "UnexpectedFinish",
+          "MissingFinish",
           "RequestRejected",
           "UnreadableResponse",
           "InvalidToolCalls",

@@ -87,7 +87,7 @@ const stepEnded = (parts: ReadonlyArray<Response.AnyPart>): StepEnded => {
   const finish = parts.find((part): part is Response.FinishPart => part.type === "finish")
   return new StepEnded({
     parts,
-    finishReason: finish?.reason ?? "unknown",
+    finishReason: finish?.reason ?? null,
     inputTokens: finish?.usage.inputTokens.total,
     outputTokens: finish?.usage.outputTokens.total
   })
@@ -156,6 +156,13 @@ export const turnEnd = (
   answered: Outcome,
   answeredFailure: Failure | null
 ): TurnEnd => {
+  if (ended.finishReason === null) {
+    return {
+      _tag: "End",
+      outcome: "failed",
+      failure: Failure.MissingFinish({ detail: "the model's response ended without a finish event" })
+    }
+  }
   if (ended.finishReason === "length") {
     return { _tag: "End", outcome: "truncated", failure: Failure.Truncated({ answerTokens }) }
   }

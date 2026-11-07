@@ -65,3 +65,31 @@ CREATE TABLE sf.project_zone_exposure (project_source text NOT NULL, project_id 
 INSERT INTO sf.project_zone_exposure VALUES
     ('development_pipeline', '3800001:2019-000001PRJ:1', 'sfpuc_100yr_storm'),
     ('affordable_pipeline', '2024-001', 'sfpuc_100yr_storm');
+
+INSERT INTO sf.datasets VALUES
+    ('eviction_notices', 'Eviction Notices', NULL, 'https://data.sf.gov/d/5cei-gny5',
+     'Open Data Commons Public Domain Dedication and License', '2026-11-06', 'Notices filed with the Rent Board.'),
+    ('eviction_report', '2025-2026 Rent Board Annual Report on Eviction Notices',
+     'San Francisco Residential Rent Stabilization and Arbitration Board',
+     'https://media.api.sf.gov/documents/Rent_Board_Annual_Eviction_Report_25-26_2HGK2Cl.pdf', NULL, '2026-04-08', NULL);
+
+CREATE TABLE sf.eviction_grounds (ground_key text PRIMARY KEY, label text NOT NULL, section text, report_load_id uuid);
+INSERT INTO sf.eviction_grounds VALUES
+    ('owner_move_in', 'owner/relative move-in', '37.9(a)(8)', NULL),
+    ('breach', 'breach of rental agreement', '37.9(a)(2)', NULL),
+    ('roommate_same_unit', 'roommate eviction', '37.9(b)', NULL),
+    ('other_cause', 'other or no reason given', NULL, NULL);
+
+CREATE TABLE sf.eviction_notices (
+    eviction_id text PRIMARY KEY, file_date date NOT NULL, file_month date NOT NULL, neighborhood text,
+    supervisor_district integer, geom geometry(Point, 4326), load_id uuid
+);
+INSERT INTO sf.eviction_notices VALUES
+    ('M1', '2024-01-15', '2024-01-01', 'Mission Bay', 6, NULL, NULL),
+    ('M2', '2024-02-03', '2024-02-01', 'Mission Bay', 6, NULL, NULL),
+    ('M3', '2025-07-30', '2025-07-01', 'Castro/Upper Market', 8, NULL, NULL),
+    ('M4', '2025-08-12', '2025-08-01', NULL, NULL, NULL, NULL);
+
+CREATE TABLE sf.eviction_notice_grounds (eviction_id text NOT NULL, ground_key text NOT NULL);
+INSERT INTO sf.eviction_notice_grounds VALUES
+    ('M1', 'owner_move_in'), ('M2', 'breach'), ('M2', 'owner_move_in'), ('M3', 'breach');

@@ -26,8 +26,10 @@ export type Failure = Data.TaggedEnum<{
   QuotaExhausted: WithDetail
   /** The provider declined the question under its content policy, or filtered the model's answer. */
   ContentRefused: WithDetail
-  /** The model stopped for a reason other than finishing, such as an error or a pause, or gave no reason. */
+  /** The model stopped for a reason other than finishing, such as an error or a pause, or one the provider package does not recognize. */
   UnexpectedFinish: WithDetail
+  /** The model's response ended without a finish event, so it may have been cut off. */
+  MissingFinish: WithDetail
   /** The provider rejected the request the backend built: a backend bug, not the user's question. */
   RequestRejected: WithDetail
   /** The provider's response could not be read. */
@@ -141,6 +143,8 @@ export const messageFor = (failure: Failure, requestId: string): string =>
     ContentRefused: () => "The model service declined to answer this question under its content policy.",
     UnexpectedFinish: () =>
       "The model stopped without finishing its answer, so this answer may be incomplete. Try asking again.",
+    MissingFinish: () =>
+      "The model's response ended before the model said it was done, so this answer may be incomplete. Try asking again.",
     RequestRejected: () =>
       `The model service rejected the request the backend sent, so no answer was produced. This is a problem in the backend, not your question. Request ID: ${requestId}.`,
     UnreadableResponse: () =>

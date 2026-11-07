@@ -90,23 +90,29 @@ docs/                    plans, architecture and style guides
 
 ## Running locally
 
-The San Francisco data server, the backend and the browser app run as three processes. Requires Node 26, Corepack and the loaded `sf-housing` database (see [`san-francisco/ingest/`](./san-francisco/ingest/README.md)).
+The San Francisco data server, the backend and the browser app run as three processes, with the model served by Ollama or a cloud provider. Requires Node 26, Corepack and the loaded `sf-housing` database (see [`san-francisco/ingest/`](./san-francisco/ingest/README.md)).
 
 1. **Install** from the repo root: `corepack enable && yarn install`.
 2. **Configure the data server:** `cp san-francisco/housing-server/.env.example san-francisco/housing-server/.env`, then set `SF_HOUSING_READER_DATABASE_URL` (the read-only `sf_housing_reader` connection string) and `SF_HOUSING_PORT` (for example `8081`).
 3. **Configure the backend:** `cp backend/.env.example backend/.env`, then set:
    - `APP_DATABASE_URL`: the owner connection string of the `app` Neon project; the backend creates the `app` schema on first start;
    - `BACKEND_PORT`: the port for the question API (for example `8080`);
-   - the API key of the model configuration selected in `backend/config/agent.yaml` (`FRONTIER_API_KEY` for `frontier`).
+   - the API key of the model configuration selected in `backend/config/agent.yaml` (`FRONTIER_API_KEY` for `frontier`); the `local` configuration needs none.
 
    Check that the `sf-housing` URL in `backend/config/servers.yaml` uses the data server's port.
-4. **Configure the browser app:** `cp browser-app/.env.example browser-app/.env`, then set `BACKEND_URL` to the backend's address (for example `http://localhost:8080`). The app's dev server proxies `/api` to it.
-5. **Start everything**, from the repo root:
+4. **Serve the model.** `model.configuration` in `backend/config/agent.yaml` selects it. For `local`, the model runs in [Ollama](https://ollama.com/download/mac), installed as a Mac app, with models stored outside the repo in `~/.ollama/models`:
+   1. Download the model named by the `local` configuration's `modelId`: `ollama pull gpt-oss:20b`.
+   2. Set Ollama's context length to the configuration's `contextTokens`. Ollama defaults to 4,096 tokens and drops the start of a longer prompt without failing ([FAQ](https://docs.ollama.com/faq)), so this is required. The Mac app reads it from `launchctl`, so run `launchctl setenv OLLAMA_CONTEXT_LENGTH 32000`, then quit and reopen Ollama. The setting is lost on restart, so set it again after rebooting.
+   3. Check it answers: `ollama run gpt-oss:20b "hello"`. The backend calls it at `http://localhost:11434/v1`.
+
+   Ollama answers one request at a time by default (`OLLAMA_NUM_PARALLEL`), which is why the `local` configuration's `maxConcurrentQuestions` is 1; raise both together.
+5. **Configure the browser app:** `cp browser-app/.env.example browser-app/.env`, then set `BACKEND_URL` to the backend's address (for example `http://localhost:8080`). The app's dev server proxies `/api` to it.
+6. **Start everything**, from the repo root:
    - in one terminal, `yarn dev`, which runs the data server, the backend and the browser app and interleaves their logs;
    - or in separate terminals, `yarn workspace @policyhuis/sf-housing-server start`, `yarn workspace @policyhuis/backend start` and `yarn workspace @policyhuis/browser-app start`.
 
    They can start in any order: the backend retries a data server it cannot reach and offers its tools once it connects, and the browser app shows the agent host as offline until the backend is up.
-6. **Ask a question** in the browser at the URL the app's dev server prints (`http://localhost:5173` by default), or from the command line:
+7. **Ask a question** in the browser at the URL the app's dev server prints (`http://localhost:5173` by default), or from the command line:
 
    ```sh
    curl -N -X POST http://localhost:8080/api/v1/questions \

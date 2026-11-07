@@ -76,3 +76,59 @@ models:
       - name: dataset_key
         data_tests:
           - unique
+
+  - name: eviction_report_grounds
+    columns:
+      - name: reason
+        data_tests:
+          - unique
+          - not_null
+
+  - name: eviction_grounds
+    columns:
+      - name: ground_key
+        data_tests:
+          - unique
+          - not_null
+      - name: label
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('eviction_report_grounds')
+                field: reason
+
+  - name: eviction_notices
+    columns:
+      - name: eviction_id
+        data_tests:
+          - unique
+          - not_null
+      - name: file_date
+        data_tests:
+          - not_null
+      - name: neighborhood
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('neighborhoods')
+                field: name
+
+  - name: eviction_notice_grounds
+    data_tests:
+      - policyhuis_macros.unique_combination:
+          arguments:
+            columns: [eviction_id, ground_key]
+    columns:
+      - name: eviction_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('eviction_notices')
+                field: eviction_id
+      - name: ground_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('eviction_grounds')
+                field: ground_key

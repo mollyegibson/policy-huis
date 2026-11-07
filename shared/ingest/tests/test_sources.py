@@ -6,13 +6,14 @@ import pytest
 
 from policyhuis_ingest.source_types import (
     ArcGisLayerSource,
+    PdfSource,
     SocrataSource,
     download,
     load_sources,
     parse_metadata,
     parse_rows,
 )
-from policyhuis_ingest.testing import FakeFetcher
+from policyhuis_ingest.testing import FakeFetcher, pdf
 from tests.fixtures import LAYER, SQUARE, geojson, layer_responses, socrata_metadata, socrata_responses
 
 
@@ -83,3 +84,45 @@ def test_socrata_domain_is_a_host_name_not_a_url(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError):
         load_sources(path)
+
+
+REPORT_URL = "https://media.example.org/documents/report.pdf"
+REPORT = PdfSource(
+    kind="pdf",
+    url=REPORT_URL,
+    title="Annual Report",
+    publisher="Example Board",
+    version_pattern=r"^\s*([A-Z][a-z]+ \d{1,2}, \d{4})\s*$",
+    version_format="%B %d, %Y",
+    format="pdf",
+)
+
+
+def test_pdf_version_is_the_date_printed_in_the_document() -> None:
+    document = pdf([["Example Board", "April 8, 2026"], ["The table"]])
+    downloaded = download(REPORT, FakeFetcher({REPORT_URL: document}))
+    meta = parse_metadata(REPORT, downloaded.metadata)
+    assert downloaded.data == document
+    assert downloaded.data_extension == "pdf"
+    assert meta.source_version == date(2026, 4, 8)
+    assert (meta.title, meta.publisher, meta.license, meta.source_url) == (
+        "Annual Report",
+        "Example Board",
+        None,
+        REPORT_URL,
+    )
+
+
+@pytest.mark.parametrize("lines", [["No date here"], ["April 8, 2026", "May 1, 2026"]])
+def test_pdf_download_fails_unless_the_version_matches_exactly_once(lines: list[str]) -> None:
+    with pytest.raises(ValueError, match="version_pattern matched"):
+        download(REPORT, FakeFetcher({REPORT_URL: pdf([lines])}))
+
+
+def test_pdf_rows_are_pages_of_text() -> None:
+    rows = parse_rows(REPORT, pdf([["first page"], ["second page"]]))
+    assert [(row.record["page"], str(row.record["text"]).strip()) for row in rows] == [
+        (1, "first page"),
+        (2, "second page"),
+    ]
+    assert all(row.geometry is None for row in rows)
