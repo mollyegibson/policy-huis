@@ -156,6 +156,14 @@ Formats and access below are unverified until step 1; they are listed to show wh
 | Regional housing deals (*woondeals*) | Housing targets per region and municipality | Likely PDF | Documents, later |
 | Housing shortage figures; ABF Research | Shortage and forecast figures | Unknown; openness unconfirmed | To decide |
 
+## Updated verified sources
+
+<img width="1615" height="410" alt="updated sources" src="https://github.com/user-attachments/assets/8db9ee4b-f288-41f1-b562-b86e6141f123" />
+
+
+
+
+
 ## Open questions
 
 1. **Municipalities.** Which 2–3, by the scope doc's criteria? Until decided, one candidate is built end to end.
