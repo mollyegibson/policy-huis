@@ -65,17 +65,20 @@ layer(TestServer.layer, { timeout: 120_000 })("sf-data server", (it) => {
     Effect.gen(function* () {
       const client = yield* TestServer
       const { tools } = yield* client.listTools()
-      expect(tools.map((t) => t.name).sort()).toEqual([
-        "affordable_pipeline_projects",
-        "affordable_pipeline_summary",
-        "affordable_pipeline_units_by_income_band",
-        "dataset_info",
-        "development_pipeline_projects",
-        "development_pipeline_summary",
-        "eviction_grounds",
-        "eviction_notice_counts",
-        "project_hazard_exposure"
-      ])
+      expect(tools.map((t) => t.name).sort()).toEqual(
+        [
+          "affordable_pipeline_projects",
+          "affordable_pipeline_summary",
+          "affordable_pipeline_units_by_income_band",
+          "dataset_info",
+          "development_pipeline_projects",
+          "development_pipeline_summary",
+          "eviction_grounds",
+          "allowable_rent_increase",
+          "eviction_notice_counts",
+          "project_hazard_exposure"
+        ].sort()
+      )
       for (const tool of tools) {
         expect(tool.outputSchema).toBeDefined()
         expect(tool.annotations?.title).toEqual(expect.any(String))
@@ -312,6 +315,55 @@ layer(TestServer.layer, { timeout: 120_000 })("sf-data server", (it) => {
     })
   )
 
+  describe("allowable_rent_increase", () => {
+    it.effect("gives the latest period with no date, citing the dataset and saying what was selected", () =>
+      Effect.gen(function* () {
+        const content = yield* structured("allowable_rent_increase", {})
+        expect(content["period"]).toEqual({ effectiveFrom: "2026-03-01", effectiveTo: "2027-02-28", percent: 1.6 })
+        expect(content["history"]).toEqual([])
+        expect(content["dataAsOf"]).toBe("2026-05-01")
+        const [citation] = citationsOf(content)
+        expect(citation?.sourceId).toBe("sf_data.allowable_rent_increase@2026-05-01")
+        expect(citation?.locator).toBe("The latest annual allowable rent increase")
+      })
+    )
+
+    it.effect("gives the period in effect on a date, including a change within a year", () =>
+      Effect.gen(function* () {
+        const before = yield* structured("allowable_rent_increase", { on: "1992-12-07" })
+        const after = yield* structured("allowable_rent_increase", { on: "1992-12-08" })
+        expect([before["period"], after["period"]]).toEqual([
+          { effectiveFrom: "1992-03-01", effectiveTo: "1992-12-07", percent: 4 },
+          { effectiveFrom: "1992-12-08", effectiveTo: "2025-02-28", percent: 1.6 }
+        ])
+      })
+    )
+
+    it.effect("lists the periods from a year on", () =>
+      Effect.gen(function* () {
+        const content = yield* structured("allowable_rent_increase", { fromYear: 2025 })
+        const history = Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ effectiveFrom: Schema.String })))(
+          content["history"]
+        )
+        expect(history.map((p) => p.effectiveFrom)).toEqual(["2025-03-01", "2026-03-01"])
+        expect(citationsOf(content)[0]?.locator).toBe(
+          "The latest annual allowable rent increase, and each one since 2025"
+        )
+      })
+    )
+
+    it.effect("returns a date outside the published periods as DateOutOfRange with the dates covered", () =>
+      Effect.gen(function* () {
+        const result = yield* call("allowable_rent_increase", { on: "2027-03-01" })
+        expect(result.isError).toBe(true)
+        const text = JSON.stringify(result.content)
+        expect(text).toContain("DateOutOfRange")
+        expect(text).toContain("1992-03-01")
+        expect(text).toContain("2027-02-28")
+      })
+    )
+  })
+
   it.effect("describes each dataset with the publisher's own description", () =>
     Effect.gen(function* () {
       const content = yield* structured("dataset_info", { dataset: "sfpuc_100yr_storm" })
@@ -347,6 +399,7 @@ const unreachableRepo = Layer.succeed(HousingRepo, {
   zone: () => Effect.fail(refused),
   exposure: () => Effect.fail(refused),
   evictionPeriod: () => Effect.fail(refused),
+  rentIncreases: () => Effect.fail(refused),
   evictionGroundKeys: () => Effect.fail(refused),
   evictionDistricts: () => Effect.fail(refused),
   evictionGrounds: () => Effect.fail(refused),
@@ -376,7 +429,8 @@ layer(UnreachableServer.layer)("sf-data server without its database", (it) => {
         ["project_hazard_exposure", { zone: "sfpuc_100yr_storm", projects: "development_pipeline" }],
         ["dataset_info", {}],
         ["eviction_notice_counts", { from: "2024-01", to: "2024-12" }],
-        ["eviction_grounds", {}]
+        ["eviction_grounds", {}],
+        ["allowable_rent_increase", {}]
       ]
       for (const [name, args] of calls) {
         const result = yield* client.callTool({ name, arguments: args })

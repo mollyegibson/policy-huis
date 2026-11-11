@@ -52,3 +52,9 @@ eviction_report:
   version_pattern: '^\s*([A-Z][a-z]+ \d{1,2}, \d{4})\s*$' # the letter's date, on a line of its own
   version_format: '%B %d, %Y'
   format: pdf
+
+allowable_rent_increase:
+  kind: socrata
+  domain: data.sf.gov
+  dataset_id: hsxb-ci7b
+  format: json

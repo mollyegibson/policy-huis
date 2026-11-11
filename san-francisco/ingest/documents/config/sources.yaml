@@ -11,3 +11,13 @@ rent_ordinance:
   version_format: '%B %d, %Y'
   format: pdf
   raw_table: document_pages
+
+bla_affordable_housing:
+  kind: pdf
+  url: https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf
+  title: Funding and Incentivizing Affordable Housing in San Francisco # the memo's "Re:" line on page 1
+  publisher: San Francisco Board of Supervisors, Budget and Legislative Analyst # the letterhead on page 1
+  version_pattern: '^Date:\s+([A-Z][a-z]+ \d{1,2},\d{4})\s*$' # "Date:  June 5,2026" on page 1, printed with no space
+  version_format: '%B %d,%Y'
+  format: pdf
+  raw_table: document_pages

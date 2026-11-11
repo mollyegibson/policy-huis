@@ -1,6 +1,6 @@
 # sf-data MCP server
 
-The San Francisco housing data server: nine tools over the `sf_data` schema that [`san-francisco/ingest/data/`](../../ingest/data/README.md) builds, served by Effect's `McpServer` over Streamable HTTP at `/mcp`. The tools, their schemas and their citations are designed in the [San Francisco Plan](../../../docs/plans/sf-plan.md#data-server-tools).
+The San Francisco housing data server: ten tools over the `sf_data` schema that [`san-francisco/ingest/data/`](../../ingest/data/README.md) builds, served by Effect's `McpServer` over Streamable HTTP at `/mcp`. The tools, their schemas and their citations are designed in the [San Francisco Plan](../../../docs/plans/sf-plan.md#data-server-tools).
 
 | File | Contents |
 |---|---|

@@ -241,6 +241,22 @@ def all_responses() -> dict[str, bytes]:
             "Open Data Commons Public Domain Dedication and License",
         ),
     )
+    responses |= datasf_responses(
+        "hsxb-ci7b",
+        [
+            {"effective_starting_date": "1982-04-01T00:00:00.000", "annual_allowable_increase": "7.0"},
+            {"effective_starting_date": "1992-03-01T00:00:00.000", "annual_allowable_increase": "4.0"},
+            {"effective_starting_date": "1992-12-08T00:00:00.000", "annual_allowable_increase": "1.6"},
+            {"effective_starting_date": "2026-03-01T00:00:00.000", "annual_allowable_increase": "1.6"},
+        ],
+        datasf_metadata(
+            "hsxb-ci7b",
+            "Annual Allowable Rent Increase for Units Under Rent Control",
+            "The new rates are effective every year on March 1.",
+            "2026-05-01",
+            "Open Data Commons Public Domain Dedication and License",
+        ),
+    )
     responses[EVICTION_REPORT] = eviction_report()
     responses[f"{SFPUC_LAYER}/query"] = geojson(zone_feature)
     responses[f"{SFPUC_LAYER}?f=json"] = json.dumps(

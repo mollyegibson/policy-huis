@@ -101,6 +101,13 @@ const EvictionGroundRow = Schema.Struct({ key: Schema.String, label: Schema.Stri
 
 const PeriodRow = Schema.Struct({ coveredFrom: NullableText, coveredTo: NullableText })
 
+export const RentIncreaseRow = Schema.Struct({
+  effectiveFrom: IsoDate,
+  effectiveTo: IsoDate,
+  percent: Schema.Finite
+})
+export type RentIncreaseRow = typeof RentIncreaseRow.Type
+
 const Count = Schema.Struct({ count: NonNegativeInt })
 
 const Value = Schema.Struct({ value: Schema.String })
@@ -388,6 +395,16 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
     const evictionGroundKeys = () => values(sql`SELECT ground_key AS value FROM sf_data.eviction_grounds`)
     const evictionDistricts = () => values(sql`SELECT supervisor_district::text AS value FROM sf_data.eviction_notices`)
 
+    /** Every period of the annual allowable rent increase, earliest first. */
+    const rentIncreases = Effect.fn("HousingRepo.rentIncreases")(function* () {
+      return yield* rows(RentIncreaseRow)(
+        yield* sql`
+          SELECT effective_from::text AS "effectiveFrom", effective_to::text AS "effectiveTo",
+                 percent::float8 AS percent
+          FROM sf_data.allowable_rent_increases ORDER BY effective_from`
+      )
+    })
+
     const evictionGrounds = Effect.fn("HousingRepo.evictionGrounds")(function* () {
       return yield* rows(EvictionGroundRow)(
         yield* sql`SELECT ground_key AS key, label, section FROM sf_data.eviction_grounds ORDER BY ground_key`
@@ -460,7 +477,8 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       evictionGroundKeys,
       evictionDistricts,
       evictionGrounds,
-      evictionCounts
+      evictionCounts,
+      rentIncreases
     } as const
   })
 }) {

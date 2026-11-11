@@ -93,3 +93,17 @@ INSERT INTO sf_data.eviction_notices VALUES
 CREATE TABLE sf_data.eviction_notice_grounds (eviction_id text NOT NULL, ground_key text NOT NULL);
 INSERT INTO sf_data.eviction_notice_grounds VALUES
     ('M1', 'owner_move_in'), ('M2', 'breach'), ('M2', 'owner_move_in'), ('M3', 'breach');
+
+INSERT INTO sf_data.datasets VALUES
+    ('allowable_rent_increase', 'Annual Allowable Rent Increase for Units Under Rent Control', NULL,
+     'https://data.sf.gov/d/hsxb-ci7b', 'Open Data Commons Public Domain Dedication and License', '2026-05-01',
+     'The new rates are effective every year on March 1.');
+
+CREATE TABLE sf_data.allowable_rent_increases (
+    effective_from date PRIMARY KEY, effective_to date NOT NULL, percent numeric NOT NULL, load_id uuid
+);
+INSERT INTO sf_data.allowable_rent_increases VALUES
+    ('1992-03-01', '1992-12-07', 4.0, NULL),
+    ('1992-12-08', '2025-02-28', 1.6, NULL),
+    ('2025-03-01', '2026-02-28', 1.4, NULL),
+    ('2026-03-01', '2027-02-28', 1.6, NULL);

@@ -80,7 +80,7 @@ export const SfDocsHandlers = (toolkit: SfDocsToolkit) =>
             )
             return {
               passages: found.map(({ row, document: owner }) => toPassage(owner, row)),
-              citations: found.map(({ row, document: owner }) => provisionCitation(owner, row.provision, row.text))
+              citations: found.map(({ row, document: owner }) => provisionCitation(owner, row, row.text))
             }
           },
           withDataErrors((params) => (params.documentId === undefined ? [] : [params.documentId]))
@@ -100,7 +100,7 @@ export const SfDocsHandlers = (toolkit: SfDocsToolkit) =>
             return {
               passages: returned.map((row) => toPassage(doc, row)),
               outline: whole ? null : tree.filter((row) => row.parentProvision === root.provision).map(toOutlineEntry),
-              citations: returned.map((row) => provisionCitation(doc, row.provision, row.text))
+              citations: returned.map((row) => provisionCitation(doc, row, row.text))
             }
           },
           withDataErrors((params) => [params.documentId])
@@ -121,8 +121,8 @@ export const SfDocsHandlers = (toolkit: SfDocsToolkit) =>
               parent: parent === null ? null : toPassage(doc, parent),
               outline: listed.map(toOutlineEntry),
               citations: [
-                ...(parent === null ? [] : [provisionCitation(doc, parent.provision, parent.text)]),
-                ...listed.map((row) => provisionCitation(doc, row.provision, row.summary))
+                ...(parent === null ? [] : [provisionCitation(doc, parent, parent.text)]),
+                ...listed.map((row) => provisionCitation(doc, row, row.summary))
               ]
             }
           },

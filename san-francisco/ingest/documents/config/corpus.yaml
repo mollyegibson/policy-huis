@@ -15,3 +15,17 @@ rent_ordinance:
     evictions and the just causes a landlord needs, tenant rights in owner move-in and other no-fault evictions,
     relocation payments, tenant buyout agreements, tenant harassment, and misdemeanors and civil actions.
   splitter: rent_ordinance
+
+bla_affordable_housing:
+  document_type: report
+  # The memo's "Summary of Requested Action" on page 1 (its four components) and the headings on its contents page
+  # (page 27), including the ten financing strategies of section 3.
+  description: >-
+    A policy analysis report by the Board of Supervisors' Budget and Legislative Analyst, analysis rather than law:
+    how San Francisco funds, builds and plans affordable housing; the impacts of the temporary reduction of impact
+    fees and inclusionary requirements; the City's reliance on one-time and market-contingent funds, and financing
+    strategies (a revolving loan fund, a joint powers agreement, an open indenture, a municipal bank, enhanced
+    infrastructure financing districts, SB 593 bonding authority, Proposition I revenue, the debt ceiling, the Housing
+    Trust Fund, and new or enhanced taxes); and gaps in the affordable housing delivery system for vulnerable
+    communities.
+  splitter: bla_affordable_housing

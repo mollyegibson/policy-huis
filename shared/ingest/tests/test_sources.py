@@ -120,6 +120,35 @@ def test_pdf_download_fails_unless_the_version_matches_exactly_once(lines: list[
         download(REPORT, FakeFetcher({REPORT_URL: pdf([lines])}))
 
 
+UNDATED = REPORT.model_copy(update={"version_from": "pdf_mod_date", "version_pattern": None, "version_format": None})
+
+
+def test_pdf_version_can_be_its_mod_date_in_its_own_time_zone() -> None:
+    document = pdf([["Field definitions, no date"]], mod_date="D:20150503231351-07'00'")
+    downloaded = download(UNDATED, FakeFetcher({REPORT_URL: document}))
+    assert parse_metadata(UNDATED, downloaded.metadata).source_version == date(2015, 5, 3)
+
+
+def test_pdf_with_no_mod_date_fails_when_its_version_comes_from_it() -> None:
+    with pytest.raises(ValueError, match="no /ModDate"):
+        download(UNDATED, FakeFetcher({REPORT_URL: pdf([["Field definitions"]])}))
+
+
+def test_pdf_source_declares_exactly_one_way_to_its_version() -> None:
+    with pytest.raises(ValueError, match="needs version_pattern"):
+        PdfSource(kind="pdf", url=REPORT_URL, title="t", publisher="p", format="pdf")
+    with pytest.raises(ValueError, match="apply only to a printed version"):
+        PdfSource(
+            kind="pdf",
+            url=REPORT_URL,
+            title="t",
+            publisher="p",
+            format="pdf",
+            version_from="pdf_mod_date",
+            version_format="%Y",
+        )
+
+
 def test_pdf_rows_are_pages_of_text() -> None:
     rows = parse_rows(REPORT, pdf([["first page"], ["second page"]]))
     assert [(row.record["page"], str(row.record["text"]).strip()) for row in rows] == [

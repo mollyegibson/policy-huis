@@ -5,7 +5,7 @@ import type { DatasetRow } from "./HousingRepo.ts"
 import { HousingRepo } from "./HousingRepo.ts"
 import * as Locators from "./Locators.ts"
 import { DataUnavailable, UnknownValue, withDataErrors } from "./ToolErrors.ts"
-import { PeriodOutOfRange, SfDataToolkit } from "./Tools.ts"
+import { DateOutOfRange, PeriodOutOfRange, SfDataToolkit } from "./Tools.ts"
 
 /** Results list at most this many projects when the caller gives no limit; totals always cover every match. */
 const DEFAULT_LIMIT = 20
@@ -14,6 +14,7 @@ const DEVELOPMENT = ["development_pipeline"]
 const AFFORDABLE = ["affordable_pipeline"]
 const EVICTIONS = ["eviction_notices"]
 const EVICTION_GROUNDS = ["eviction_notices", "eviction_report"]
+const RENT_INCREASES = ["allowable_rent_increase"]
 
 export const SfDataHandlers = SfDataToolkit.toLayer(
   Effect.gen(function* () {
@@ -288,6 +289,42 @@ export const SfDataHandlers = SfDataToolkit.toLayer(
           }
         },
         withDataErrors(() => EVICTION_GROUNDS)
+      ),
+
+      allowable_rent_increase: Effect.fn("SfData.allowable_rent_increase")(
+        function* (params) {
+          const datasets = yield* repo.datasets()
+          const dataset = yield* loadedDataset(datasets, "allowable_rent_increase")
+          const periods = yield* repo.rentIncreases()
+          const first = periods[0]
+          const latest = periods.at(-1)
+          if (first === undefined || latest === undefined)
+            return yield* new DataUnavailable({ datasets: RENT_INCREASES })
+          const on = params.on
+          const period = on === undefined ? latest : periods.find((p) => p.effectiveFrom <= on && on <= p.effectiveTo)
+          if (period === undefined) {
+            return yield* new DateOutOfRange({
+              requested: on ?? latest.effectiveFrom,
+              coveredFrom: first.effectiveFrom,
+              coveredTo: latest.effectiveTo
+            })
+          }
+          const fromYear = params.fromYear
+          return {
+            period,
+            history:
+              fromYear === undefined ? [] : periods.filter((p) => Number(p.effectiveFrom.slice(0, 4)) >= fromYear),
+            dataAsOf: dataset.sourceVersion,
+            citations: yield* cite(
+              datasets,
+              RENT_INCREASES,
+              "allowable_rent_increase",
+              params,
+              Locators.allowableRentIncrease(params)
+            )
+          }
+        },
+        withDataErrors(() => RENT_INCREASES)
       ),
 
       dataset_info: Effect.fn("SfData.dataset_info")(

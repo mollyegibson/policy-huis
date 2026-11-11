@@ -56,6 +56,7 @@ One answer style serves both audiences. The tools and citations are the same for
 | Why is it stuck | "Why are approved projects not getting built?" | "What does the budget analyst say the affordable housing funding gap is, and what drives unit costs?" | Analysis reports; Planning pipeline |
 | Rule | "Does a new building near the freeway have to filter the air?" | "Which inclusionary requirements apply to a 30-unit project since August 2026?" "When must affordable renovations be all-electric?" | Inclusionary, Article 38 and all-electric ordinances |
 | Rule (tenants) | "Can my landlord evict me to move in themselves, and what do they owe me?" (answered as information, with a referral) | "Which grounds for eviction does Section 37.9 allow?" | Chapter 37 |
+| Rule + data (rent increases) | "How much can my landlord raise the rent each year in a rent-controlled apartment?" | "What has the annual allowable increase been since 2020?" | Chapter 37, Sec. 37.3(a)(1) for the rule; the Rent Board's annual allowable increase for the figure. Expected: 1.6% for March 1, 2026 to February 28, 2027, cited to the dataset, and the rule (60% of the CPI increase, at most 7%) cited to 37.3(a)(1). The ordinance holds no figure, so the rule alone cannot answer, and its findings in 37.1(c), which mention an old 4% floor, are not the rule |
 | Rule (state) | "Does the state rent cap apply if my unit is under San Francisco rent control?" | "How does the Tenant Protection Act interact with local rent control?" | Civil Code sections from the Tenant Protection Act; Costa-Hawkins |
 | Ground | "How many eviction notices were filed in my neighborhood last year?" | "Which eviction grounds account for most notices since 2020, by supervisor district?" | Eviction Notices |
 | Rule + data | "What is an owner move-in eviction, and how common is it in the Mission?" | "Which approved projects in the air-pollutant exposure zone will need enhanced ventilation?" | Ordinances with either dataset |
@@ -101,14 +102,14 @@ The docs server's corpus holds laws and the analysis reports that explain them. 
 
 | Document | Publisher | Access | Type | As of | Notes |
 |---|---|---|---|---|---|
-| Inclusionary Housing Program updates and impact fee reductions (Board File 260538) | Board of Supervisors, [Legistar](https://sfgov.legistar.com/View.ashx?GUID=40004122-9FEB-4E0C-A67B-2126814C08E5&ID=15691706&M=F) | PDF, 195 pages | Law | Amended in Board July 14, 2026 | Amends the Planning Code, including Section 415. The research reports enactment as Ordinance 136-26, effective August 22, 2026, but `sfbos.org` returned 404 for that ordinance PDF on November 4, so the enacted text and number are confirmed before loading. |
-| All-electric major renovations (Ordinance 174-25) | Board of Supervisors, [sfbos.org](https://www.sfbos.org/sites/default/files/o0174-25.pdf) | PDF | Law | 2025 | 100% affordable projects are exempt until July 1, 2027, per the research. |
-| Article 38 enhanced ventilation amendments (Ordinance 186-25) | Board of Supervisors, [sfbos.org](https://www.sfbos.org/sites/default/files/o0186-25.pdf) | PDF | Law | 2025 | Effective date unconfirmed. |
-| Financing Affordable Housing | Budget and Legislative Analyst, [sf.gov](https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf) | PDF | Report | June 5, 2026 | Costs per unit, funding sources and the funding gap. |
-| Housing Production and Development Pipeline, 2026 Q2 | SF Planning, [sfplanning.org](https://sfplanning.org/sites/default/files/documents/reports/Housing_Production_Development_Pipeline-2026Q2.pdf) | PDF | Report | 2026 Q2 | The narrative behind the `6jgi-cpb4` snapshot. |
-| Pipeline data dictionary | SF Planning, [sfplanning.org](https://sfplanning.org/sites/default/files/documents/reports/pipeline_data_dictionary.pdf) | PDF | Reference | Undated | What each pipeline status means. |
+| Inclusionary Housing Program updates and impact fee reductions (Board File 260538) | Board of Supervisors, [Legistar](https://sfgov.legistar.com/View.ashx?GUID=40004122-9FEB-4E0C-A67B-2126814C08E5&ID=15691706&M=F) | PDF, 195 pages | Law | Amended in Board July 14, 2026 | Amends the Planning Code, including Section 415. The research reports enactment as Ordinance 136-26, effective August 22, 2026, but `sfbos.org` returned 404 for that ordinance PDF on November 4, so the enacted text and number are confirmed before loading. **Not loaded (checked November 11, 2026):** the Legistar file is still the "AMENDED IN BOARD 7/14/2026" draft with a blank ordinance number, and `o0136-26.pdf` returns 404. It is an amending ordinance: "Deletions to Codes are in strikethrough italics Times New Roman font" and "Asterisks (* * * \*) indicate the omission of unchanged Code subsections", so plain text extraction would index repealed wording as law and still miss the unchanged subsections. Its text layer is real (Arial and Times New Roman), so deletions are detectable only by the line drawn through them (spike S6). |
+| All-electric major renovations (Ordinance 174-25) | Board of Supervisors, [sfbos.org](https://www.sfbos.org/sites/default/files/o0174-25.pdf) | PDF | Law | 2025 | 100% affordable projects are exempt until July 1, 2027, per the research. **Not loaded:** the sfbos.org copy is page images with an OCR text layer, so struck-through deletions cannot be told from current text; it prints "Passed: September 02, 2025" but no effective date. Same amending-ordinance limits as the inclusionary ordinance. |
+| Article 38 enhanced ventilation amendments (Ordinance 186-25) | Board of Supervisors, [sfbos.org](https://www.sfbos.org/sites/default/files/o0186-25.pdf) | PDF | Law | 2025 | Effective date unconfirmed. **Not loaded:** page images with an OCR text layer, as for Ordinance 174-25; prints "Passed: September 30, 2025". |
+| Funding and Incentivizing Affordable Housing in San Francisco (`bla_affordable_housing`) | San Francisco Board of Supervisors, Budget and Legislative Analyst, [sf.gov](https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf) | PDF, 132 pages | Report | June 5, 2026, printed as "Date:  June 5,2026" | Costs per unit, funding sources and the funding gap; the impacts of the temporary fee reduction; ten financing strategies; equity gaps. Loaded: split by the headings on its contents page (page 27), then by page (see [Ingestion for San Francisco](#ingestion-for-san-francisco)). |
+| Housing Production and Development Pipeline, 2026 Q2 | SF Planning, [sfplanning.org](https://sfplanning.org/sites/default/files/documents/reports/Housing_Production_Development_Pipeline-2026Q2.pdf) | PDF | Report | 2026 Q2 | The narrative behind the `6jgi-cpb4` snapshot. **Dropped (checked November 11, 2026):** the PDF is a 1-page summary sheet of figures with no printed date, not a narrative report, and its numbers are the `6jgi-cpb4` dataset's. |
+| Pipeline data dictionary | SF Planning, [sfplanning.org](https://sfplanning.org/sites/default/files/documents/reports/pipeline_data_dictionary.pdf) | PDF | Reference | Undated | What each pipeline status means. A 1-page field glossary with no printed date. Its PDF metadata title, "Pipeline Quarterly Report Q2 2011", is free text; its `/ModDate` is May 3, 2015 (XMP agrees), and the server's `Last-Modified` is April 4, 2023. To be loaded with `version_from: pdf_mod_date`, so its version is May 3, 2015. |
 | Rent Ordinance (Administrative Code, Chapter 37) | San Francisco Rent Board | PDF, [sf.gov](https://media.api.sf.gov/documents/600_Ordinance_6-29-26.pdf), 146 pages, 27 sections (Sec. 37.1 to Sec. 37.16) | Law | Amended through June 29, 2026 | The PDF states it is "not an official record" and that it reflects court decisions and state legislation the official record may not. A separate [list of amendments](https://media.api.sf.gov/documents/601_List_of_Ord_Amendments_6-29-26.pdf) is published alongside. Citations link to this PDF. |
-| California Civil Code: Tenant Protection Act sections (1946.2, 1947.12, 1947.13) and the Costa-Hawkins Rental Housing Act (1954.50 and following) | California Legislature | Daily bulk database downloads at [downloads.leginfo.legislature.ca.gov](https://downloads.leginfo.legislature.ca.gov/) | Law | Daily | The exact sections loaded are corpus membership in `san-francisco/ingest/documents/config/corpus.yaml`. A 2025 bill (SB 522) proposed amendments to 1946.2 and 1947.12; whether it was enacted is unconfirmed, which is why every load records the version it took. |
+| California Civil Code: Tenant Protection Act sections (1946.2, 1947.12, 1947.13) and the Costa-Hawkins Rental Housing Act (1954.50 and following) | California Legislature | Daily bulk database downloads at [downloads.leginfo.legislature.ca.gov](https://downloads.leginfo.legislature.ca.gov/) | Law | Daily | The exact sections loaded are corpus membership in `san-francisco/ingest/documents/config/corpus.yaml`. A 2025 bill (SB 522) proposed amendments to 1946.2 and 1947.12; whether it was enacted is unconfirmed, which is why every load records the version it took. **Deferred:** per-section pages on leginfo.legislature.ca.gov answer automated requests with a JavaScript challenge (HTTP 403), and the daily bulk database is a 1.1 GB zip, archived whole with each load. |
 
 American Legal Publishing, the official host of the city's codes, refused automated requests during the research, so code sections come from the enacted ordinances and the Rent Board's copy, and citations link to those. The city's older raw code files on GitHub ([SFMOCI/openlaw](https://github.com/SFMOCI/openlaw)) were last updated in April 2014, so they cannot serve as the source for current law.
 
@@ -119,6 +120,7 @@ The Rent Ordinance PDF's text extracts cleanly. Each section starts with a "Sec.
 | Source | DataSF ID | License | Updated | Size and shape | Notes |
 |---|---|---|---|---|---|
 | Eviction Notices | [`5cei-gny5`](https://data.sf.gov/d/5cei-gny5) | ODC Public Domain (PDDL) | Monthly; rows updated November 6, 2026 | 49,159 notices filed from January 2, 1997 to October 29, 2026; 19 ground flags per notice, block-level address, supervisor district, analysis neighborhood, point location | Notices filed with the Rent Board under Section 37.9(c). A notice is not an eviction. A notice can carry several grounds. A duplicate-row issue was fixed on February 27, 2024. On November 6, 2026: `eviction_id` is unique; every neighborhood name is in the Analysis Neighborhoods list; 96 notices have no neighborhood, 89 no supervisor district and 77 no location; 331 have no ground flag set. |
+| Annual Allowable Rent Increase for Units Under Rent Control | [`hsxb-ci7b`](https://data.sf.gov/d/hsxb-ci7b) (Rent Board) | ODC Public Domain (PDDL) | Yearly, effective March 1; rows updated May 1, 2026 | 46 periods from April 1, 1982 (7.0%) to March 1, 2026 (1.6%); `effective_starting_date`, `annual_allowable_increase` (percent) | The figure Sec. 37.3(a)(1) has the Rent Board publish: in the dataset's description, "60% of the percentage increase in the Consumer Price Index (CPI) for All Urban Consumers in the San Francisco-Oakland-San Jose region for the 12-month period ending October 31", per Rules and Regulations Section 1.12. Checked on November 11, 2026: one period per year with no gap; every period starts March 1 but the first (April 1, 1982, matching 37.3(a)(2)'s "between April 1, 1982 and…") and a second 1992 period from December 8, 1992, matching the amendment to Sec. 37.3 "by Resolution No. 961-92, effective December 8, 1992" in the ordinance's history. The older `j833-e5ua` ("1982 - 2020") exposes no columns and is not used |
 
 | Rent Board Annual Report on Eviction Notices, 2025-2026 | San Francisco Residential Rent Stabilization and Arbitration Board, [sf.gov](https://media.api.sf.gov/documents/Rent_Board_Annual_Eviction_Report_25-26_2HGK2Cl.pdf) | None stated | Dated April 8, 2026; yearly, required by Section 37.6(j); past reports listed at [sf.gov](https://sf.gov/information/rent-board-statistics-and-reports) | PDF, 4 pages. Page 2 lists each eviction reason with its "Ordinance Section" (20 reasons, 37.9(a)(1) to 37.9(a)(17), 37.9(b), and "other or no reason given" with no section) | Its introduction describes its data in the same words as the Eviction Notices dataset. It reports that an ordinance effective February 9, 2026 added 37.9(a)(17) (demolition of a whole building for redevelopment) and narrowed 37.9(a)(10) to a single unit; the dataset has no column for (a)(17). |
 
@@ -358,7 +360,7 @@ export const withDataErrors =
 
 ## Data server tools
 
-Fixed tools, each backed by a tested dbt model or query. Servers name tools without a prefix; the agent's directory file gives each server its prefix (`sf_data_`), and `McpClient.toolkit(client, prefix)` applies it, so the model sees `sf_data_development_pipeline_projects`. Each tool also publishes a title (`Tool.Title`, sent as the MCP tool's `annotations.title`), which the browser app shows for each lookup. Phase 1 gives the model seven tools; Phase 2 adds two eviction tools and the docs server's three (`sf_docs_search_policy`, `sf_docs_get_provision`, `sf_docs_list_provisions`), for twelve, which spike S2 tests for tool selection; S2 has not been run.
+Fixed tools, each backed by a tested dbt model or query. Servers name tools without a prefix; the agent's directory file gives each server its prefix (`sf_data_`), and `McpClient.toolkit(client, prefix)` applies it, so the model sees `sf_data_development_pipeline_projects`. Each tool also publishes a title (`Tool.Title`, sent as the MCP tool's `annotations.title`), which the browser app shows for each lookup. Phase 1 gives the model seven tools; Phase 2 adds two eviction tools, the allowable rent increase tool and the docs server's three (`sf_docs_search_policy`, `sf_docs_get_provision`, `sf_docs_list_provisions`), for thirteen, which spike S2 tests for tool selection; S2 has not been run.
 
 | Tool (as the model sees it) | Phase | Answers | Errors |
 |---|---|---|---|
@@ -371,6 +373,7 @@ Fixed tools, each backed by a tested dbt model or query. Servers name tools with
 | `sf_data_dataset_info` | 1 | How current each dataset is, its license, and the publisher's own description of it | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
 | `sf_data_eviction_notice_counts` | 2 | How many notices, when, where, for which grounds; a period with no notices returns zero counts | `UnknownValue`, `PeriodOutOfRange`, `DatabaseUnavailable`, `DataUnavailable` |
 | `sf_data_eviction_grounds` | 2 | Which grounds the data records, each with the reason and Rent Ordinance section the Rent Board's annual eviction report gives for it | `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_data_allowable_rent_increase` | 2 | The annual allowable rent increase in effect on a date, or the latest published, and optionally every period since a year | `DateOutOfRange`, `DatabaseUnavailable`, `DataUnavailable` |
 
 **"Is it moving" is a filter, not a label.** `development_pipeline_projects` returns each project's status date and days in that status, counted to the snapshot's source version (the date its rows were published, which its citation carries) rather than to today, so the same query gives the same number for as long as the snapshot is current; it takes `inStatusSinceBefore` and `approvedBefore`, so a question such as "approved before 2020 and not yet under construction" is answered from the data. No tool decides what counts as stalled.
 
@@ -666,6 +669,43 @@ export const EvictionGrounds = Tool.make("eviction_grounds", {
   failureMode: "return"
 }).annotate(Tool.Title, "Eviction grounds")
 
+/** A date outside the periods the allowable rent increase data covers. */
+export class DateOutOfRange extends Schema.TaggedError<DateOutOfRange>()("DateOutOfRange", {
+  requested: IsoDate,
+  coveredFrom: IsoDate,
+  coveredTo: IsoDate
+}) {}
+
+const RentIncreasePeriod = Schema.Struct({
+  effectiveFrom: IsoDate,
+  effectiveTo: IsoDate,
+  percent: Schema.Finite.annotate({ description: "The most the base rent may rise in the period, in percent" })
+})
+
+export const AllowableRentIncrease = Tool.make("allowable_rent_increase", {
+  description:
+    "The Rent Board's annual allowable rent increase for rent-controlled units: the most a landlord may raise a " +
+    "tenant's base rent once a year, in percent. The Rent Board sets it each year from 60% of the CPI increase, as " +
+    "Rent Ordinance Sec. 37.3(a)(1) requires, and each rate runs from its effective date to the day before the next: " +
+    "say which period applies. With no date, it returns the latest period published. It is the annual amount only: " +
+    "banked increases and increases for capital improvements or utilities are separate, and units outside rent " +
+    "control are not covered.",
+  parameters: Schema.Struct({
+    on: OptionalParam(IsoDate.annotate({ description: "A date, as YYYY-MM-DD, to give the rate in effect on" })),
+    fromYear: OptionalParam(
+      PositiveInt.annotate({ description: "Also list every period starting in this year or later" })
+    )
+  }),
+  success: Schema.Struct({
+    period: RentIncreasePeriod,
+    history: Schema.Array(RentIncreasePeriod),
+    dataAsOf: IsoDate,
+    citations: Citations
+  }),
+  failure: Schema.Union([DateOutOfRange, ...DataErrors]),
+  failureMode: "return"
+}).annotate(Tool.Title, "Annual allowable rent increase")
+
 export const SfDataToolkit = Toolkit.make(
   DevelopmentPipelineProjects,
   DevelopmentPipelineSummary,
@@ -675,7 +715,8 @@ export const SfDataToolkit = Toolkit.make(
   ProjectHazardExposure,
   DatasetInfo,
   EvictionNoticeCounts,
-  EvictionGrounds
+  EvictionGrounds,
+  AllowableRentIncrease
 )
 ```
 
@@ -889,6 +930,7 @@ Each raw table has the same four columns: `load_id`, `row_number`, `record` (the
 | `raw_sf_data.air_pollutant_exposure_zone` | 1 | `t65d-x6p8` | geometry → `geom` |
 | `raw_sf_data.eviction_notices` | 2 | `5cei-gny5` | `eviction_id`, `file_date`, the 19 ground flags (`non_payment` … `good_samaritan_ends`, the dataset's true-or-false fields), `neighborhood`, `supervisor_district`, `shape` |
 | `raw_sf_data.eviction_report` | 2 | The annual eviction report PDF | One row per page: `page`, `text` |
+| `raw_sf_data.allowable_rent_increase` | 2 | `hsxb-ci7b` | `effective_starting_date`, `annual_allowable_increase` |
 | `raw_sf_docs.document_pages` (`sf-docs`) | 2 | Each document PDF in `san-francisco/ingest/documents/config/sources.yaml`, which names this shared table (`raw_table`) | `page`, `text`; a row's document is its load's `source_key` in the manifest |
 | `raw_sf_docs.ca_code_sections` (`sf-docs`) | 2 | Legislature bulk download | The section's code, number, heading, text and the bulk file's own version fields, named as in the bulk file |
 
@@ -907,6 +949,7 @@ Each raw table has the same four columns: `load_id`, `row_number`, `record` (the
 | `eviction_grounds` | 2 | One per ground flag in the latest Eviction Notices load | `ground_key` (the source column name), `label` (the report's reason), `section` (nullable), `report_load_id` | Unique; every ground has a reason found in the report |
 | `eviction_notices` | 2 | One per notice | `eviction_id` (PK), `file_date`, `file_month`, `neighborhood` (FK → `neighborhoods`, nullable), `supervisor_district` (int, nullable), `geom` (nullable), `load_id` | Unique; neighborhoods not in `neighborhoods` fail the build |
 | `eviction_notice_grounds` | 2 | One per notice and ground it gives | `eviction_id` (FK), `ground_key` (FK) | A notice with no ground flag is kept in `eviction_notices` and listed by a warning, not dropped silently (331 on November 6, 2026) |
+| `allowable_rent_increases` | 2 | One per period | `effective_from` (unique), `effective_to` (the day before the next period; for the latest, the day before the next March 1, since the dataset's description says rates "are effective every year on March 1"), `percent`, `load_id` | `effective_from` unique; every rate within 0% to 7%, the cap in Sec. 37.3(a)(1) |
 
 **Snapshots are kept.** `development_pipeline` keeps every loaded quarter, keyed by `snapshot`, so later loads can show movement between quarters. Phase 1 loads the current public quarter; past quarters are being requested from the dataset owner (open question 3).
 
@@ -978,9 +1021,16 @@ Python, in [`san-francisco/ingest/data/`](../../san-francisco/ingest/data/README
 
 The dbt models are listed in [Database schemas](#sf_data-dbt-models).
 
-The passage pipeline (Phase 2) splits each law at its section headings and then at subsections ("Sec. 37.x" for Chapter 37; "SEC." headings in the ordinances), the California sections at section and subdivision, and reports at their headings, falling back to pages. Each passage keeps its provision or heading, version and source. The San Francisco corpus is English, so no translation step runs.
+The passage pipeline (Phase 2) splits each law at its section headings and then at subsections ("Sec. 37.x" for Chapter 37; "SEC." headings in the ordinances), the California sections at section and subdivision, and reports at the headings their contents page lists, then by page. Each passage keeps its provision or heading, version and source. The San Francisco corpus is English, so no translation step runs.
 
 The pipeline lives in `san-francisco/ingest/documents/`, with the corpus (`config/sources.yaml` for fetching, `config/corpus.yaml` for each document's type and splitting rule), the `raw_sf_docs` and `sf_docs` migrations and the `sf-docs-ingest` command. `src/sf_docs_ingest/passages/` splits a section into passages along its enumerated subsections ((a), (1), (A), (i), (I)), summarizes them, builds and embeds their search entries and writes them; the rules for each document's layout are beside it (`rent_ordinance.py`). It is San Francisco's own: Dutch law does not number its provisions this way. `sf-docs-ingest ingest` loads the PDFs and `sf-docs-ingest passages` rebuilds each document's passages from its latest load.
+
+**The Budget and Legislative Analyst's report, as pypdf extracts it** (`src/sf_docs_ingest/bla_affordable_housing.py`, checked against the June 5, 2026 PDF on November 11, 2026):
+
+- **Sections come from the contents page** (page 27): the Executive Summary (pages 1 to 26), four numbered sections, and section 3's subsections. Those restart at 1 and run to 10, and four unnumbered entries follow; a numbered entry that does not continue the sequence starts the next section, since the subsections include their own "4.". Each heading must be found once on the page the contents page gives, allowing for a heading wrapped onto two lines or spaced differently, or the build fails.
+- **Passages:** one per section and subsection, whose own text is its heading, and one per page of each, from where its heading starts to where the next starts, such as `3.1.p77`. A page shared by several headings is split between them (page 113 holds three). Citations locate a page as its headings and page number ("1. Introduction, p. 28"), so a reader can find it in the PDF.
+- **Page furniture is removed:** the running header ("Report to Supervisor Chen", the date, "Budget and Legislative Analyst", the page number) and lines with no letters, which are chart labels such as "56% 60% 56% 58%". Footnotes stay: they are the report's sources. The contents page is not a passage.
+- **Result:** 153 passages, covering every page but the contents page.
 
 **Chapter 37, as the Rent Board's PDF gives it** (checked against the June 29, 2026 copy on November 9, 2026):
 

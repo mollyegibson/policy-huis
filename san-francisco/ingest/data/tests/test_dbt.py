@@ -143,3 +143,18 @@ def test_eviction_report_is_listed_with_its_printed_date(built_url: str) -> None
         "2026-04-08",
         None,
     )
+
+
+def test_allowable_rent_increase_periods_run_to_the_next_one(built_url: str) -> None:
+    with psycopg.connect(built_url) as conn:
+        rows = conn.execute(
+            "SELECT effective_from::text, effective_to::text, percent::text "
+            "FROM sf_data.allowable_rent_increases ORDER BY effective_from"
+        ).fetchall()
+
+    assert rows == [
+        ("1982-04-01", "1992-02-29", "7.0"),
+        ("1992-03-01", "1992-12-07", "4.0"),
+        ("1992-12-08", "2026-02-28", "1.6"),
+        ("2026-03-01", "2027-02-28", "1.6"),
+    ]

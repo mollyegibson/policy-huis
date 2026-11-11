@@ -7,13 +7,16 @@ import yaml
 from psycopg import sql
 from pydantic import BaseModel, ConfigDict, Field
 
-from sf_docs_ingest import rent_ordinance
+from sf_docs_ingest import bla_affordable_housing, rent_ordinance
 from sf_docs_ingest.passages.embed import Embedder
 from sf_docs_ingest.passages.outline import Passage
 from sf_docs_ingest.passages.search_entries import search_entries
 from sf_docs_ingest.passages.store import Document, EmbeddedEntry, write_document
 
-SPLITTERS: dict[str, Callable[[Sequence[str]], list[Passage]]] = {"rent_ordinance": rent_ordinance.passages}
+SPLITTERS: dict[str, Callable[[Sequence[str]], list[Passage]]] = {
+    "rent_ordinance": rent_ordinance.passages,
+    "bla_affordable_housing": bla_affordable_housing.passages,
+}
 
 
 class CorpusEntry(BaseModel):
@@ -23,7 +26,7 @@ class CorpusEntry(BaseModel):
 
     document_type: Literal["law", "report", "reference"]
     description: str = Field(min_length=1)
-    splitter: Literal["rent_ordinance"]
+    splitter: Literal["rent_ordinance", "bla_affordable_housing"]
 
 
 class _CorpusFile(BaseModel):

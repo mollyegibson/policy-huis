@@ -73,4 +73,5 @@ def test_config_declares_the_sources() -> None:
         "sfpuc_100yr_storm",
         "eviction_notices",
         "eviction_report",
+        "allowable_rent_increase",
     }

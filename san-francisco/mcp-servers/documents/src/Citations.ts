@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-import type { DocumentRow } from "./PassageRepo.ts"
+import type { DocumentRow, PassageRow } from "./PassageRepo.ts"
 
 /** This server's namespace in every `sourceId`, so its IDs stay unique among every server's citations. */
 export const NAMESPACE = "sf_docs"
@@ -34,8 +34,22 @@ export const Citation = Schema.Struct({
 )
 export type Citation = typeof Citation.Type
 
-/** A citation of one provision of `document`, quoting `quote` verbatim. A law's provision reads as a section. */
-export const provisionCitation = (document: DocumentRow, provision: string, quote: string): Citation => {
+const PAGE = /\.p(\d+)$/
+
+/**
+ * Where a passage is, as a reader finds it in the document: a law's provision as a section ("Sec. 37.9(a)(8)"); a
+ * page of a report or reference as its section's headings and page number ("1. Introduction, p. 28"); and a report's
+ * section by its heading, which is its own text.
+ */
+export const locator = (document: DocumentRow, passage: PassageRow): string => {
+  if (document.documentType === "law") return `Sec. ${passage.provision}`
+  const page = PAGE.exec(passage.provision)?.[1]
+  return page === undefined ? passage.text : `${passage.context}, p. ${page}`
+}
+
+/** A citation of one passage of `document`, quoting `quote` verbatim. */
+export const provisionCitation = (document: DocumentRow, passage: PassageRow, quote: string): Citation => {
+  const provision = passage.provision
   const sourceId = `${NAMESPACE}.${document.documentId}@${document.versionDate}`
   return Citation.make({
     citationId: `${sourceId}#${provision}`,
@@ -44,7 +58,7 @@ export const provisionCitation = (document: DocumentRow, provision: string, quot
     publisher: document.publisher,
     sourceUrl: document.sourceUrl,
     version: document.versionDate,
-    locator: document.documentType === "law" ? `Sec. ${provision}` : provision,
+    locator: locator(document, passage),
     quote,
     documentType: document.documentType
   })

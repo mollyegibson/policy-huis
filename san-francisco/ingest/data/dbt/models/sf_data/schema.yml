@@ -132,3 +132,16 @@ models:
               arguments:
                 to: ref('eviction_grounds')
                 field: ground_key
+
+  - name: allowable_rent_increases
+    columns:
+      - name: effective_from
+        data_tests:
+          - unique
+          - not_null
+      - name: effective_to
+        data_tests:
+          - not_null
+      - name: percent
+        data_tests:
+          - not_null

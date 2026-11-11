@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated, Literal, Protocol
 
 import yaml
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
 from pypdf import PdfReader
 
 
@@ -37,10 +37,12 @@ class PdfSource(BaseModel):
     """A PDF document, loaded as one row per page of extracted text.
 
     A PDF's own metadata rarely names it, so `title` and `publisher` are declared, as printed in the document. The
-    version is the date printed in it: `version_pattern` is a regular expression with one group capturing that date,
-    which must match exactly once in the text (`^` and `$` match at each line), and `version_format` is the group's
-    `strptime` format. `raw_table` names the raw table its pages load into when several documents share one; each
-    load's document is then its manifest row's `source_key`.
+    version is, by default, the date printed in it (`version_from: printed`): `version_pattern` is a regular expression
+    with one group capturing that date, which must match exactly once in the text (`^` and `$` match at each line), and
+    `version_format` is the group's `strptime` format. A document that prints no date declares
+    `version_from: pdf_mod_date` instead: its version is the date of the `/ModDate` in its own info record, in the time
+    zone written there, and a document without one fails to load. `raw_table` names the raw table its pages load into
+    when several documents share one; each load's document is then its manifest row's `source_key`.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -49,10 +51,21 @@ class PdfSource(BaseModel):
     url: str
     title: str
     publisher: str
-    version_pattern: str
-    version_format: str
+    version_from: Literal["printed", "pdf_mod_date"] = "printed"
+    version_pattern: str | None = None
+    version_format: str | None = None
     format: Literal["pdf"]
     raw_table: str | None = None
+
+    @model_validator(mode="after")
+    def _one_way_to_the_version(self) -> PdfSource:
+        printed = self.version_pattern is not None and self.version_format is not None
+        neither = self.version_pattern is None and self.version_format is None
+        if self.version_from == "printed" and not printed:
+            raise ValueError("a printed version needs version_pattern and version_format")
+        if self.version_from == "pdf_mod_date" and not neither:
+            raise ValueError("version_pattern and version_format apply only to a printed version")
+        return self
 
 
 type Source = SocrataSource | ArcGisLayerSource | PdfSource
@@ -116,11 +129,24 @@ def pdf_pages(data: bytes) -> list[str]:
         pypdf_logger.setLevel(level)
 
 
-def _printed_version(source: PdfSource, pages: list[str]) -> str:
-    matches = [m.group(1) for page in pages for m in re.finditer(source.version_pattern, page, re.MULTILINE)]
+def _printed_version(source: PdfSource, pattern: str, pages: list[str]) -> str:
+    matches = [m.group(1) for page in pages for m in re.finditer(pattern, page, re.MULTILINE)]
     if len(matches) != 1:
         raise ValueError(f"{source.url}: version_pattern matched {len(matches)} times, expected exactly once")
     return matches[0]
+
+
+def _version_fields(source: PdfSource, reader: PdfReader, data: bytes) -> dict[str, str]:
+    """What the version is read from, kept in the archived metadata: the printed date as printed, or the `/ModDate`
+    date as an ISO date."""
+    if source.version_from == "pdf_mod_date":
+        modified = reader.metadata.modification_date if reader.metadata is not None else None
+        if modified is None:
+            raise ValueError(f"{source.url}: version_from is pdf_mod_date, but the PDF has no /ModDate")
+        return {"pdf_mod_date": modified.date().isoformat()}
+    if source.version_pattern is None:
+        raise ValueError(f"{source.url}: a printed version needs version_pattern")
+    return {"printed_version": _printed_version(source, source.version_pattern, pdf_pages(data))}
 
 
 def download(source: Source, fetcher: Fetcher) -> Download:
@@ -143,11 +169,11 @@ def download(source: Source, fetcher: Fetcher) -> Download:
             return Download(data=data, data_extension="geojson", metadata=metadata, data_url=data_url)
         case PdfSource(url=url):
             data = fetcher.get(url)
-            reader_info = PdfReader(io.BytesIO(data)).metadata or {}
+            reader = PdfReader(io.BytesIO(data))
             metadata = json.dumps(
                 {
-                    "pdf_info": {str(k): str(v) for k, v in reader_info.items()},
-                    "printed_version": _printed_version(source, pdf_pages(data)),
+                    "pdf_info": {str(k): str(v) for k, v in (reader.metadata or {}).items()},
+                    **_version_fields(source, reader, data),
                 }
             ).encode()
             return Download(data=data, data_extension="pdf", metadata=metadata, data_url=url)
@@ -176,15 +202,23 @@ def parse_metadata(source: Source, metadata: bytes) -> SourceMetadata:
                 source_version=_utc_date(doc["editingInfo"]["lastEditDate"] / 1000),
                 source_url=layer_url,
             )
-        case PdfSource(url=url, title=title, publisher=publisher, version_format=version_format):
+        case PdfSource(url=url, title=title, publisher=publisher):
             return SourceMetadata(
                 title=title,
                 publisher=publisher,
                 description=None,
                 license=None,
-                source_version=datetime.strptime(doc["printed_version"], version_format).date(),
+                source_version=_pdf_version(source, doc),
                 source_url=url,
             )
+
+
+def _pdf_version(source: PdfSource, doc: dict[str, str]) -> date:
+    if source.version_from == "pdf_mod_date":
+        return date.fromisoformat(doc["pdf_mod_date"])
+    if source.version_format is None:
+        raise ValueError(f"{source.url}: a printed version needs version_format")
+    return datetime.strptime(doc["printed_version"], source.version_format).date()
 
 
 @dataclass(frozen=True)

@@ -274,6 +274,43 @@ export const EvictionGrounds = Tool.make("eviction_grounds", {
   failureMode: "return"
 }).annotate(Tool.Title, "Eviction grounds")
 
+/** A date outside the periods the allowable rent increase data covers. */
+export class DateOutOfRange extends Schema.TaggedError<DateOutOfRange>()("DateOutOfRange", {
+  requested: IsoDate,
+  coveredFrom: IsoDate,
+  coveredTo: IsoDate
+}) {}
+
+const RentIncreasePeriod = Schema.Struct({
+  effectiveFrom: IsoDate,
+  effectiveTo: IsoDate,
+  percent: Schema.Finite.annotate({ description: "The most the base rent may rise in the period, in percent" })
+})
+
+export const AllowableRentIncrease = Tool.make("allowable_rent_increase", {
+  description:
+    "The Rent Board's annual allowable rent increase for rent-controlled units: the most a landlord may raise a " +
+    "tenant's base rent once a year, in percent. The Rent Board sets it each year from 60% of the CPI increase, as " +
+    "Rent Ordinance Sec. 37.3(a)(1) requires, and each rate runs from its effective date to the day before the next: " +
+    "say which period applies. With no date, it returns the latest period published. It is the annual amount only: " +
+    "banked increases and increases for capital improvements or utilities are separate, and units outside rent " +
+    "control are not covered.",
+  parameters: Schema.Struct({
+    on: OptionalParam(IsoDate.annotate({ description: "A date, as YYYY-MM-DD, to give the rate in effect on" })),
+    fromYear: OptionalParam(
+      PositiveInt.annotate({ description: "Also list every period starting in this year or later" })
+    )
+  }),
+  success: Schema.Struct({
+    period: RentIncreasePeriod,
+    history: Schema.Array(RentIncreasePeriod),
+    dataAsOf: IsoDate,
+    citations: Citations
+  }),
+  failure: Schema.Union([DateOutOfRange, ...DataErrors]),
+  failureMode: "return"
+}).annotate(Tool.Title, "Annual allowable rent increase")
+
 export const SfDataToolkit = Toolkit.make(
   DevelopmentPipelineProjects,
   DevelopmentPipelineSummary,
@@ -283,5 +320,6 @@ export const SfDataToolkit = Toolkit.make(
   ProjectHazardExposure,
   DatasetInfo,
   EvictionNoticeCounts,
-  EvictionGrounds
+  EvictionGrounds,
+  AllowableRentIncrease
 )

@@ -93,4 +93,12 @@ export const evictionCounts = (p: {
 
 export const evictionGrounds = () => "Eviction notice grounds, with the reason and section the annual report gives each"
 
+export const allowableRentIncrease = (p: { readonly on?: string; readonly fromYear?: number }) =>
+  phrase(
+    p.on === undefined
+      ? "The latest annual allowable rent increase"
+      : `The annual allowable rent increase in effect on ${p.on}`,
+    [given(p.fromYear, (y) => `and each one since ${String(y)}`)]
+  )
+
 export const datasetInfo = () => "The dataset's description, license and version"
