@@ -22,6 +22,7 @@ CREATE TABLE raw_test.rows (
     record jsonb NOT NULL, geom geometry(Geometry, 4326), PRIMARY KEY (load_id, row_number)
 );
 CREATE TABLE raw_test.zones (LIKE raw_test.rows INCLUDING ALL);
+CREATE TABLE raw_test.document_pages (LIKE raw_test.rows INCLUDING ALL);
 """
 
 

@@ -25,7 +25,7 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | **Agent** | The one reasoning loop that answers a question: it calls the model, calls tools and assembles the answer. There is one agent, not one per city. |
 | **Backend** | The TypeScript service that is both the question API and the agent loop (`backend/`). |
 | **MCP server** | An independent server exposing tools over the Model Context Protocol. A server's specialization is its data and tools, not its model. |
-| **Legal-text server** | The MCP server for laws, ordinances and policy documents. One codebase, run once per corpus. |
+| **Legal-text server** | The MCP server for a city's laws, ordinances and policy documents, one per city (`sf-legal-text`). A shared passage pipeline builds each city's corpus. |
 | **Data server** | The MCP server for one city's housing, demographic and climate data (`sf-housing` for San Francisco). |
 | **Tool** | One operation an MCP server exposes, with an input and output schema. |
 | **Tool prefix** | The server's prefix on every tool name (e.g. `sf_`, `ams_data_`), so the model can tell same-purpose tools apart across cities. |
@@ -52,6 +52,8 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | **Effective date** | The date a version takes legal effect. Not the publication or fetch date. |
 | **Provision** | An addressable unit of a document as the document itself numbers it: an article, section or paragraph (e.g. Section 37.9, artikel 7:248). |
 | **Passage** | The unit of retrieval: a span of a document split along its own structure, with its version and effective date. Stored with its text, embedding and, for Dutch sources, its translation. |
+| **Lead-in** | A provision's own text when it only introduces its children, e.g. 37.9(a): "A landlord shall not endeavor to recover possession of a rental unit unless:". A passage carries its ancestors' lead-ins as its context. |
+| **Outline** | A list of a document's sections or of one provision's children, each with its number, a one-line summary (a section's heading, or a provision's first sentence) and its number of children. Returned by `list_provisions`, and by `get_provision` for a provision too long to return whole. For navigation, never quoted. |
 | **Original text** | A passage's text in its source language (`text_nl` for Amsterdam). Citations quote it. |
 | **Machine translation** | The stored English translation of a Dutch passage (`text_en`), with the translation model's identifier. Always labeled as machine translation when shown. |
 | **Hybrid search** | Vector search and keyword search run over the same passages, with their rankings combined by RRF. |

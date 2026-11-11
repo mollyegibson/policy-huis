@@ -87,12 +87,14 @@ PolicyHuis is a monorepo: a single agent that answers housing-policy questions f
 | `shared/mcp-kit/` | TypeScript | Optional helpers for MCP servers: formats, the tool errors (`UnknownValue`, `DatabaseUnavailable`, `DataUnavailable`) and the mapping of database failures to them, citation ID construction |
 | `shared/node-config/` | TypeScript | Library every TypeScript node uses to read its configuration: YAML files decoded with a `Schema`, the `.env`-first provider, and `ConfigFileError` for anything missing |
 | `shared/ingest/` | Python (uv), dbt | Library: fetch, archive and load public sources into a raw schema; shared dbt macros; run dbt |
-| `shared/legal-text/` | TypeScript, Python | Legal-text MCP server, passage pipeline and its migrations; one codebase, run once per corpus |
+| `shared/legal-text/pipeline/` | Python (uv) | Library: the passage pipeline that splits, summarizes, embeds and stores a corpus's passages and search entries |
 | `san-francisco/housing-server/` | TypeScript | The `sf-housing` MCP server: San Francisco's housing pipeline and climate-zone tools |
 | `san-francisco/ingest/` | Python (uv), dbt | San Francisco's `sources.yaml`, `raw_sf` migrations and `sf` dbt models |
-| `san-francisco/legal-text/` | YAML | San Francisco's corpus and deploy settings for its legal-text instance |
+| `san-francisco/legal-text/` | Python (uv), YAML | San Francisco's corpus, its passage rules, the `raw_sf` and `policy_text_sf` migrations and the `sf-legal-text` command |
+| `san-francisco/legal-text-server/` | TypeScript | The `sf-legal-text` MCP server: search, provisions and outlines over `policy_text_sf` |
 | `netherlands/` | | The Dutch nodes, in the same shape |
 | `evaluation/` | YAML / Markdown | Question set and expected answers |
+| `scripts/` | TypeScript | Repo tooling: `yarn dev` and its `--include <group>` selection of each city's servers |
 
 **Each node runs on its own device.** Shared code is a library each node installs (a uv path dependency with its own lockfile, or a yarn workspace package), never a service a node calls. A city project depends on `shared/`; `shared/` never depends on a city, and no city depends on another.
 | `docs/plans/` | Markdown | Technical designs. Read the relevant plan before changing a component. |
@@ -115,7 +117,7 @@ Contexts communicate through published contracts (database schemas, MCP tools an
 - **Never edit `yarn.lock` by hand**, and never hand-edit dependencies in a `package.json`: add, remove and upgrade them with `yarn add` / `yarn remove` / `yarn up` (`yarn workspace <name> add <pkg>@<version>` for one workspace), and let Yarn write the lockfile.
 - TypeScript runs directly on Node's type stripping (`node src/main.ts`), so use only erasable syntax (no enums, namespaces or parameter properties); `tsc` only typechecks.
 - Import `@effect/platform-node` modules by path (`@effect/platform-node/NodeRuntime`): its index also loads the Redis module, which needs the optional `redis` package.
-- Server tests run against a throwaway PostGIS container (`imresamu/postgis:17-3.5`), so Docker must be running.
+- Server tests run against a throwaway PostGIS container (`imresamu/postgis:17-3.5`), so Docker must be running. The legal-text projects use `imresamu/postgis:17-3.5-bundle0-bookworm`, which adds pgvector for the search entries' embeddings.
 - Use Effect 4 (`effect` 4.x, AI modules under `effect/ai`). Model access goes through a config layer, not conditional imports.
 - Validate with Effect `Schema`, not Zod.
 - The `app` schema is defined with Drizzle in `backend/src/db/schema.ts`. Run `yarn workspace @policyhuis/backend db:generate` after changing it, which writes a SQL migration to `backend/drizzle/`; the backend applies pending migrations at startup. Applied migrations never change. **Never write or edit a Drizzle migration by hand**: every migration is exactly what `drizzle-kit generate` writes. If a generated migration cannot run (for example, a column type change Postgres cannot apply), stop and ask; the fix is to delete the unapplied migration, change `schema.ts`, and have the database owner drop and recreate the schema, never custom SQL.

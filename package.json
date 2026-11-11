@@ -9,7 +9,9 @@
     "protocol",
     "shared/mcp-kit",
     "shared/node-config",
-    "san-francisco/housing-server"
+    "san-francisco/housing-server",
+    "san-francisco/legal-text-server",
+    "scripts"
   ],
   "scripts": {
     "typecheck": "yarn workspaces foreach -A run typecheck",
@@ -17,7 +19,7 @@
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "dev": "yarn workspaces foreach -A -p -i --include '@policyhuis/sf-housing-server' --include '@policyhuis/backend' --include '@policyhuis/browser-app' run start"
+    "dev": "node scripts/dev.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

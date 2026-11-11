@@ -4,8 +4,8 @@ import psycopg
 
 from policyhuis_ingest.archive import LocalArchive, sha256
 from policyhuis_ingest.load import ingest
-from policyhuis_ingest.source_types import ArcGisLayerSource, SocrataSource
-from policyhuis_ingest.testing import FakeFetcher
+from policyhuis_ingest.source_types import ArcGisLayerSource, PdfSource, SocrataSource
+from policyhuis_ingest.testing import FakeFetcher, pdf
 from tests.fixtures import LAYER, layer_responses, rows_responses
 
 ROWS = SocrataSource(kind="socrata", domain="data.example.org", dataset_id="rows-0001", format="json")
@@ -48,3 +48,33 @@ def test_geojson_sources_load_geometry_in_wgs84(raw_schema_url: str, tmp_path: P
         geometry = conn.execute("SELECT GeometryType(geom), ST_SRID(geom) FROM raw_test.zones").fetchone()
 
     assert geometry == ("MULTIPOLYGON", 4326)
+
+
+def test_pdf_sources_naming_one_raw_table_share_it(raw_schema_url: str, tmp_path: Path) -> None:
+    def document(url: str) -> PdfSource:
+        return PdfSource(
+            kind="pdf",
+            url=url,
+            title="A document",
+            publisher="A publisher",
+            version_pattern=r"^(\w+ \d{1,2}, \d{4})$",
+            version_format="%B %d, %Y",
+            format="pdf",
+            raw_table="document_pages",
+        )
+
+    fetcher = FakeFetcher(
+        {
+            "https://example.org/a.pdf": pdf([["April 8, 2026", "first document"]]),
+            "https://example.org/b.pdf": pdf([["June 29, 2026", "second document"], ["its second page"]]),
+        }
+    )
+    with psycopg.connect(raw_schema_url, autocommit=True) as conn:
+        for key, url in [("a", "https://example.org/a.pdf"), ("b", "https://example.org/b.pdf")]:
+            ingest(key, document(url), fetcher, LocalArchive(tmp_path), conn, "raw_test", "v1")
+        pages = conn.execute(
+            "SELECT m.source_key, count(*) FROM raw_test.document_pages AS p "
+            "JOIN raw_test.load_manifest AS m USING (load_id) GROUP BY 1 ORDER BY 1"
+        ).fetchall()
+
+    assert pages == [("a", 1), ("b", 2)]

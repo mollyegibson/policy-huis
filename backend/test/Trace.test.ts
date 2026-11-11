@@ -24,7 +24,7 @@ const started = (args: unknown, at: number) =>
 
 const toolStep: ReadonlyArray<LoopEvent> = [
   new StepStarted({ step: 0, final: false }),
-  ToolStart.make({ callId: CALL, tool: "sf_lookup", arguments: { key: "k" } }),
+  ToolStart.make({ callId: CALL, tool: "sf_lookup", server: null, arguments: { key: "k" } }),
   started({ key: "k" }, 1_000),
   ToolEnd.make({ callId: CALL, tool: "sf_lookup", outcome: "success", result: { value: "v" }, error: null }),
   new ToolCallEnded({ callId: CALL, at: 1_250 }),
@@ -75,7 +75,7 @@ describe("foldTrace", () => {
   it("keeps a failed call's full encoded error, which the browser does not receive", () => {
     const trace = fold([
       new StepStarted({ step: 0, final: false }),
-      ToolStart.make({ callId: CALL, tool: "sf_lookup", arguments: {} }),
+      ToolStart.make({ callId: CALL, tool: "sf_lookup", server: null, arguments: {} }),
       started({}, 1_000),
       ToolEnd.make({ callId: CALL, tool: "sf_lookup", outcome: "failure", result: null, error: "TransportError" }),
       new ToolFailed({ callId: CALL, encodedError: { reason: { _tag: "TransportError", description: "refused" } } })

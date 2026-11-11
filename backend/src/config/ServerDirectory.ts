@@ -16,17 +16,23 @@ const ServerName = Schema.String.pipe(
   )
 )
 
-/** Prepended to each of the server's tool names, so the model can tell same-purpose tools apart across servers. */
+/**
+ * Prepended to each of the server's tool names, so the model can tell same-purpose tools apart across servers.
+ * Words of lowercase letters and digits, each followed by one underscore, such as `sf_` or `sf_law_`.
+ */
 const ToolPrefix = Schema.String.pipe(
   Schema.check(
-    Schema.isPattern(/^[a-z][a-z0-9]*_$/, {
-      message: "A tool prefix is lowercase letters and digits, starting with a letter and ending with an underscore"
+    Schema.isPattern(/^[a-z][a-z0-9]*_(?:[a-z0-9]+_)*$/, {
+      message:
+        "A tool prefix is words of lowercase letters and digits, starting with a letter, each followed by one underscore, such as sf_law_"
     })
   )
 )
 
 export const ServerEntry = Schema.Struct({
   name: ServerName,
+  /** Shown in the browser app beside each of the server's tool calls, such as `SF Housing`. */
+  label: Schema.NonEmptyString,
   url: HttpUrl,
   prefix: ToolPrefix
 })

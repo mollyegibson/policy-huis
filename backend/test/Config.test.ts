@@ -121,6 +121,7 @@ describe("checked-in agent.yaml", () => {
 describe("servers.yaml", () => {
   const entry = (name: string, prefix: string) => `
   - name: ${name}
+    label: ${name}
     url: http://localhost:8081/mcp
     prefix: ${prefix}`
 
@@ -134,10 +135,19 @@ describe("servers.yaml", () => {
     })
   )
 
-  it.effect("rejects a prefix without its trailing underscore", () =>
+  it.effect("rejects a prefix without its trailing underscore, or with an empty word", () =>
     Effect.gen(function* () {
-      const message = yield* failureMessage(servers(`servers:${entry("a-data", "a")}`))
-      expect(message).toContain("ending with an underscore")
+      for (const prefix of ["a", "a__", "_a_", "a_B_"]) {
+        const message = yield* failureMessage(servers(`servers:${entry("a-data", prefix)}`))
+        expect(message).toContain("each followed by one underscore")
+      }
+    })
+  )
+
+  it.effect("accepts a prefix of several words, such as sf_law_", () =>
+    Effect.gen(function* () {
+      const directory = yield* servers(`servers:${entry("a-data", "sf_")}${entry("b-data", "sf_law_")}`)
+      expect(directory.servers.map((s) => s.prefix)).toEqual(["sf_", "sf_law_"])
     })
   )
 

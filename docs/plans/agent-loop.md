@@ -32,7 +32,7 @@ It does not:
 | `main.ts` | Launches the server layer with `NodeRuntime.runMain` |
 | `Server.ts` | Composes the layers once: configuration, model, MCP connections, trace store, the agent, HTTP |
 | `config/AgentConfig.ts` | Decodes `backend/config/agent.yaml` with a `Schema`; fails at startup with a `ConfigFileError` if any field is missing or invalid |
-| `config/ServerDirectory.ts` | Decodes `backend/config/servers.yaml`: each server's name, URL and tool prefix; fails at startup if two servers share a name or a prefix |
+| `config/ServerDirectory.ts` | Decodes `backend/config/servers.yaml`: each server's name, label, URL and tool prefix (words of lowercase letters and digits, each followed by one underscore, such as `sf_law_`); fails at startup if two servers share a name or a prefix |
 | `config/Env.ts` | `BackendEnv`: `backend/.env` and its required variables, through `@policyhuis/node-config` |
 | `config/HttpUrl.ts` | The schema for an absolute http or https URL in the config files |
 | `model/ModelLayer.ts` | Builds the `LanguageModel` layer for the configured model configuration (Local, Same model in the cloud, Frontier) through `@effect/ai-openai-compat`; the only module that imports a provider package |
@@ -80,13 +80,13 @@ Declared choices live in `backend/config/agent.yaml`, reviewed by pull request; 
 | `trace.writeTimeout` | Longest a trace write may take, including connecting to the `app` database; the pool's connection and query timeouts are set to the same value | 10 seconds, provisional |
 | `prompt.file`, `prompt.version` | The system prompt file and its version, recorded in every trace | `backend/prompts/system.v1.md`, `v1` |
 
-`backend/config/servers.yaml` is the server directory, and the only place a deployment names its cities: for each server, its `name` (for example `sf-housing`), `url` (`http://<host>:<port>/mcp`) and tool `prefix` (`sf_`). `backend/.env` holds the port to serve on (`BACKEND_PORT`), the `app` database URL (`APP_DATABASE_URL`) and each cloud model configuration's API key, named `<CONFIGURATION>_API_KEY` (`FRONTIER_API_KEY`, `SAME_MODEL_CLOUD_API_KEY`); `backend/.env.example` lists them.
+`backend/config/servers.yaml` is the server directory, and the only place a deployment names its cities: for each server, its `name` (for example `sf-housing`), `label` (`SF Housing`, shown in the browser app beside each of its tool calls), `url` (`http://<host>:<port>/mcp`) and tool `prefix` (`sf_`). `backend/.env` holds the port to serve on (`BACKEND_PORT`), the `app` database URL (`APP_DATABASE_URL`) and each cloud model configuration's API key, named `<CONFIGURATION>_API_KEY` (`FRONTIER_API_KEY`, `SAME_MODEL_CLOUD_API_KEY`); `backend/.env.example` lists them.
 
 **Missing configuration is a `ConfigFileError`.** The shared library `@policyhuis/node-config` (`shared/node-config/`) reads every node's configuration the same way: YAML files decoded with a `Schema`, and a `.env` file that takes priority over the shell, so another project's variables cannot leak in. Anything missing or invalid (a field in `agent.yaml`, the prompt file it names, a selected model configuration with no entry, a variable missing from `.env`) fails startup with a `ConfigFileError` naming the file to fix and the field or variable, never a defect.
 
 ## Startup
 
-1. Decode `agent.yaml` and `servers.yaml`, and read the system prompt file; any error stops the process with a `ConfigFileError` naming the file and field. Two servers with the same name or tool prefix are an error.
+1. Decode `agent.yaml` and `servers.yaml`, and read the system prompt file; any error stops the process with a `ConfigFileError` naming the file and field. Two servers with the same name or tool prefix are an error. Unique prefixes do not guarantee unique tool names when one prefix starts another (`sf_` and `sf_law_`), so each request's toolkit offers a tool name that two connected servers share by neither, and logs an error naming both.
 2. Apply the `app` schema's pending Drizzle migrations from `backend/drizzle/`.
 3. Build the `LanguageModel` layer for `model.configuration`.
 4. For each server in the directory, open an `McpClient` with the Streamable HTTP transport (`McpClient.make` with `McpClient.http`), initialize it, list its tools and build their toolkit with `McpClient.toolkit`, within `tools.callTimeout`. A server that cannot be reached is retried in the background with exponential backoff; startup continues.
@@ -270,7 +270,7 @@ The loop calls `LanguageModel.streamText` directly rather than through Effect's 
 | `Response` part | Event | Sent to the browser |
 |---|---|---|
 | `text-delta` | `TextChunk { text }` | Yes; held until the turn ends in a turn that may call tools, and dropped if it called one |
-| `tool-call` | `ToolStart { callId, tool, arguments }`, and `ToolCallStarted { callId, providerCallId, tool, arguments, at }`. `callId` is a UUID the loop gives the call; `providerCallId` is the provider's own ID for it (see [Call IDs](#call-ids)) | `ToolStart` only |
+| `tool-call` | `ToolStart { callId, tool, server, arguments }`, where `server` is the server the request's toolkit routes the tool to (its name, label and the tool's own name), or null if none offers it; and `ToolCallStarted { callId, providerCallId, tool, arguments, at }`. `callId` is a UUID the loop gives the call; `providerCallId` is the provider's own ID for it (see [Call IDs](#call-ids)) | `ToolStart` only |
 | `tool-result` (not `preliminary`) | On success, `ToolEnd { callId, tool, outcome, result, error: null }` with the full `structuredContent` as `result`. On failure, `ToolEnd` with `result: null` and `error` set to the failure's type only (the server's error type, such as `UnknownValue`, or the client error's reason, such as `TransportError`), plus `ToolFailed { callId, encodedError }` carrying the full encoded error for the trace. Either way, `ToolCallEnded { callId, at }`; a transport error also adds the server to the request's unavailable servers | `ToolEnd` only |
 | `finish` | Kept with the turn's parts; `StepEnded { parts, usage, finishReason }` is emitted when the turn's stream ends | No |
 | `error` | Fails the step with the provider's error | No; the request ends with `Complete` |
@@ -346,7 +346,7 @@ Unavailable servers are not a `message`: the browser app shows them from `Comple
 | Event | Fields | The browser app uses it to |
 |---|---|---|
 | `TextChunk` | text | Append answer text |
-| `ToolStart` | call ID, tool name, arguments | Show a status line for the call |
+| `ToolStart` | call ID, tool name, the server it goes to (name, label, the tool's name on that server) or null, arguments | Show a status line for the call, labeled with the server's label and the tool's own name |
 | `ToolEnd` | call ID, tool name, outcome, the result's `structuredContent` on success, the error type on failure | Update the status, and keep the citations for linking |
 | `Keepalive` | none | Nothing; it keeps the connection open while the model works |
 | `Complete` | request ID, outcome, message (null when answered), unavailable servers | Show whether the answer is complete, the message when it is not, and which servers could not be reached |
@@ -429,7 +429,7 @@ One endpoint, in the `QuestionsApi` group defined in `protocol/` so the backend 
 
 ```
 event: message
-data: {"_tag":"ToolStart","callId":"0b6f5c1e-3c2a-4d8e-9f1a-2b3c4d5e6f70","tool":"sf_development_pipeline_summary","arguments":{"groupBy":"status"}}
+data: {"_tag":"ToolStart","callId":"0b6f5c1e-3c2a-4d8e-9f1a-2b3c4d5e6f70","tool":"sf_development_pipeline_summary","server":{"name":"sf-housing","label":"SF Housing","tool":"development_pipeline_summary"},"arguments":{"groupBy":"status"}}
 
 event: message
 data: {"_tag":"ToolEnd","callId":"0b6f5c1e-3c2a-4d8e-9f1a-2b3c4d5e6f70","tool":"sf_development_pipeline_summary","outcome":"success","error":null,"result":{"groups":[…],"snapshot":"2026 Q2","citations":[{"_tag":"DatasetCitation","sourceId":"sf.development_pipeline@2026-08-28","citationId":"sf.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f",…}]}}
@@ -464,9 +464,21 @@ export class TextChunk extends Schema.TaggedClass<TextChunk>()("TextChunk", {
   text: Schema.String
 }) {}
 
+/** The data server a tool call goes to: its name, the label shown for it, and the tool's own name on that server. */
+export const ToolServer = Schema.Struct({
+  name: Schema.String,
+  label: Schema.String,
+  tool: Schema.String
+})
+
+/**
+ * A tool call the model made. `tool` is the name the model called, with its server's prefix; `server` is null when no
+ * connected server offers that name, and the call fails.
+ */
 export class ToolStart extends Schema.TaggedClass<ToolStart>()("ToolStart", {
   callId: CallId,
   tool: Schema.String,
+  server: Schema.NullOr(ToolServer),
   arguments: Schema.Unknown
 }) {}
 

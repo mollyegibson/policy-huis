@@ -17,9 +17,22 @@ export class TextChunk extends Schema.TaggedClass<TextChunk>()("TextChunk", {
   text: Schema.String
 }) {}
 
+/** The data server a tool call goes to: its name, the label shown for it, and the tool's own name on that server. */
+export const ToolServer = Schema.Struct({
+  name: Schema.String,
+  label: Schema.String,
+  tool: Schema.String
+})
+export type ToolServer = typeof ToolServer.Type
+
+/**
+ * A tool call the model made. `tool` is the name the model called, with its server's prefix; `server` is null when no
+ * connected server offers that name, and the call fails.
+ */
 export class ToolStart extends Schema.TaggedClass<ToolStart>()("ToolStart", {
   callId: CallId,
   tool: Schema.String,
+  server: Schema.NullOr(ToolServer),
   arguments: Schema.Unknown
 }) {}
 

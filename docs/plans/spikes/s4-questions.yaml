@@ -1,0 +1,700 @@
+# Spike S4 question set. Each question lists the Chapter 37 provisions that answer it, labelled from the loaded
+# passages, never from memory.
+#
+#   wording: everyday (a resident's words), legal (the ordinance's vocabulary) or term (a section number, a defined
+#     term or a named law, the case keyword search is for).
+#   pair: the id of the same need asked in the other wording; scored together to measure the wording gap.
+#   relevant[].grade: 2 answers the question (any grade-2 provision in the results is a hit), 1 bears on the answer.
+#   relevant[].quote: an excerpt of the provision's own text showing why; fragments separated by "..." must each
+#     appear in it, which the harness checks before scoring.
+#   relevant: [] marks a question Chapter 37 does not answer; it is left out of the scores.
+questions:
+  - id: q01
+    question: "Can my landlord kick me out so his daughter can move into my apartment?"
+    asker: resident
+    wording: everyday
+    pair: q35
+    relevant:
+      - provision: "37.9(a)(8)(ii)"
+        grade: 2
+        quote: "(ii) For the use or occupancy of the landlords grandparents, grandchildren, parents, children, brother or sister, or the landlords spouse or the spouses of such relations, as their principal place of residency for a period of at least 36 months..."
+      - provision: "37.9(a)(8)"
+        grade: 1
+        quote: "(8) The landlord seeks to recover possession in good faith, without ulterior reasons and with honest intent;"
+    note: "37.9(a)(8)(ii) only allows a relative move-in where the landlord also lives in (or is simultaneously recovering a unit in) the same building; protections in 37.9(i) and 37.9(j) may also bear on the answer but are not labelled here."
+
+  - id: q02
+    question: "How much is my landlord allowed to raise the rent each year?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.3(a)(1)"
+        grade: 2
+        quote: "shall have a license to impose annually a rent increase which does not exceed a tenant's base rent by more than 60% of said published increase. In no event, however, shall the allowable annual increase be greater than 7%."
+      - provision: "37.3(d)(1)(A)"
+        grade: 1
+        quote: "(A) An owner of residential real property may establish the initial and all subsequent rental rates for a dwelling or a unit which is alienable separate from the title to any other dwelling unit"
+      - provision: "37.3(g)(1)"
+        grade: 1
+        quote: "(1) An owner of a residential dwelling or unit which is newly constructed and first received a certificate of occupancy after the effective date of Ordinance No. 276-79 (June 13, 1979)... may establish the initial and all subsequent rental rates for that dwelling or unit"
+    note: "The cap in 37.3(a)(1) applies only to units under the rent increase limits; separately alienable units (37.3(d)(1)(A)) and units first occupied after June 13, 1979 (37.3(g)(1)) are exempt, with exceptions, so a good answer says it depends on the unit."
+
+  - id: q03
+    question: "My landlord is evicting me so he can move in himself. How much moving money do I get?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.9C(e)(1)"
+        grade: 2
+        quote: "(1) Each Eligible Tenant receiving a Covered No-Fault Eviction Notice shall receive $4,500, $2,250 of which shall be paid at the time of the service of the notice to quit..."
+      - provision: "37.9C(a)(1)"
+        grade: 1
+        quote: "(1) Covered No-Fault Eviction Notice. For purposes of this section 37.9C, a Covered No-Fault Eviction Notice shall mean a notice to quit based upon Section 37.9(a)(8), (10), (11), or (12)."
+      - provision: "37.9C(e)(2)"
+        grade: 1
+        quote: "(2) In addition, each Eligible Tenant who is 60 years of age or older or who is disabled within the meaning of Section 12955.3 of the California Government Code, and each household with at least one Eligible Tenant and at least one child under the age of 18 years, shall be entitled to receive an additional payment of $3,000.00"
+      - provision: "37.9C(b)"
+        grade: 1
+        quote: "(b) Each Eligible Tenant who receives a Covered No-Fault Eviction Notice, in addition to all rights under any other provision of law, shall be entitled to receive relocation expenses from the landlord, in the amounts specified in section 37.9C(e)."
+      - provision: "37.9C(e)(3)"
+        grade: 1
+        quote: "(3) Commencing March 1, 2007, these relocation expenses, including the maximum relocation expenses per unit, shall increase annually, rounded to the nearest dollar..."
+    note: "The dollar figures in 37.9C(e)(1)-(2) are base amounts; 37.9C(e)(3) indexes them annually, so the current amount is not in the corpus."
+
+  - id: q04
+    question: "Can my landlord refuse to give me an extra key for my dog walker?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.13(b)(2)"
+        grade: 2
+        quote: "(2) The landlord may deny the request for additional keys/key-sets only for good reason, such as unlawful occupancy in the tenant's unit or the tenant's pattern of lease violation."
+      - provision: "37.13(b)"
+        grade: 1
+        quote: "Examples of tenant reasons for receiving additional keys/key-sets include, but are not limited to: admitting a service provider, delivery person, houseguest, or relative."
+      - provision: "37.13(b)(4)"
+        grade: 1
+        quote: "(4) Unreasonable denial of additional keys/key-sets requested under this Section 37.13(b), or failure to respond to the tenant's written request within fourteen days..."
+
+  - id: q05
+    question: "What is a buyout agreement?"
+    asker: resident
+    wording: legal
+    relevant:
+      - provision: "37.9E(c)"
+        grade: 2
+        quote: "means an agreement wherein the landlord pays the tenant money or other consideration to vacate the rental unit."
+      - provision: "37.9E(a)"
+        grade: 1
+        quote: "Instead of evicting tenants, some landlords offer cash buyouts to tenants in exchange for the tenants vacating rental units."
+
+  - id: q06
+    question: "What are the just causes for eviction under the Rent Ordinance?"
+    asker: policy_maker
+    wording: legal
+    pair: q36
+    relevant:
+      - provision: "37.9(a)"
+        grade: 2
+        quote: "(a) A landlord shall not endeavor to recover possession of a rental unit unless:"
+      - provision: "37.9(c)"
+        grade: 1
+        quote: "(c) Notices to Vacate. A landlord shall not endeavor to recover possession of a rental unit unless at least one of the grounds enumerated in Section 37.9(a) or (b) above is (1) the landlord's dominant motive..."
+      - provision: "37.9(b)"
+        grade: 1
+        quote: "(b) A landlord who resides in the same rental unit with his or her tenant may evict said tenant without just cause as required under Section 37.9(a) above."
+    note: "The grounds themselves are the 17 child provisions 37.9(a)(1)-(a)(17); 37.9(a) is only their lead-in, so its own text barely matches the question. The near-hit measures credit any retrieved 37.9(a)(n) as a child of the grade-2 provision."
+
+  - id: q07
+    question: "What does the Rent Ordinance say about landlords using algorithmic rent-setting software?"
+    asker: policy_maker
+    wording: legal
+    relevant:
+      - provision: "37.10C(b)"
+        grade: 2
+        quote: "(b) Prohibition on Use. It shall be unlawful for a landlord to use an algorithmic device described in subdivision (a) when setting rents or occupancy levels for residential dwelling units in San Francisco."
+      - provision: "37.10C(a)"
+        grade: 1
+        quote: "(a) Prohibition on Sale. It shall be unlawful to sell, license, or otherwise provide to San Francisco landlords any algorithmic device that sets, recommends, or advises on rents..."
+      - provision: "37.10C(c)(1)"
+        grade: 1
+        quote: "means a device, commonly known as revenue management software, that uses one or more algorithms to perform calculations of non-public competitor data concerning local or statewide rents or occupancy levels..."
+
+  - id: q08
+    question: "What information do property owners have to report to the Rent Board about their units?"
+    asker: policy_maker
+    wording: legal
+    relevant:
+      - provision: "37.15(b)"
+        grade: 2
+        quote: "(b) Owners shall report under penalty of perjury the mailing address of each unit and whether the unit is Owner-Occupied."
+      - provision: "37.15(b)(2)"
+        grade: 2
+        quote: "(2) If the unit is not Owner-Occupied, then the owner shall be required to report under penalty of perjury the following additional information about the unit..."
+      - provision: "37.15(c)"
+        grade: 1
+        quote: "(c) For units (other than condominium units) in buildings with 10 units or more, the information described in subsection (b) shall be reported to the Rent Board by July 1, 2022..."
+    note: "37.15(b) states the obligation for every unit and 37.15(b)(2) holds the detailed list for units that are not owner-occupied; either answers it."
+
+  - id: q09
+    question: "How do capital improvement passthroughs work?"
+    asker: policy_maker
+    wording: legal
+    relevant:
+      - provision: "37.7(a)"
+        grade: 2
+        quote: "(a) Authority. In accordance with such guidelines as the Board shall establish, the Board and designated Administrative Law Judges shall have the authority to conduct hearings in order to certify rental increases to the extent necessary to amortize the cost of capital improvements..."
+      - provision: "37.3(a)(3)"
+        grade: 1
+        quote: "A landlord may impose rent increases based upon the cost of capital improvements, rehabilitation, energy conservation improvements, or renewable energy improvements, provided that such costs are certified pursuant to Sections 37.7 and 37.8B below..."
+      - provision: "37.7(c)"
+        grade: 1
+        quote: "(c) Amortization and Cost Allocation. The Board shall establish amortization periods and cost allocation formulas, in accordance with this Section 37.7."
+      - provision: "37.7(f)(2)"
+        grade: 1
+        quote: "(2) Filing. Landlords who seek to pass through the costs of capital improvements, rehabilitation, energy conservation improvements, or renewable energy improvements, must file an application on a form prescribed by the Board."
+    note: "Broad question; 37.7(b), 37.7(c)(4)-(5) (rules by building size) and 37.7(h) (tenant hardship) are also relevant but not labelled because their detailed sub-provisions were not read in full."
+
+  - id: q10
+    question: "I signed a deal to take money and move out. Can I back out?"
+    asker: resident
+    wording: everyday
+    pair: q37
+    relevant:
+      - provision: "37.9E(g)"
+        grade: 2
+        quote: "(g) Rescission of Buyout Agreements. A tenant shall have the right to rescind a Buyout Agreement for up to and including 45 days after its execution by all parties."
+      - provision: "37.9E(d)(3)"
+        grade: 1
+        quote: "(3) A statement that the tenant may rescind the Buyout Agreement for up to 45 days after the Buyout Agreement is fully executed;"
+      - provision: "37.9E(f)(6)"
+        grade: 1
+        quote: "A Buyout Agreement that does not satisfy all the requirements of subsections (f)(1)-(5) shall not be effective and may be rescinded by the tenant at any time."
+
+  - id: q11
+    question: "My landlord stopped doing repairs and keeps coming into my place to pressure me to leave. Is that allowed?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.10B(a)(2)"
+        grade: 2
+        quote: "(2) Fail to perform repairs and maintenance required by contract or by State, County or local housing, health or safety laws;"
+      - provision: "37.10B(a)(4)"
+        grade: 2
+        quote: "(4) Abuse the landlord’s right of access into a rental housing unit as that right is provided by law;"
+      - provision: "37.10B(a)(5)"
+        grade: 1
+        quote: "(5) Influence or attempt to influence a tenant to vacate a rental housing unit through fraud, intimidation or coercion..."
+    note: "Question combines two harassment acts, 37.10B(a)(2) and 37.10B(a)(4); either answers it. The lead-in 37.10B(a) (bad faith requirement) is not labelled."
+
+  - id: q12
+    question: "We just had a baby. Can our landlord charge more rent because there's another person living here now?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.3(a)(11)(A)"
+        grade: 2
+        quote: "(A) Except as provided in Section 37.3(a)(11)(B), a landlord may not impose increases solely because a tenant has added an additional occupant to an existing tenancy, including, but not limited to, a newborn child..."
+
+  - id: q13
+    question: "I'm 72 and have lived in my apartment for 15 years. Can the owner still make me leave so he can move in?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.9(i)(1)(A)"
+        grade: 2
+        quote: "(A) Is 60 years of age or older and has been residing in the unit for 10 years or more; or"
+      - provision: "37.9(i)(1)"
+        grade: 1
+        quote: "(1) A landlord may not recover possession of a unit from a tenant under Section 37.9(a)(8) if the landlord has or receives notice, any time before recovery of possession, that any tenant in the rental unit:"
+      - provision: "37.9(i)(2)"
+        grade: 1
+        quote: "(2) The foregoing provisions of Sections 37.9(i)(1)(A) and (B) shall not apply where there is only one rental unit owned by the landlord in the building..."
+
+  - id: q14
+    question: "Can they evict my family in the middle of the school year?"
+    asker: resident
+    wording: everyday
+    pair: q38
+    relevant:
+      - provision: "37.9(j)(1)"
+        grade: 2
+        quote: "(1) It shall be a defense to an eviction under Sections 37.9(a)(8), (a)(9), (a)(10), (a)(11), (a)(12), or (a)(17) if a child under the age of 18 or any educator resides in the unit..."
+    note: "Applies only to the listed no-fault grounds; at-fault evictions are not covered, which the answer must say."
+
+  - id: q15
+    question: "Our building was just sold. Can the new owner raise my rent or make me move?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.9(k)(2)(A)"
+        grade: 2
+        quote: "(A) A statement in bold type of at least 12 points that tenants cannot be evicted or asked to move solely because a new owner has purchased that property."
+      - provision: "37.9(k)(2)(B)"
+        grade: 1
+        quote: "(B) A statement in bold type of at least 12 points that tenants cannot have their rent increased above that permitted by Chapter 37 solely because a new owner has purchased that property."
+      - provision: "37.9(k)(1)(A)"
+        grade: 2
+        quote: "(A) A statement in bold type of at least 12 points that tenants cannot be evicted or asked to move solely because a property is being sold or solely because a new owner has purchased that property."
+      - provision: "37.9(k)(1)(B)"
+        grade: 1
+        quote: "(B) A statement in bold type of at least 12 points that tenants cannot have their rent increased above that permitted by Chapter 37 solely because a property is being sold or solely because a new owner has purchased that property."
+    note: "These provisions answer indirectly: they prescribe what the seller (37.9(k)(1)) and the new owner (37.9(k)(2)) must disclose, and the disclosure states the rule."
+
+  - id: q16
+    question: "The bank foreclosed on my landlord. Do I have to move out?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.9D(b)"
+        grade: 2
+        quote: "(b) Any residential tenant who was in possession of a rental unit at the time of foreclosure may not be evicted by the person or entity who took title through foreclosure..."
+      - provision: "37.9D(c)"
+        grade: 1
+        quote: "(c) To the extent permissible under state and federal law, any residential tenant who has a valid lease or rental agreement at the time of foreclosure may enforce that rental agreement after foreclosure."
+
+  - id: q17
+    question: "My lease says I have to be out when it ends in August. Do I really have to leave?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.9F(b)"
+        grade: 2
+        quote: "any provision of any lease or rental agreement that purports to require a tenant to vacate a rental unit at the expiration of a stated term, or that purports to characterize a tenant’s failure to vacate..."
+
+  - id: q18
+    question: "My landlord is taking away my parking spot. Can he do that without lowering my rent?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.2(r)"
+        grade: 2
+        quote: "Garage facilities, parking facilities, driveways, storage spaces, laundry rooms, decks, patios, or gardens on the same lot, or kitchen facilities or lobbies in single room occupancy (SRO) hotels, supplied in connection with the use or occupancy of a unit, may not be severed from the tenancy by the landlord without just cause..."
+      - provision: "37.2(q)"
+        grade: 1
+        quote: "(q) Rent Increases. Any additional monies demanded or paid for rent as defined in item (p) above, or any reduction in housing services without a corresponding reduction in the monies demanded or paid for rent..."
+      - provision: "37.8(b)(2)(A)"
+        grade: 1
+        quote: "may request arbitration hearings where a landlord has substantially decreased services without a corresponding reduction in rent..."
+
+  - id: q19
+    question: "My landlord evicted me to move in, then rented my old apartment to someone else. What can I do?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.9B(a)"
+        grade: 2
+        quote: "(a) Any rental unit which a tenant vacates after receiving a notice to quit based on Section 37.9(a)(8), and which is subsequently no longer occupied as a principal residence by the landlord..."
+      - provision: "37.9B(b)(2)"
+        grade: 1
+        quote: "(2) For notices to vacate served on or after January 1, 2018, any landlord who, within five years of the date of service of the notice to quit, offers for rent or lease any unit in which the possession was recovered pursuant to Section 37.9(a)(8) shall first offer the unit for rent or lease to the tenants displaced..."
+      - provision: "37.9(f)"
+        grade: 1
+        quote: "(f) Whenever a landlord wrongfully endeavors to recover possession or recovers possession of a rental unit in violation of Sections 37.9 and/or 37.10A as enacted herein..."
+    note: "37.9(a)(8)(v) (evidence of bad faith), 37.10A(h) and 37.11A(b) are also plausible; not labelled to keep the list to the most direct passages."
+
+  - id: q20
+    question: "My landlord says he's taking the whole building off the rental market. How much relocation money do I get?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.9A(e)(2)"
+        grade: 2
+        quote: "the specific amount of the relocation benefit shall be $10,000 per Eligible Tenant, and the total relocation payment shall be $30,000 in the event there are more than three Eligible Tenants in the unit..."
+      - provision: "37.9(a)(13)"
+        grade: 1
+        quote: "(13) The landlord wishes to withdraw from rent or lease all rental units within any detached physical structure..."
+    note: "Amounts apply to notices of intent filed on or after September 1, 2022 and are adjusted annually per 37.9A(e)(1)(D), which was not read; 37.9A(e)(1) covers older notices."
+
+  - id: q21
+    question: "I'm a small landlord and skipped rent increases for a few years. Can I add the ones I missed now?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.3(a)(2)"
+        grade: 2
+        quote: "(2) Banking. A landlord who refrains from imposing an annual rent increase or any portion thereof may accumulate said increase and, subject to Section 37.15, impose that amount on the tenant's subsequent rent increase anniversary dates."
+
+  - id: q22
+    question: "My landlord wants me out for a few months to redo the building. Do I get to move back in, and at what rent?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.9(a)(11)"
+        grade: 2
+        quote: "Any tenant who vacates the unit under such circumstances shall have the right to reoccupy the unit at the prior rent adjusted in accordance with the provisions of this Chapter 37."
+      - provision: "37.9(a)(11)(C)"
+        grade: 1
+        quote: "(C) The tenant shall not be required to vacate pursuant to this Section 37.9(a)(11) for a period in excess of three months..."
+      - provision: "37.9(a)(11)(E)"
+        grade: 1
+        quote: "(E) Immediately upon completion of the capital improvements or rehabilitation work, the landlord shall advise the tenant, in writing, and allow the tenant to reoccupy the tenant's unit."
+
+  - id: q23
+    question: "Which newly built units are exempt from the rent increase limits?"
+    asker: policy_maker
+    wording: legal
+    relevant:
+      - provision: "37.3(g)(1)"
+        grade: 2
+        quote: "(1) An owner of a residential dwelling or unit which is newly constructed and first received a certificate of occupancy after the effective date of Ordinance No. 276-79 (June 13, 1979)..."
+      - provision: "37.3(g)(1)(E)"
+        grade: 1
+        quote: "(E) The Board of Supervisors acknowledges that at least through November 5, 2024, California Civil Code Sections 1954.52(a)(1)-(2) preclude the City from updating the June 13, 1979 new construction date..."
+    note: "The exceptions 37.3(g)(1)(A)-(D) and 37.2(r)(4)(D) also bear on the answer."
+
+  - id: q24
+    question: "What penalties apply when a landlord fails to file statements of occupancy after an owner move-in eviction?"
+    asker: policy_maker
+    wording: legal
+    relevant:
+      - provision: "37.9(a)(8)(vii)"
+        grade: 2
+        quote: "the Rent Board shall impose an administrative penalty on any landlord who fails to comply with this subsection (a)(8)(vii), in the amount of $250 for the first violation, $500 for the second violation, and $1,000 for every subsequent violation."
+      - provision: "37.9(a)(8)(v)"
+        grade: 1
+        quote: "(4) the landlord did not file a statement of occupancy with the Rent Board as required by Section 37.9(a)(8)(vii)"
+
+  - id: q25
+    question: "What enforcement tools exist against landlords who harass tenants?"
+    asker: policy_maker
+    wording: everyday
+    relevant:
+      - provision: "37.10B(c)(5)"
+        grade: 2
+        quote: "(5) Penalties and Other Monetary Awards. Any person who violates or aids or incites another person to violate the provisions of this Section is liable for each and every such offense for money damages of not less than three times actual damages..."
+      - provision: "37.10B(c)(2)"
+        grade: 2
+        quote: "(2) Criminal Penalty. Any person who is convicted of violating this Section shall be guilty of a misdemeanor..."
+      - provision: "37.10B(c)(1)"
+        grade: 2
+        quote: "(1) Rent Board. Violation of Sections 37.10B(a)(1) – (3) is a substantial and significant decrease in services as defined in Section 37.2(g) and tenants may file a petition with the Rent Board for a reduction in rent."
+      - provision: "37.9(l)(1)"
+        grade: 1
+        quote: "(1) A current or former tenant may submit a report to the Rent Board alleging wrongful endeavor to recover possession of the tenant’s unit through harassment."
+    note: "Broad question with several equally valid answers: damages, criminal penalty and a Rent Board petition each answer it. 37.10B(c)(3)-(4) (civil action, injunction) are also relevant. The 37.10B header notes Larson v. CCSF limited 37.10B(c)(1) and struck (c)(6)."
+
+  - id: q26
+    question: "What happens to a landlord's ability to raise rents if they never send their unit info to the Rent Board?"
+    asker: policy_maker
+    wording: everyday
+    relevant:
+      - provision: "37.15(e)"
+        grade: 2
+        quote: "If the landlord has not substantially complied with the reporting obligation, then the license to impose rent increases shall be temporarily suspended during the period of the landlord’s noncompliance."
+      - provision: "37.3(a)(1)"
+        grade: 1
+        quote: "A landlord who has reported the required information about their rental unit to the Rent Board as set forth in Section 37.15 shall have a license to impose annually a rent increase..."
+
+  - id: q27
+    question: "My rent went up because of city bond costs on the property tax bill. Is that allowed, and can I get out of paying it?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.3(a)(6)(A)"
+        grade: 2
+        quote: "(A) Effective July 1, 2024, a landlord may impose increases based upon a 100% passthrough of the change in the landlord's property tax resulting from the repayment of general obligation bonds..."
+      - provision: "37.3(a)(6)(F)"
+        grade: 1
+        quote: "(F) A tenant who has received a passthrough under this subsection (a)(6) may file a financial hardship application with the Board, and the Board may grant the tenant complete or partial relief from the passthrough."
+      - provision: "37.3(a)(6)(G)"
+        grade: 1
+        quote: "Where a tenant alleges that a landlord has imposed a charge which exceeds the limitations set forth in this subsection (a)(6), the tenant may petition for a hearing under the procedures provided by Section 37.8."
+
+  - id: q28
+    question: "Can my landlord evict me for complaining to the city about mold?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.9(d)"
+        grade: 2
+        quote: "(d) No landlord may cause a tenant to quit involuntarily or threaten to bring any action to recover possession, or decrease any services, or increase the rent, or take any other action where the landlord's dominant motive is retaliation..."
+      - provision: "37.11A(a)"
+        grade: 1
+        quote: "(a) Whenever a landlord charges a tenant a rent which exceeds the limitations set forth in this Chapter, retaliates against a tenant for the exercise of any rights under this Chapter..."
+    note: "The ordinance does not mention mold complaints specifically; relevance rests on the general retaliation rule."
+
+  - id: q29
+    question: "What disclosures must a landlord give tenants before starting buyout negotiations?"
+    asker: policy_maker
+    wording: legal
+    relevant:
+      - provision: "37.9E(d)"
+        grade: 2
+        quote: "(d) Disclosure required prior to Buyout Negotiations. Prior to commencing Buyout Negotiations for a rental unit, the landlord shall provide each tenant in that rental unit a written disclosure..."
+      - provision: "37.9E(d)(1)"
+        grade: 1
+        quote: "(1) A statement that the tenant has a right not to enter into a Buyout Agreement or Buyout Negotiations;"
+      - provision: "37.9E(e)"
+        grade: 1
+        quote: "(e) Notification of the Rent Board. After providing the disclosures required by subsection (d) and prior to commencing Buyout Negotiations, the landlord shall file a declaration executed under penalty of perjury with the Rent Board..."
+    note: "The full list is 37.9E(d)(1)-(12); any of those children is partially relevant."
+
+  - id: q30
+    question: "I've been living in a motel room for over a month. Am I covered by rent control?"
+    asker: resident
+    wording: everyday
+    pair: q39
+    relevant:
+      - provision: "37.2(r)(1)"
+        grade: 2
+        quote: "(1) Housing accommodations in hotels, motels, inns, tourist houses, rooming and boarding houses, provided that at such time as an accommodation has been occupied by a tenant for thirty-two (32) continuous days or more, such accommodation shall become a rental unit..."
+    note: "37.2(r)(1) sits in the list of exclusions from rental units (see its context); the 32-day rule is the answer. Whether 'over a month' meets 32 continuous days depends on facts."
+
+  - id: q31
+    question: "Is it a crime for a landlord to charge more rent than the ordinance allows?"
+    asker: policy_maker
+    wording: everyday
+    relevant:
+      - provision: "37.10A(a)"
+        grade: 2
+        quote: "It shall further be unlawful for a landlord to charge any rent which exceeds the limitations of this chapter. Any person who increases rents in violation of such decisions or who charges excessive rents shall be guilty of a misdemeanor."
+      - provision: "37.10A(j)"
+        grade: 1
+        quote: "(j) Any person who violates Section 37.10A(a),(b),(c), (f), or (h) is guilty of a misdemeanor and shall be punished by a mandatory fine of $1,000.00..."
+
+  - id: q32
+    question: "Can my landlord keep my security deposit for normal wear and tear?"
+    asker: resident
+    wording: everyday
+    relevant: []
+    note: "Not answered by Chapter 37 (security deposits are governed by California Civil Code 1950.5). Hard negative: 37.9C(d) mentions security deposits only to say relocation expenses are separate from them."
+
+  - id: q33
+    question: "How do I register my apartment as a short-term rental on Airbnb in San Francisco?"
+    asker: resident
+    wording: everyday
+    relevant: []
+    note: "Not answered by Chapter 37 (short-term rentals are governed by Administrative Code Chapter 41A). Hard negatives: 37.9(a)(4) and 37.9F(c)(3) mention Chapter 41A without describing registration."
+
+  - id: q34
+    question: "What temperature does my landlord have to keep the heat at in winter?"
+    asker: resident
+    wording: everyday
+    relevant: []
+    note: "Not answered by Chapter 37 (heating standards are in the Housing Code). Hard negative: 37.2(g) lists heat as a housing service but sets no standard."
+
+  - id: q35
+    question: "Under what conditions may a landlord recover possession of a rental unit for occupancy by a relative?"
+    asker: policy_maker
+    wording: legal
+    pair: q01
+    relevant:
+      - provision: "37.9(a)(8)(ii)"
+        grade: 2
+        quote: "(ii) For the use or occupancy of the landlords grandparents, grandchildren, parents, children, brother or sister, or the landlords spouse or the spouses of such relations, as their principal place of residency for a period of at least 36 months..."
+      - provision: "37.9(a)(8)"
+        grade: 1
+        quote: "(8) The landlord seeks to recover possession in good faith, without ulterior reasons and with honest intent;"
+    note: "Legal wording of q01."
+
+  - id: q36
+    question: "What reasons can my landlord legally use to evict me?"
+    asker: resident
+    wording: everyday
+    pair: q06
+    relevant:
+      - provision: "37.9(a)"
+        grade: 2
+        quote: "(a) A landlord shall not endeavor to recover possession of a rental unit unless:"
+      - provision: "37.9(c)"
+        grade: 1
+        quote: "(c) Notices to Vacate. A landlord shall not endeavor to recover possession of a rental unit unless at least one of the grounds enumerated in Section 37.9(a) or (b) above is (1) the landlord's dominant motive..."
+      - provision: "37.9(b)"
+        grade: 1
+        quote: "(b) A landlord who resides in the same rental unit with his or her tenant may evict said tenant without just cause as required under Section 37.9(a) above."
+    note: "Everyday wording of q06; the near-hit measures credit any retrieved 37.9(a)(n)."
+
+  - id: q37
+    question: "What is the rescission period for a buyout agreement?"
+    asker: policy_maker
+    wording: legal
+    pair: q10
+    relevant:
+      - provision: "37.9E(g)"
+        grade: 2
+        quote: "(g) Rescission of Buyout Agreements. A tenant shall have the right to rescind a Buyout Agreement for up to and including 45 days after its execution by all parties."
+      - provision: "37.9E(d)(3)"
+        grade: 1
+        quote: "(3) A statement that the tenant may rescind the Buyout Agreement for up to 45 days after the Buyout Agreement is fully executed;"
+      - provision: "37.9E(f)(6)"
+        grade: 1
+        quote: "A Buyout Agreement that does not satisfy all the requirements of subsections (f)(1)-(5) shall not be effective and may be rescinded by the tenant at any time."
+    note: "Legal wording of q10."
+
+  - id: q38
+    question: "Is there a defense to a no-fault eviction when a child or an educator lives in the unit during the school year?"
+    asker: policy_maker
+    wording: legal
+    pair: q14
+    relevant:
+      - provision: "37.9(j)(1)"
+        grade: 2
+        quote: "(1) It shall be a defense to an eviction under Sections 37.9(a)(8), (a)(9), (a)(10), (a)(11), (a)(12), or (a)(17) if a child under the age of 18 or any educator resides in the unit..."
+    note: "Legal wording of q14."
+
+  - id: q39
+    question: "When does an accommodation in a hotel or motel become a rental unit under the Rent Ordinance?"
+    asker: policy_maker
+    wording: legal
+    pair: q30
+    relevant:
+      - provision: "37.2(r)(1)"
+        grade: 2
+        quote: "(1) Housing accommodations in hotels, motels, inns, tourist houses, rooming and boarding houses, provided that at such time as an accommodation has been occupied by a tenant for thirty-two (32) continuous days or more, such accommodation shall become a rental unit..."
+    note: "Legal wording of q30."
+
+  - id: q40
+    question: "Section 37.9C relocation expenses"
+    asker: policy_maker
+    wording: term
+    relevant:
+      - provision: "37.9C(b)"
+        grade: 2
+        quote: "(b) Each Eligible Tenant who receives a Covered No-Fault Eviction Notice, in addition to all rights under any other provision of law, shall be entitled to receive relocation expenses from the landlord, in the amounts specified in section 37.9C(e)."
+      - provision: "37.9C(e)(1)"
+        grade: 2
+        quote: "(1) Each Eligible Tenant receiving a Covered No-Fault Eviction Notice shall receive $4,500"
+      - provision: "37.9C(e)"
+        grade: 1
+        quote: "(e) Relocation expenses shall be:"
+      - provision: "37.9C(a)(1)"
+        grade: 1
+        quote: "(1) Covered No-Fault Eviction Notice. For purposes of this section 37.9C, a Covered No-Fault Eviction Notice shall mean a notice to quit based upon Section 37.9(a)(8), (10), (11), or (12)."
+    note: "A section number and the section's own term; keyword search should find it."
+
+  - id: q41
+    question: "Ellis Act relocation payments"
+    asker: policy_maker
+    wording: term
+    relevant:
+      - provision: "37.9A(e)(2)"
+        grade: 2
+        quote: "the specific amount of the relocation benefit shall be $10,000 per Eligible Tenant, and the total relocation payment shall be $30,000 in the event there are more than three Eligible Tenants in the unit"
+      - provision: "37.9A(e)(1)"
+        grade: 1
+        quote: "(1) On February 20, 2005 and Until August 31, 2022. Where a landlord seeks eviction based upon Section 37.9(a)(13), and the notice of intent to withdraw rental units is filed with the Board between February 20, 2005 and August 31, 2022, inclusive, relocation payments shall be paid to the tenants as follows:"
+      - provision: "37.9A(e)(3)"
+        grade: 1
+        quote: "(3) Any notice to quit pursuant to Section 37.9(a)(13) shall notify the tenant or tenants concerned of the right to receive payment under this subsection 37.9A(e)(1) or (2)"
+    note: "\"Ellis Act\" appears in 37.9A(f)(3), (h)(3) and (i) but not in 37.9A(e); the payment provisions refer to Section 37.9(a)(13) instead, so the term alone does not reach them."
+
+  - id: q42
+    question: "Costa-Hawkins exemption from rent increase limits"
+    asker: policy_maker
+    wording: term
+    relevant:
+      - provision: "37.3(d)(1)(A)"
+        grade: 2
+        quote: "(A) An owner of residential real property may establish the initial and all subsequent rental rates for a dwelling or a unit which is alienable separate from the title to any other dwelling unit"
+      - provision: "37.3(d)(5)"
+        grade: 1
+        quote: "(5) This Subsection 37.3(d) is intended to be and shall be construed to be consistent with the Costa-Hawkins Rental Housing Act (Civil Code Sections 1954.50. et seq.)"
+      - provision: "37.3(d)(1)"
+        grade: 1
+        quote: "(1) Property Owner Rights to Establish Initial and All Subsequent Rental Rates for Separately Alienable Parcels."
+    note: "The named law appears in 37.3(d)(5); the exemption itself is in 37.3(d)(1)(A), which does not name it."
+
+  - id: q43
+    question: "capital improvement amortization schedules"
+    asker: policy_maker
+    wording: term
+    relevant:
+      - provision: "37.7(c)"
+        grade: 2
+        quote: "(c) Amortization and Cost Allocation. The Board shall establish amortization periods and cost allocation formulas, in accordance with this Section 37.7."
+      - provision: "37.7(c)(4)"
+        grade: 1
+        quote: "(4) Applications Filed On or After November 14, 2002 for Other Work and Improvements On Properties With Five Residential Units or Less."
+      - provision: "37.7(c)(5)"
+        grade: 1
+        quote: "(5) For Applications Filed On or After November 14, 2002 for Other Work and Improvements for Properties with Six or more Residential Units."
+    note: "The schedules themselves are deeper, in provisions such as 37.7(c)(4)(A)(i) and 37.7(c)(5)(A)(i), which are not labelled."
+
+  - id: q44
+    question: "I rent a single-family house in San Francisco. Is my rent controlled?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.3(d)(1)(A)"
+        grade: 2
+        quote: "(A) An owner of residential real property may establish the initial and all subsequent rental rates for a dwelling or a unit which is alienable separate from the title to any other dwelling unit"
+      - provision: "37.3(d)(1)(B)"
+        grade: 1
+        quote: "(B) Where the initial or subsequent rental rates of a Subsection 37.3(d)(1)(A) dwelling or unit were controlled by the provisions of Chapter 37 on January 1, 1995, the following shall apply:"
+      - provision: "37.3(d)(4)"
+        grade: 1
+        quote: "(4) Subsection 37.3(d) does not affect the authority of the City and County of San Francisco to regulate or monitor the basis or grounds for eviction."
+      - provision: "37.3(g)(1)"
+        grade: 1
+        quote: "(1) An owner of a residential dwelling or unit which is newly constructed and first received a certificate of occupancy after the effective date of Ordinance No. 276-79 (June 13, 1979)"
+    note: "Chapter 37 never says \"single-family\"; a single-family house is a dwelling \"alienable separate from the title to any other dwelling unit\", so this tests the vocabulary gap. Rent increases may be exempt while eviction protections still apply (37.3(d)(4))."
+
+  - id: q45
+    question: "Is my in-law unit covered by rent control?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.2(r)(4)(D)"
+        grade: 2
+        quote: "(D) The term “rental units” shall include (i) Accessory Dwelling Units constructed pursuant to Section 207(c)(4) of the Planning Code"
+    note: "Chapter 37 says \"Accessory Dwelling Units\", never \"in-law\". Coverage depends on how the unit was permitted; 37.2(r)(4)(D) names the ADUs that are rental units."
+
+  - id: q46
+    question: "I'm a landlord and my tenant moved a roommate in without asking me. Can I evict them for that?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.9(a)(2)(A)"
+        grade: 2
+        quote: "a landlord shall not endeavor to recover possession of a rental unit as a result of subletting of the rental unit by the tenant if the landlord has unreasonably withheld the right to sublet following a written request by the tenant, so long as the tenant continues to reside in the rental unit and the sublet constitutes a one-for-one replacement of the departing tenant(s)."
+      - provision: "37.9(a)(2)(D)"
+        grade: 2
+        quote: "(D) Before endeavoring to recover possession based on the violation of a lawful obligation or covenant of tenancy regarding subletting or limits on the number of occupants in the rental unit, the landlord shall serve the tenant a written notice of the violation that provides the tenant with an opportunity to cure the violation in 10 or more days."
+      - provision: "37.9(a)(2)"
+        grade: 1
+        quote: "(2) The tenant has violated a lawful obligation or covenant of tenancy"
+      - provision: "37.9(a)(2)(B)"
+        grade: 1
+        quote: "a landlord shall not endeavor to recover possession of a rental unit as a result of the addition to the unit of a tenant's child, parent, grandchild, grandparent, brother or sister, or the spouse or domestic partner"
+    note: "A landlord's question. The answer depends on the lease and on whether the tenant asked in writing; 37.9(a)(2)(D) requires a notice with a chance to cure first."
+
+  - id: q47
+    question: "My building's operating costs went up a lot. How can I raise rents more than the annual limit?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.8(b)(1)"
+        grade: 2
+        quote: "(1) Landlords. Landlords who seek to impose rent increases which exceed the limitations set forth in Section 37.3(a) above must request an arbitration hearing as set forth in this section. The burden of proof is on the landlord. This Section 37.8(b)(1) applies, but is not limited, to Operating and Maintenance Expense petitions to increase base rent."
+      - provision: "37.8(e)(4)"
+        grade: 1
+        quote: "the Administrative Law Judge shall make findings as to whether the landlord's proposed rental increase exceeding the limitations set forth in Section 37.3 is justified"
+    note: "A landlord's question."
+
+  - id: q48
+    question: "Can I be evicted for rent I couldn't pay because of COVID?"
+    asker: resident
+    wording: everyday
+    relevant:
+      - provision: "37.9(a)(1)(D)"
+        grade: 2
+        quote: "(D) Provided, however, that subsection (a)(1) shall not apply with respect to rent payments that initially became due during the time period when paragraph 2 of the Governor’s Executive Order No. N-28-20 was in effect (March 16, 2020 through September 30, 2020)"
+      - provision: "37.9(a)(1)(E)"
+        grade: 2
+        quote: "(E) Provided, further, that subsection (a)(1) also shall not apply with respect to rent payments that initially became due during the time period between July 1, 2022, and 60 days after the date that the Mayor's proclamation of emergency related to the COVID-19 pandemic ceases to be in effect"
+    note: "Which provision applies depends on when the rent fell due. Both say the tenant still owes the rent."
+
+  - id: q49
+    question: "How much notice does my landlord have to give before coming into my apartment?"
+    asker: resident
+    wording: everyday
+    relevant: []
+    note: "Not answered by Chapter 37: no passage sets a notice period for entry. Hard negatives: 37.10B(a)(4) (abuse of the right of access \"as that right is provided by law\") and 37.9(a)(6) (refusing access as a ground for eviction)."
+
+  - id: q50
+    question: "Can a landlord refuse to rent to me because I have a housing voucher?"
+    asker: resident
+    wording: everyday
+    relevant: []
+    note: "Not answered by Chapter 37: no passage addresses refusing an applicant for using a voucher. Hard negatives: 37.2(u) and 37.3(a)(10)(A) (tenant-based rental assistance), 37.10B(a)(9) (discrimination, without source of income) and 37.10A(b) (refusing a prospective tenant because of age)."

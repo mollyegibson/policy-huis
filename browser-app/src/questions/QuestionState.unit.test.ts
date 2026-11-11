@@ -24,9 +24,9 @@ describe("reduce", () => {
       toolFailure(CALL_B, "UnknownValue", "sf_dataset_info"),
       toolSuccess(CALL_A, { groups: [], citations: [] })
     ])
-    expect(state.toolCalls.map((call) => [call.tool, call.status, call.error])).toEqual([
-      ["sf_development_pipeline_summary", "done", null],
-      ["sf_dataset_info", "failed", "UnknownValue"]
+    expect(state.toolCalls.map((call) => [call.tool, call.server?.label, call.status, call.error])).toEqual([
+      ["sf_development_pipeline_summary", "SF Housing", "done", null],
+      ["sf_dataset_info", "SF Housing", "failed", "UnknownValue"]
     ])
   })
 

@@ -130,10 +130,12 @@ describe("POST /api/v1/questions", () => {
           const result = yield* collect(yield* ask("What is the word?"))
           const [trace] = yield* waitForTraces(1)
           return { result, trace }
-        }).pipe(Effect.provide(apiLayer(answerScript, [{ name: "a-data", prefix: "a_", url: server.url }])))
+        }).pipe(Effect.provide(apiLayer(answerScript, [{ name: "a-data", label: "A", prefix: "a_", url: server.url }])))
 
         const tags = events.result.filter((event) => event._tag !== "Keepalive").map((event) => event._tag)
         expect(tags).toEqual(["ToolStart", "ToolEnd", "TextChunk", "Complete"])
+        const start = events.result.find((event) => event._tag === "ToolStart")
+        expect(start?._tag === "ToolStart" ? start.server : null).toEqual({ name: "a-data", label: "A", tool: "echo" })
         const complete = events.result.at(-1)
         expect(complete?._tag === "Complete" ? [complete.outcome, complete.message] : null).toEqual(["answered", null])
         if (events.trace === undefined) return yield* Effect.die("expected a trace")
@@ -168,7 +170,7 @@ describe("POST /api/v1/questions", () => {
 
           const third = yield* collect(yield* ask("third"))
           expect(third.at(-1)?._tag).toBe("Complete")
-        }).pipe(Effect.provide(apiLayer(script, [{ name: "a-data", prefix: "a_", url: server.url }])))
+        }).pipe(Effect.provide(apiLayer(script, [{ name: "a-data", label: "A", prefix: "a_", url: server.url }])))
         yield* server.stop
       }).pipe(Effect.scoped),
     30_000
@@ -185,9 +187,13 @@ describe("POST /api/v1/questions", () => {
           return [first.at(-1), second.at(-1)].map((event) => (event?._tag === "Complete" ? event.outcome : null))
         }).pipe(
           Effect.provide(
-            apiLayer([...answerScript, ...answerScript], [{ name: "a-data", prefix: "a_", url: server.url }], {
-              hangingTraceWrites: true
-            })
+            apiLayer(
+              [...answerScript, ...answerScript],
+              [{ name: "a-data", label: "A", prefix: "a_", url: server.url }],
+              {
+                hangingTraceWrites: true
+              }
+            )
           )
         )
         expect(outcomes).toEqual(["answered", "answered"])
@@ -204,7 +210,9 @@ describe("POST /api/v1/questions", () => {
         const events = yield* Effect.gen(function* () {
           return yield* collect(yield* ask("slow"))
         }).pipe(
-          Effect.provide(apiLayer([{ parts: [], stall: true }], [{ name: "a-data", prefix: "a_", url: server.url }]))
+          Effect.provide(
+            apiLayer([{ parts: [], stall: true }], [{ name: "a-data", label: "A", prefix: "a_", url: server.url }])
+          )
         )
         expect(events.some((event) => event._tag === "Keepalive")).toBe(true)
         const complete = events.at(-1)
@@ -225,8 +233,8 @@ describe("POST /api/v1/questions", () => {
         const down = yield* startTestServer(0)
         yield* down.stop
         const servers: ReadonlyArray<ServerEntry> = [
-          { name: "a-data", prefix: "a_", url: up.url },
-          { name: "b-data", prefix: "b_", url: down.url }
+          { name: "a-data", label: "A", prefix: "a_", url: up.url },
+          { name: "b-data", label: "B", prefix: "b_", url: down.url }
         ]
         const { events, calls } = yield* Effect.gen(function* () {
           const events = yield* collect(yield* ask("What is the word?"))

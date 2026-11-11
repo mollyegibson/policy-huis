@@ -71,6 +71,9 @@ export class Agent extends Context.Service<
         const requestId = crypto.randomUUID()
         const receivedAt = yield* Clock.currentTimeMillis
         const tools = turnTools(yield* connections.current)
+        for (const { tool, servers } of tools.collisions) {
+          yield* Effect.logError(`${servers.join(" and ")} both offer the tool ${tool}; it is offered by neither`)
+        }
         const system =
           tools.unavailable.length === 0
             ? systemPrompt.text
@@ -89,8 +92,8 @@ export class Agent extends Context.Service<
             yield* Ref.update(trace, (current) => foldTrace(current, event))
             if (event._tag !== "ToolEnd" || event.error === null || !UNREACHABLE_ERRORS.has(event.error)) return
             const server = tools.serverOf(event.tool)
-            if (server === undefined) return
-            yield* Ref.update(unreachable, (servers) => new Set([...servers, server]))
+            if (server === null) return
+            yield* Ref.update(unreachable, (servers) => new Set([...servers, server.name]))
           })
 
         const toAgentEvents = (event: LoopEvent): Effect.Effect<ReadonlyArray<AgentEvent>> => {
@@ -123,7 +126,7 @@ export class Agent extends Context.Service<
             .pipe(Effect.catch((error) => Effect.logError(`Trace ${requestId} was not written`, error.message)))
         })
 
-        return runAgentLoop(prompt, tools.toolkit, settings).pipe(
+        return runAgentLoop(prompt, tools.toolkit, tools.serverOf, settings).pipe(
           Stream.tap(observe),
           Stream.mapEffect(toAgentEvents),
           Stream.flatMap((batch) => Stream.fromIterable(batch)),

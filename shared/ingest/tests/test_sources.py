@@ -12,6 +12,7 @@ from policyhuis_ingest.source_types import (
     load_sources,
     parse_metadata,
     parse_rows,
+    raw_table,
 )
 from policyhuis_ingest.testing import FakeFetcher, pdf
 from tests.fixtures import LAYER, SQUARE, geojson, layer_responses, socrata_metadata, socrata_responses
@@ -126,3 +127,10 @@ def test_pdf_rows_are_pages_of_text() -> None:
         (2, "second page"),
     ]
     assert all(row.geometry is None for row in rows)
+
+
+def test_raw_table_is_the_source_key_unless_a_pdf_names_a_shared_one() -> None:
+    assert raw_table("report", REPORT) == "report"
+    assert raw_table("rent_ordinance", REPORT.model_copy(update={"raw_table": "document_pages"})) == "document_pages"
+    zones = ArcGisLayerSource(kind="arcgis_layer", layer_url=LAYER, format="geojson")
+    assert raw_table("zones", zones) == "zones"

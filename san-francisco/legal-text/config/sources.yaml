@@ -1,0 +1,13 @@
+# Documents loaded into raw_sf.document_pages, one row per page of text. Each key is the document's ID in the corpus.
+# The fields are those of the pdf source type in shared/ingest: title and publisher as printed in the document, and its
+# version as the date printed in it, matched exactly once by version_pattern.
+
+rent_ordinance:
+  kind: pdf
+  url: https://media.api.sf.gov/documents/600_Ordinance_6-29-26.pdf
+  title: "Chapter 37 of the San Francisco Administrative Code: The Residential Rent Stabilization and Arbitration Ordinance"
+  publisher: San Francisco Residential Rent Stabilization and Arbitration Board # its contents page gives www.sf.gov/rentboard
+  version_pattern: '^\(Amended ([A-Z][a-z]+ \d{1,2}, \d{4})\)' # "(Amended June 29, 2026)" on the contents page
+  version_format: '%B %d, %Y'
+  format: pdf
+  raw_table: document_pages

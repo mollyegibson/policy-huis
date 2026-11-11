@@ -1,21 +1,20 @@
-/** A tool's label: the server's prefix as a tag, and the rest of its name in words. */
+import type { ToolServer } from "@policyhuis/protocol/QuestionsApi"
+
+/** A tool's label: its server's label as a tag, and the tool's name on that server in words. */
 export interface ToolLabel {
   readonly tag: string | null
   readonly name: string
 }
 
 /**
- * Splits off the server prefix the backend adds (lowercase letters and digits, then an underscore, as in the server
- * directory) and turns the rest into words: "sf_development_pipeline_summary" → { tag: "SF", name: "Development
- * pipeline summary" }. A name without a prefix has no tag.
+ * Labels a tool call from the server the backend says it went to: { tag: "SF Housing", name: "Development pipeline
+ * summary" } for `development_pipeline_summary` on `sf-housing`. A call no server offered has no tag, and its name is
+ * the name the model called.
  */
-export const toolLabel = (tool: string): ToolLabel => {
-  const match = /^([a-z][a-z0-9]*)_(.+)$/.exec(tool)
-  const prefix = match?.[1]
-  const rest = match?.[2]
-  const words = (rest ?? tool).replace(/_/g, " ")
+export const toolLabel = (tool: string, server: ToolServer | null): ToolLabel => {
+  const words = (server?.tool ?? tool).replace(/_/g, " ")
   return {
-    tag: prefix === undefined ? null : prefix.toUpperCase(),
+    tag: server?.label ?? null,
     name: words.charAt(0).toUpperCase() + words.slice(1)
   }
 }

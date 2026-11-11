@@ -9,7 +9,7 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from policyhuis_ingest.archive import Archive, sha256
-from policyhuis_ingest.source_types import Fetcher, Source, download, parse_metadata, parse_rows
+from policyhuis_ingest.source_types import Fetcher, Source, download, parse_metadata, parse_rows, raw_table
 
 
 @dataclass(frozen=True)
@@ -42,9 +42,9 @@ def ingest(
 ) -> LoadResult:
     """Download a source, archive it, then load the archived bytes into `raw_schema` in one transaction.
 
-    The schema holds a `load_manifest` table and one table per source key with the columns
-    `load_id`, `row_number`, `record` (jsonb) and `geom` (PostGIS geometry). A download whose data hash
-    matches an earlier load of the same source is not loaded again.
+    The schema holds a `load_manifest` table and one table per source key, or the shared table a source names (see
+    `raw_table`), with the columns `load_id`, `row_number`, `record` (jsonb) and `geom` (PostGIS geometry). A
+    download whose data hash matches an earlier load of the same source is not loaded again.
     """
     manifest = sql.Identifier(raw_schema, "load_manifest")
     downloaded = download(source, fetcher)
@@ -68,7 +68,7 @@ def ingest(
     insert_row = sql.SQL(
         "INSERT INTO {} (load_id, row_number, record, geom) VALUES "
         "(%s, %s, %s, ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326))"
-    ).format(sql.Identifier(raw_schema, source_key))
+    ).format(sql.Identifier(raw_schema, raw_table(source_key, source)))
     with conn.transaction():
         conn.execute(
             sql.SQL(

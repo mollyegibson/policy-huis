@@ -1,13 +1,16 @@
 import { Option, Schema } from "effect"
 
 import { Citation } from "@policyhuis/protocol/Citation"
-import type { AgentStreamEvent, Complete } from "@policyhuis/protocol/QuestionsApi"
+import type { AgentStreamEvent, Complete, ToolServer } from "@policyhuis/protocol/QuestionsApi"
 
 export type ToolCallStatus = "running" | "done" | "failed" | "unfinished"
 
 export interface ToolCallView {
   readonly callId: string
+  /** The name the model called, with its server's prefix. */
   readonly tool: string
+  /** The server the call went to, as the backend named it; null when no server offered the tool. */
+  readonly server: ToolServer | null
   readonly arguments: unknown
   readonly status: ToolCallStatus
   /** The tool's `structuredContent`; null until it succeeds. */
@@ -55,6 +58,7 @@ export const reduce = (state: QuestionState, event: AgentStreamEvent): QuestionS
           {
             callId: event.callId,
             tool: event.tool,
+            server: event.server,
             arguments: event.arguments,
             status: "running",
             result: null,

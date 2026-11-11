@@ -4,6 +4,7 @@ import type { Response, Tool, Toolkit } from "effect/ai"
 import { v5 as uuidV5 } from "uuid"
 
 import { TextChunk, ToolEnd, ToolStart } from "@policyhuis/protocol/QuestionsApi"
+import type { ToolServer } from "@policyhuis/protocol/QuestionsApi"
 
 import { estimateNextPromptTokens, fits } from "./ContextBudget.ts"
 import { Failure, LoopFailure, modelFailure, retryClass } from "./Failures.ts"
@@ -46,9 +47,13 @@ const CONTEXT_LIMIT_NOTICE =
  */
 const callIdFor = (turnId: string, providerCallId: string) => uuidV5(providerCallId, turnId)
 
+/** The server a prefixed tool name belongs to, or null if none offers it. */
+export type ServerOf = (toolName: string) => ToolServer | null
+
 /** The events for one stream part that arrived at `at`, in the turn with UUID `turnId`. */
 const partEvents = <Tools extends Record<string, Tool.Any>>(
   turnId: string,
+  serverOf: ServerOf,
   part: Response.StreamPart<Tools, "opaque">,
   at: number
 ): ReadonlyArray<LoopEvent> => {
@@ -59,7 +64,7 @@ const partEvents = <Tools extends Record<string, Tool.Any>>(
       const callId = callIdFor(turnId, part.id)
       const args: unknown = part.params
       return [
-        ToolStart.make({ callId, tool: part.name, arguments: args }),
+        ToolStart.make({ callId, tool: part.name, server: serverOf(part.name), arguments: args }),
         new ToolCallStarted({ callId, providerCallId: part.id, tool: part.name, arguments: args, at })
       ]
     }
@@ -119,14 +124,14 @@ type TurnInput<Tools extends Record<string, Tool.Any>> =
 
 /** Adds one part to the turn, returning the events to send now; at the end, sends what the turn held back. */
 const advanceTurn =
-  (turnId: string, final: boolean) =>
+  (turnId: string, serverOf: ServerOf, final: boolean) =>
   <Tools extends Record<string, Tool.Any>>(
     state: TurnState,
     input: TurnInput<Tools>
   ): readonly [TurnState, ReadonlyArray<LoopEvent>] => {
     if (input._tag === "End") return [state, endTurn(state)]
     const parts = [...state.parts, input.part]
-    const events = partEvents(turnId, input.part, input.at)
+    const events = partEvents(turnId, serverOf, input.part, input.at)
     if (final) return [{ ...state, parts }, events]
     const calledTool = state.calledTool || events.some((event) => event._tag === "ToolStart")
     const text = events.filter((event) => event._tag === "TextChunk")
@@ -187,11 +192,13 @@ export const turnEnd = (
 
 /**
  * Answers one question: model turns with tools until the model answers or a limit is reached, as a stream of
- * `LoopEvent`s that always ends with `Finished` unless it is interrupted. The stream itself never fails.
+ * `LoopEvent`s that always ends with `Finished` unless it is interrupted. The stream itself never fails. `serverOf`
+ * names the server each tool call goes to, for its `ToolStart`.
  */
 export const runAgentLoop = <Tools extends Record<string, Tool.Any>>(
   initialPrompt: Prompt.Prompt,
   toolkit: Toolkit.WithHandler<Tools>,
+  serverOf: ServerOf,
   settings: LoopSettings
 ) =>
   Stream.unwrap(
@@ -239,7 +246,7 @@ export const runAgentLoop = <Tools extends Record<string, Tool.Any>>(
                 Effect.map(Clock.currentTimeMillis, (at): TurnInput<Tools> => ({ _tag: "Part", part, at }))
               ),
               Stream.concat(Stream.succeed<TurnInput<Tools>>({ _tag: "End" })),
-              Stream.mapAccum(() => EMPTY_TURN, advanceTurn(turnId, final)),
+              Stream.mapAccum(() => EMPTY_TURN, advanceTurn(turnId, serverOf, final)),
               Stream.tap((event) => (isBrowserEvent(event) ? Ref.set(reachedBrowser, true) : Effect.void)),
               Stream.catchCause((cause) =>
                 Stream.unwrap(

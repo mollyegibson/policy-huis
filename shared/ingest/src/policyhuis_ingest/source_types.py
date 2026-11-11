@@ -39,7 +39,8 @@ class PdfSource(BaseModel):
     A PDF's own metadata rarely names it, so `title` and `publisher` are declared, as printed in the document. The
     version is the date printed in it: `version_pattern` is a regular expression with one group capturing that date,
     which must match exactly once in the text (`^` and `$` match at each line), and `version_format` is the group's
-    `strptime` format.
+    `strptime` format. `raw_table` names the raw table its pages load into when several documents share one; each
+    load's document is then its manifest row's `source_key`.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -51,6 +52,7 @@ class PdfSource(BaseModel):
     version_pattern: str
     version_format: str
     format: Literal["pdf"]
+    raw_table: str | None = None
 
 
 type Source = SocrataSource | ArcGisLayerSource | PdfSource
@@ -96,6 +98,11 @@ def _utc_date(epoch_seconds: float) -> date:
 
 def _blank_to_none(value: object) -> str | None:
     return value.strip() or None if isinstance(value, str) else None
+
+
+def raw_table(source_key: str, source: Source) -> str:
+    """The raw table a source loads into: its own key, unless a PDF source names a shared table."""
+    return source.raw_table if isinstance(source, PdfSource) and source.raw_table is not None else source_key
 
 
 def pdf_pages(data: bytes) -> list[str]:

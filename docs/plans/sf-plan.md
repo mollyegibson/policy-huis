@@ -355,7 +355,7 @@ export const withDataErrors =
 
 ## Data server tools
 
-Fixed tools, each backed by a tested dbt model or query. Servers name tools without a prefix; the agent's directory file gives each server its prefix (`sf_`), and `McpClient.toolkit(client, prefix)` applies it, so the model sees `sf_development_pipeline_projects`. Phase 1 gives the model seven tools; Phase 2 adds two eviction tools and the legal-text server's two, for eleven, which spike S2 tests for tool selection.
+Fixed tools, each backed by a tested dbt model or query. Servers name tools without a prefix; the agent's directory file gives each server its prefix (`sf_`), and `McpClient.toolkit(client, prefix)` applies it, so the model sees `sf_development_pipeline_projects`. Phase 1 gives the model seven tools; Phase 2 adds two eviction tools and the legal-text server's three (`sf_law_search_policy`, `sf_law_get_provision`, `sf_law_list_provisions`), for twelve, which spike S2 tests for tool selection; S2 has not been run.
 
 | Tool (as the model sees it) | Phase | Answers | Errors |
 |---|---|---|---|
@@ -679,23 +679,50 @@ export const SfHousingToolkit = Toolkit.make(
 
 ### Legal-text tools (Phase 2)
 
-One codebase for every corpus; the San Francisco instance is prefixed `sf_` in the directory file. Each document is loaded in one version, so the tools take no date. Search is hybrid, as in the MVP plan: vector and keyword search over the same passages, combined by reciprocal rank fusion, which the Dutch corpus reuses.
+San Francisco's own server, `sf-legal-text` in the directory file, with the tool prefix `sf_law_` (`sf_law_search_policy`), beside `sf-housing`'s `sf_`. Each document is loaded in one version, so the tools take no date. Search is vector search with `qwen3-embedding:4b`, served locally by Ollama, as [spike S4](spikes/s4-embeddings.md#decision) decided: the MVP plan's hybrid search added nothing over vector search on Chapter 37 with any model tried, and S4 left keyword search for exact terms (section numbers, named acts) as an open question. When the embedding model cannot be reached, serves another build or returns an unusable vector, a search fails with `EmbeddingModelUnavailable` rather than falling back; `get_provision` and `list_provisions` do not need the model. Search is exact: it computes every search entry's distance to the query, which takes milliseconds at a few thousand entries and returns what S4 measured, where an HNSW index scan would return at most `hnsw.ef_search` entries (40 by default). With no limit given, it returns 10 provisions, the depth S4's threshold is set at. The server is built in [`san-francisco/legal-text-server/`](../../san-francisco/legal-text-server/README.md), beside `housing-server/`, and shares only the database with the passage pipeline: each has its own `config/search.yaml`, and the server checks at startup that its model build is the one stored with every search entry.
+
+**A provision often means little without its parent or its children.** 37.9(a)(8)(ii) ("For the use or occupancy of the landlords grandparents…") is a ground for eviction only because of the lead-ins of 37.9(a) and 37.9(a)(8) above it; 37.9(a) ("A landlord shall not endeavor to recover possession of a rental unit unless:") holds nothing until its 17 children. Search finds the right part of a document, and three things let the agent move from there to the provision that answers:
+
+- **Every passage carries its place in the tree.** Search results and `get_provision` return each passage with its `context` (the section heading and its ancestors' lead-ins), its `parentProvision` and its `childCount`, so a hit that is only a lead-in shows that its children hold the substance.
+- **`get_provision` returns a provision with its descendants**, each as its own passage with its own citation, so answers still quote and cite the exact subsection. A provision whose text with its descendants exceeds the server's limit (`subtree_chars` in `san-francisco/legal-text-server/config/search.yaml`, 10,000 characters, the size S4 tested) returns its own text and an outline of its children instead, and the agent asks for the child it needs. In Chapter 37, 10 of the 151 provisions with children are over the limit, among them 37.9(a), 37.7(c) and 37.2(r). The limit, not a depth parameter, bounds the result, so it fits the chat model's context and the model has no extra argument to get wrong.
+- **`list_provisions` browses a document:** its sections, or one provision's children, as an outline. A broad question ("What are the grounds for eviction?") is answered by listing 37.9(a)'s children rather than by hoping search ranks all 17.
+
+An outline lists each child's number, its summary (a section's heading, or the first sentence of any other provision's text) and its own number of children. The passage pipeline computes each passage's summary and stores it in `policy_text_sf.passages.summary` (migration 0002); the server builds outlines from the stored summaries, and the pipeline builds the outline search entries from the same column, so search and browsing summarize a provision the same way. Outlines are for navigation: each entry carries a citation quoting its summary, which is verbatim (a heading or a first sentence), so the agent can name what it listed; an answer about what a provision says quotes its full text from `get_provision` or search.
 
 ```ts
-// shared/legal-text/src/Tools.ts
+// san-francisco/legal-text-server/src/Tools.ts
 export class ProvisionNotFound extends Schema.TaggedError<ProvisionNotFound>()("ProvisionNotFound", {
   documentId: Schema.String,
   provision: Schema.String
 }) {}
 
+export class EmbeddingModelUnavailable extends Schema.TaggedError<EmbeddingModelUnavailable>()(
+  "EmbeddingModelUnavailable",
+  { model: Schema.String }
+) {}
+
 const DocumentId = Schema.String.annotate({ description: "A document ID, such as appears in search results" })
+const ProvisionNumber = Schema.String.annotate({
+  description: "A section or subsection number, such as appears in search results"
+})
 
 const Passage = Schema.Struct({
   documentId: Schema.String,
   provision: Schema.String,
-  heading: Schema.NullOr(Schema.String),
+  parentProvision: Schema.NullOr(Schema.String),
+  childCount: Schema.Int,
+  heading: Schema.String,
+  context: Schema.String.annotate({ description: "The section heading and the lead-in text of each provision above" }),
   text: Schema.String,
   versionDate: IsoDate
+})
+
+const OutlineEntry = Schema.Struct({
+  provision: Schema.String,
+  summary: Schema.String.annotate({
+    description: "The section's heading, or the first sentence of the provision's text; not for quoting"
+  }),
+  childCount: Schema.Int
 })
 
 export const SearchPolicy = Tool.make("search_policy", {
@@ -706,23 +733,42 @@ export const SearchPolicy = Tool.make("search_policy", {
     limit: OptionalParam(Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 10 }))))
   }),
   success: Schema.Struct({ passages: Schema.Array(Passage), citations: Citations }),
-  failure: Schema.Union([UnknownValue, ...DataErrors]),
+  failure: Schema.Union([UnknownValue, EmbeddingModelUnavailable, ...DataErrors]),
   failureMode: "return"
 })
 
 export const GetProvision = Tool.make("get_provision", {
-  description: "Return the full text of one section or subsection.",
-  parameters: Schema.Struct({
-    documentId: DocumentId,
-    provision: Schema.String.annotate({ description: "A section or subsection number, such as appears in search results" })
+  description:
+    "Return one section or subsection with all its subsections. A provision too long to return whole comes back " +
+    "with an outline of its subsections; ask for the one you need.",
+  parameters: Schema.Struct({ documentId: DocumentId, provision: ProvisionNumber }),
+  success: Schema.Struct({
+    passages: Schema.Array(Passage), // the provision, then its descendants in document order
+    outline: Schema.NullOr(Schema.Array(OutlineEntry)), // its children, when it is over the size limit
+    citations: Citations
   }),
-  success: Schema.Struct({ passages: Schema.Array(Passage), citations: Citations }),
   failure: Schema.Union([UnknownValue, ProvisionNotFound, ...DataErrors]),
   failureMode: "return"
 })
 
-export const LegalTextToolkit = Toolkit.make(SearchPolicy, GetProvision)
+export const ListProvisions = Tool.make("list_provisions", {
+  description:
+    "List a document's sections, or one provision's subsections, with a one-line summary of each. Use it to " +
+    "browse a document when a question asks for every rule of a kind, or when search finds nothing relevant.",
+  parameters: Schema.Struct({ documentId: DocumentId, provision: OptionalParam(ProvisionNumber) }),
+  success: Schema.Struct({
+    parent: Schema.NullOr(Passage), // the provision listed, or null for the document's sections
+    outline: Schema.Array(OutlineEntry),
+    citations: Citations
+  }),
+  failure: Schema.Union([UnknownValue, ProvisionNotFound, ...DataErrors]),
+  failureMode: "return"
+})
+
+export const LegalTextToolkit = Toolkit.make(SearchPolicy, GetProvision, ListProvisions)
 ```
+
+Whether the chat model uses `get_provision` and `list_provisions` well is measured end to end in the evaluation (P3.1), not by S4, which scores search alone.
 
 ## Database schemas
 
@@ -775,7 +821,7 @@ Each raw table has the same four columns: `load_id`, `row_number`, `record` (the
 | `raw_sf.air_pollutant_exposure_zone` | 1 | `t65d-x6p8` | geometry → `geom` |
 | `raw_sf.eviction_notices` | 2 | `5cei-gny5` | `eviction_id`, `file_date`, the 19 ground flags (`non_payment` … `good_samaritan_ends`, the dataset's true-or-false fields), `neighborhood`, `supervisor_district`, `shape` |
 | `raw_sf.eviction_report` | 2 | The annual eviction report PDF | One row per page: `page`, `text` |
-| `raw_sf.document_pages` (`sf-legal-text`) | 2 | Each ordinance, report and the Rent Ordinance PDF | `document_key`, `page_number`, `text` |
+| `raw_sf.document_pages` (`sf-legal-text`) | 2 | Each document PDF in `san-francisco/legal-text/config/sources.yaml`, which names this shared table (`raw_table`) | `page`, `text`; a row's document is its load's `source_key` in the manifest |
 | `raw_sf.ca_code_sections` (`sf-legal-text`) | 2 | Legislature bulk download | The section's code, number, heading, text and the bulk file's own version fields, named as in the bulk file |
 
 ### `sf` (dbt models)
@@ -817,17 +863,38 @@ CREATE TABLE policy_text_sf.passages (
     document_id       text NOT NULL REFERENCES policy_text_sf.documents,
     provision         text NOT NULL,        -- such as 37.9(a)(8)
     parent_provision  text,
-    heading           text,
+    heading           text NOT NULL,        -- the section's heading, such as "Sec. 37.9 Evictions"
     ordinal           integer NOT NULL,     -- order within the document
-    text              text NOT NULL,
-    tsv               tsvector GENERATED ALWAYS AS (to_tsvector('english', text)) STORED,
+    context           text NOT NULL,        -- the heading and the lead-in text of each provision above
+    text              text NOT NULL,        -- the provision's own text
+    summary           text NOT NULL,        -- the section's heading, or the first sentence of the text (0002)
+    tsv               tsvector GENERATED ALWAYS AS (to_tsvector('english', context || ' ' || text)) STORED,
     UNIQUE (document_id, provision)
 );
 
 CREATE INDEX passages_tsv ON policy_text_sf.passages USING gin (tsv);
+
+-- 0002
+CREATE TABLE policy_text_sf.search_entries (
+    entry_id        bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    document_id     text NOT NULL,
+    provision       text NOT NULL,
+    kind            text NOT NULL CHECK (kind IN ('own', 'subtree', 'outline')),
+    text            text NOT NULL,          -- the text embedded
+    embedding       halfvec(2560) NOT NULL, -- qwen3-embedding:4b's dimension; another model needs a new migration
+    embedding_model text NOT NULL,
+    FOREIGN KEY (document_id, provision) REFERENCES policy_text_sf.passages (document_id, provision),
+    UNIQUE (document_id, provision, kind)
+);
+
+CREATE INDEX search_entries_embedding ON policy_text_sf.search_entries USING hnsw (embedding halfvec_cosine_ops);
 ```
 
-**Embeddings come in a later migration.** A `halfvec` column needs a fixed dimension, which depends on the embedding model spike S4 chooses. That migration adds `embedding halfvec(<dimension>)`, `embedding_model text NOT NULL`, and an HNSW index with `halfvec_cosine_ops`. The server checks at startup that its configured embedding model matches the stored one.
+**A passage is searched with its context.** Chapter 37's provisions often make sense only with the lead-in above them: 37.9(a)(8) reads "The landlord seeks to recover possession in good faith…", and only 37.9(a) says this is a ground a landlord may evict on. Each passage stores its own `text`, which answers quote, and a `context` of its section heading and its ancestors' lead-in text, which search indexes with it, so a question about evicting for owner move-in finds 37.9(a)(8). Keyword search indexes the full context; each passage's `own` search entry embeds the section heading, the nearest ancestor's lead-in and the text.
+
+**Embeddings are on search entries, not passages** (migration 0002). Spike S4 chose `subtree` entries: one per passage (the section heading, its nearest ancestor's lead-in and its text) and one per provision with children (its descendants' text up to 10,000 characters, or an outline of its children above that). `search_entries` has an HNSW index, which the server's exact search does not use at this size; the passage pipeline derives the entries from `passages`, and a search ranks each provision by its best entry. `passages` keeps each provision's own text for quoting. The server checks at startup that its configured embedding model matches the stored one.
+
+**How embeddings are made** is set by [spike S4](spikes/s4-embeddings.md#findings-for-the-design): the pipeline and the server both call the same Ollama server and pinned model build over its HTTP API, every vector is checked for zeros and NaN, inputs are never truncated silently, and the model's context is capped to the longest passage. Ollama's context for the embedding model is 4,096 tokens, enough for the longest `subtree` entry.
 
 ## Ingestion for San Francisco
 
@@ -837,12 +904,23 @@ Python, in [`san-francisco/ingest/`](../../san-francisco/ingest/README.md), buil
 |---|---|---|---|---|
 | DataSF datasets | 1 (pipelines, zones, neighborhoods); 2 (evictions) | Each full export (CSV or GeoJSON) and the dataset's metadata (`/api/views/<id>.json`) | One `raw_sf` table per dataset; the metadata's name, attribution and description in `raw_sf.load_manifest` | Source version is the dataset's `rowsUpdatedAt` |
 | SFPUC flood map | 1 | GeoJSON export of the 2024 update's zone layer (layer 2) and the layer's JSON metadata | `raw_sf.sfpuc_100yr_storm` | Source version is the layer's edit date |
-| PDF documents (`kind: pdf` in `sources.yaml`) | 2 (the annual eviction report) | Each PDF, and a metadata file holding the PDF's own information record and the printed date matched | `raw_sf.<source key>`, one row per page of text extracted by pypdf | Title and publisher are declared as printed in the document, since PDFs rarely carry them. Source version is the date printed in the document: `version_pattern` must match it exactly once or the load fails. The legal-text corpus's loader (`raw_sf.document_pages`, P2.1) is to reuse this source type. |
+| PDF documents (`kind: pdf` in `sources.yaml`) | 2 (the annual eviction report in `sf-housing`; the corpus documents in `sf-legal-text`) | Each PDF, and a metadata file holding the PDF's own information record and the printed date matched | `raw_sf.<source key>`, or the shared table the source names with `raw_table` (`raw_sf.document_pages` for the corpus), one row per page of text extracted by pypdf | Title and publisher are declared as printed in the document, since PDFs rarely carry them. Source version is the date printed in the document: `version_pattern` must match it exactly once or the load fails. |
 | California statutes | 2 | The bulk database file | `raw_sf.ca_code_sections` | Only sections listed in the corpus file are loaded; source version is the bulk file's date |
 
 The dbt models are listed in [Database schemas](#sf-dbt-models).
 
 The passage pipeline (Phase 2) splits each law at its section headings and then at subsections ("Sec. 37.x" for Chapter 37; "SEC." headings in the ordinances), the California sections at section and subdivision, and reports at their headings, falling back to pages. Each passage keeps its provision or heading, version and source. The San Francisco corpus is English, so no translation step runs.
+
+The pipeline is in two parts: `shared/legal-text/pipeline/` splits a section into passages along its enumerated subsections and stores them, knowing no city; `san-francisco/legal-text/` holds the corpus (`config/sources.yaml` for fetching, `config/corpus.yaml` for each document's type and splitting rule), the `sf-legal-text` migrations and command, and the rules for each document's layout. `sf-legal-text ingest` loads the PDFs and `sf-legal-text passages` rebuilds each document's passages from its latest load.
+
+**Chapter 37, as the Rent Board's PDF gives it** (checked against the June 29, 2026 copy on November 9, 2026):
+
+- **Page furniture is removed:** the pleading-paper line numbers 1 to 28 down each page, the two-line "not an official record" notice on every page, and footers such as "37.9 – 1".
+- **Sections are checked against the contents page.** The contents page lists 27 sections; the body has a heading for each ("Sec. 37.9 Evictions.", or in capitals for 37.9F and 37.15). The rule fails if the headings differ from the contents, so a heading it misses cannot merge two sections silently. Section 37.14 holds two numbered parts, "Section 37.14A." and "Section 37.14B.", each lettered from (a); they become sections of their own.
+- **Subsections nest as the text numbers them:** (a), (1), (A), (i), and in 37.7 also (I) to (VI); a level can repeat a kind open higher up, as in 37.3(a)(5)(B)(vii)(1), which the ordinance itself cites. `(i)` is a letter after `(h)` and a Roman numeral otherwise. A line opening two levels ("(b) (1) For notices…" in 37.9B) is split. A marker followed by lowercase text is a wrapped cross-reference, not a subsection.
+- **Each section's bracketed amendment history** stays as the section's own passage, before its first subsection.
+- **One source error is kept, not corrected:** 37.3(d)(1) has two consecutive subsections lettered (B). The second fits no open level, so its text stays in the passage before it, 37.3(d)(1)(B)(ii).
+- **Result:** 727 passages, with every provision unique.
 
 ## How this extends to the Netherlands
 
@@ -850,7 +928,7 @@ The San Francisco build sets patterns that the Dutch product reuses unchanged:
 
 - **Stable source and citation IDs**, built from each citation's own fields, work unchanged for Dutch sources.
 - **Added when the Netherlands needs them:** a jurisdiction on citations and tool inputs (for a server covering several municipalities), and a language and machine-translation label on document citations. Both are additive.
-- **One legal-text codebase.** The Dutch corpus is another instance, with the translation step added to its passage pipeline.
+- **One passage pipeline.** The Dutch corpus is built by the same pipeline, with a translation step added; the Dutch legal-text server is its own, with tools fitted to Dutch documents, reusing San Francisco's where they fit.
 - **Data servers by source, with the place as a parameter**, rather than one server per city, once more than one place shares a source.
 - **The agent loop and API are place-independent.** Adding the Netherlands adds servers to the directory file.
 

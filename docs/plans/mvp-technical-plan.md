@@ -121,7 +121,7 @@ All servers are TypeScript, built with Effect's MCP server (`effect/ai/McpServer
 
 #### Legal-text server
 
-One codebase, run as one instance per corpus (SF and Amsterdam), configured with its corpus and database schema.
+One server per city, in the city's directory (`san-francisco/legal-text-server/`), reading its city's `policy_text_*` schema, since one city's documents may need tools another's do not. The Python passage pipeline in `shared/legal-text/pipeline/` is shared: it builds each city's passages and search entries.
 
 | Tool | Purpose |
 |---|---|
@@ -156,7 +156,7 @@ Translating at load time rather than per question:
 - removes translation latency and energy from every query;
 - lets the translation model be chosen for quality rather than speed, since it runs offline in batch;
 - makes every translation stored, reviewable and traceable to the model that produced it;
-- keeps the legal-text server one codebase, with only per-corpus config differing.
+- keeps translation out of the legal-text servers, which read only stored text.
 
 The costs are about 2 KB more storage per Amsterdam passage, and translating the new passages when a law version changes. Translation energy is a one-time cost, measured and reported separately from per-query energy.
 
@@ -307,8 +307,8 @@ protocol/                API between the backend and the browser app, including 
 shared/mcp-kit/          optional MCP server helpers: formats, tool errors, citation IDs
 shared/node-config/      TypeScript library: config files, .env and ConfigFileError, for every node
 shared/ingest/           Python library: fetch, archive and load sources; run dbt
-shared/legal-text/       legal-text MCP server and passage pipeline (one codebase, run per corpus)
-san-francisco/           sf-housing server, SF ingestion (sources, raw_sf migrations, dbt), SF legal-text corpus
+shared/legal-text/pipeline/  Python library: the passage pipeline every city's corpus uses
+san-francisco/           sf-housing and sf-legal-text servers, SF ingestion (sources, raw_sf migrations, dbt), SF legal-text corpus
 netherlands/             the Dutch nodes, same shape
 evaluation/              question set and expected answers
 docs/plans/              technical plans

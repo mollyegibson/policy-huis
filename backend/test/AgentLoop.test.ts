@@ -35,10 +35,13 @@ const SETTINGS: LoopSettings = {
   bytesPerToken: 4
 }
 
+const LOOKUP_SERVER = { name: "test-data", label: "Test", tool: "lookup" }
+const serverOf = (toolName: string) => (toolName === "lookup" ? LOOKUP_SERVER : null)
+
 const run = (script: ReadonlyArray<ScriptedTurn>, overrides: Partial<LoopSettings> = {}) =>
   Effect.gen(function* () {
     const toolkit = yield* TestToolkit
-    const events = yield* runAgentLoop(Prompt.make("question"), toolkit, { ...SETTINGS, ...overrides }).pipe(
+    const events = yield* runAgentLoop(Prompt.make("question"), toolkit, serverOf, { ...SETTINGS, ...overrides }).pipe(
       Stream.runCollect
     )
     const calls = yield* Ref.get(yield* ModelCalls)
@@ -79,6 +82,8 @@ describe("runAgentLoop", () => {
     Effect.gen(function* () {
       const { events, calls } = yield* run([lookup("c1", "k"), answer])
       expect(tags(events)).toEqual(["ToolStart", "ToolEnd", "TextChunk"])
+      const toolStart = events.find((event) => event._tag === "ToolStart")
+      expect(toolStart?.server).toEqual(LOOKUP_SERVER)
       expect(last(events).outcome).toBe("answered")
       const toolEnd = events.find((event) => event._tag === "ToolEnd")
       expect(toolEnd?.outcome).toBe("success")

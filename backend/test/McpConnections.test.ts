@@ -31,11 +31,16 @@ const RECONNECT = {
   reconnectMaxDelay: Duration.millis(200)
 }
 
-const entry = (name: string, prefix: string, url: string): ServerEntry => ({ name, prefix, url })
+const entry = (name: string, prefix: string, url: string): ServerEntry => ({
+  name,
+  label: name.toUpperCase(),
+  prefix,
+  url
+})
 
 /** Asks the scripted model to call `tool` with `word`, then answer, and returns the loop's `ToolEnd`. */
 const callThroughLoop = (tools: TurnTools, tool: string, word: string) =>
-  runAgentLoop(Prompt.make("question"), tools.toolkit, SETTINGS).pipe(
+  runAgentLoop(Prompt.make("question"), tools.toolkit, tools.serverOf, SETTINGS).pipe(
     Stream.runCollect,
     Effect.map((events) => Array.from(events).find((event) => event._tag === "ToolEnd")),
     Effect.provide(
@@ -67,7 +72,7 @@ describe("MCP connections", () => {
         const tools = turnTools(yield* connections.current)
         expect(Object.keys(tools.toolkit.tools).sort()).toEqual(["a_echo", "b_echo"])
         expect(tools.unavailable).toEqual([])
-        expect(tools.serverOf("b_echo")).toBe("b-data")
+        expect(tools.serverOf("b_echo")).toEqual({ name: "b-data", label: "B-DATA", tool: "echo" })
 
         const end = yield* callThroughLoop(tools, "b_echo", "hello")
         expect(end?.outcome).toBe("success")
@@ -115,6 +120,26 @@ describe("MCP connections", () => {
         expect(after.unavailable).toEqual([])
         expect(Object.keys(after.toolkit.tools)).toEqual(["a_echo"])
         yield* server.stop
+      }).pipe(Effect.scoped, Effect.provide(FetchHttpClient.layer)),
+    30_000
+  )
+
+  it.live(
+    "offers a tool name two servers share by neither, and reports it",
+    () =>
+      Effect.gen(function* () {
+        const a = yield* startTestServer(0)
+        const b = yield* startTestServer(0)
+        const connections = yield* makeConnections(
+          [entry("a-data", "x_", a.url), entry("b-data", "x_", b.url)],
+          RECONNECT
+        )
+        const tools = turnTools(yield* connections.current)
+        expect(Object.keys(tools.toolkit.tools)).toEqual([])
+        expect(tools.serverOf("x_echo")).toBeNull()
+        expect(tools.collisions).toEqual([{ tool: "x_echo", servers: ["a-data", "b-data"] }])
+        yield* a.stop
+        yield* b.stop
       }).pipe(Effect.scoped, Effect.provide(FetchHttpClient.layer)),
     30_000
   )

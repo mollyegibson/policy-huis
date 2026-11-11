@@ -42,7 +42,7 @@ The design follows the reference project's browser app (`browser-sdk-internal`) 
 | An `Atom.fn` writes to a separate state atom through the registry, guarded by a `streamGeneration` counter so a stale stream cannot write | The atom function returns a stream of states (`Stream.scan(() => initialState, reduce)`), so its value is the latest state; asking again interrupts the previous run | One question at a time and no threads, so there is no stale stream to guard against. In Effect 4, writing a new argument to an `Atom.fn` interrupts the computation it replaces, and `Atom.Interrupt` cancels it |
 | `@effect-atom/atom-react` on Effect 3 | `effect/reactivity` and `@effect/atom-react` on Effect 4 | The atoms moved into Effect 4 |
 | `ToolsUsed`: a "Used N tools" toggle once the message is committed | A live list while the agent works, collapsing to "Used N tools" when the answer is complete | Shows progress during the 10 to 60 seconds an answer can take |
-| `humanizeToolName` strips the provider prefix | Humanizes the name but keeps the server prefix as a tag (`SF · Development pipeline summary`) | A tool from the wrong city's server stands out |
+| `humanizeToolName` strips the provider prefix | Tags the call with its server's label, which the backend sends in `ToolStart`, and humanizes the tool's own name (`SF Housing · Development pipeline summary`) | A tool from the wrong city's server stands out, and the browser never parses prefixes |
 | A private Markdown component | `react-markdown`, with citation markers turned into links before parsing | The private component is not available |
 | Client-side tools, approvals, interrupts, threads, artifacts, generated UI, auth, analytics | None | Not part of this app |
 
@@ -83,6 +83,8 @@ export type ToolCallStatus = "running" | "done" | "failed" | "unfinished"
 export interface ToolCallView {
   readonly callId: string
   readonly tool: string
+  /** The server the call went to, as the backend named it; null when no server offered the tool. */
+  readonly server: ToolServer | null
   readonly arguments: unknown
   readonly status: ToolCallStatus
   /** The tool's `structuredContent`; null until it succeeds. */
@@ -123,7 +125,15 @@ export const reduce = (state: QuestionState, event: AgentStreamEvent): QuestionS
         ...state,
         toolCalls: [
           ...state.toolCalls,
-          { callId: event.callId, tool: event.tool, arguments: event.arguments, status: "running", result: null, error: null }
+          {
+            callId: event.callId,
+            tool: event.tool,
+            server: event.server,
+            arguments: event.arguments,
+            status: "running",
+            result: null,
+            error: null
+          }
         ]
       }
     case "ToolEnd": {
@@ -272,22 +282,20 @@ A question can make several tool calls in each of up to `maxSteps` steps. While 
 | `failed` | Label and a failed mark | Tool name, arguments, and the error type (for example `UnknownValue`) |
 | `unfinished` | Label and "did not finish" | Tool name and arguments |
 
-- **Labels** keep the server prefix as a tag, so a call to the wrong city's server is visible: `sf_development_pipeline_summary` shows as "SF · Development pipeline summary". The full tool name appears when the row is expanded.
+- **Labels** tag each call with the label of the server the backend routed it to, so a call to the wrong city's server is visible: `sf_development_pipeline_summary` on `sf-housing` shows as "SF Housing · Development pipeline summary", and `sf_law_search_policy` on `sf-legal-text` as "SF Law · Search policy". A call no server offered has no tag. The full tool name appears when the row is expanded.
 - **Order** is the order of `ToolStart` events. Calls from the same turn run at once, and each `ToolEnd` updates its own row by `callId`.
 - **Size:** results are formatted JSON in a scrolling block with a fixed maximum height, like the reference app's argument view; a list result holds at most what the server returns (`sf-housing` returns up to 50 projects).
 
 ```ts
 // src/questions/toolLabels.ts
-/** "sf_development_pipeline_summary" → { tag: "SF", name: "Development pipeline summary" }. */
-export const toolLabel = (tool: string): { readonly tag: string | null; readonly name: string } => {
-  const match = /^([a-z][a-z0-9]*)_(.+)$/.exec(tool)
-  const [tag, rest] = match === null ? [null, tool] : [match[1].toUpperCase(), match[2]]
-  const words = rest.replace(/_/g, " ")
-  return { tag, name: words.charAt(0).toUpperCase() + words.slice(1) }
+/** { tag: "SF Housing", name: "Development pipeline summary" } for `development_pipeline_summary` on `sf-housing`. */
+export const toolLabel = (tool: string, server: ToolServer | null): ToolLabel => {
+  const words = (server?.tool ?? tool).replace(/_/g, " ")
+  return { tag: server?.label ?? null, name: words.charAt(0).toUpperCase() + words.slice(1) }
 }
 ```
 
-The prefix rule matches the server directory's, so every prefix the backend can send splits the same way.
+Labels come from `backend/config/servers.yaml` through `ToolStart.server`; the browser never splits a tool name, so a prefix of several words (`sf_law_`) labels correctly.
 
 ## Citations
 
@@ -374,7 +382,7 @@ Pure modules carry the logic, so most tests need no browser:
 - **Notices:** which notice each result shows, including Stop (an interruption) as "Stopped." rather than the offline notice.
 - **`reduce`:** recorded event sequences: tool calls that succeed, fail and never finish; calls finishing out of order; text arriving after every tool call, in one chunk and in several; every `Complete` outcome; unavailable servers; a result whose citations fail to decode.
 - **`linkCitations` and `sourceNumbers`:** markers for known and unknown IDs; several markers for one source; a marker followed by `(`; a marker cut off mid-stream.
-- **`toolLabel`:** prefixed and unprefixed names.
+- **`toolLabel`:** a call with its server, and a call no server offered.
 - **Decoding:** the recorded event sequences are decoded with `AgentStreamEvent`, so a backend change that breaks the contract fails these tests.
 
 `Answer` is tested by rendering it with `react-dom/server`: a Markdown table becomes a table with citation chips in its cells. Other component tests (for example, that rows collapse when `Complete` arrives) are added if the components grow logic of their own.

@@ -37,7 +37,7 @@ const JsonBlock = ({ value }: { readonly value: unknown }) => (
 /** One tool call: its label and status, expanding to its name, arguments and result or error type. */
 export const ToolCallRow = ({ call }: { readonly call: ToolCallView }) => {
   const { open, toggle } = useDisclosure()
-  const { tag, name } = toolLabel(call.tool)
+  const { tag, name } = toolLabel(call.tool, call.server)
   return (
     <Box>
       <Stack

@@ -94,7 +94,7 @@ A bounded context is a boundary within which a term means exactly one thing. Our
 | Context | Language | Writes | Reads | Published contract |
 |---|---|---|---|---|
 | **Ingestion** (`shared/ingest/`, each city's `ingest/`) | Python, dbt | `raw_sf`, `sf`, `policy_text_sf` and the Dutch equivalents | Public sources | The city data and passage schemas |
-| **Legal-text server** (`shared/legal-text/`, one instance per corpus) | TypeScript, Effect | Nothing | Its corpus's `policy_text_*` schema | Its MCP tools |
+| **Legal-text servers** (`san-francisco/legal-text-server/`, and the Dutch one) | TypeScript, Effect | Nothing | Its city's `policy_text_*` schema | Its MCP tools |
 | **City data servers** (`san-francisco/housing-server/`, and the Dutch servers) | TypeScript, Effect | Nothing | Its city's schema (`sf`) | Its MCP tools |
 | **Backend** (`backend/`) | TypeScript, Effect | `app` | MCP tools only | The backend API |
 | **Evaluation** (`evaluation/`) | YAML, Python | Results through the backend | `app` | The question-set file format |

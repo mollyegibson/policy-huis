@@ -27,10 +27,15 @@ export const datasetCitation = (queryKey: string) => ({
 export const QUERY_1 = "3f9a1c0e7b2d4a6f"
 export const QUERY_2 = "0123456789abcdef"
 
-export const toolStart = (callId: string, tool = "sf_development_pipeline_summary") => ({
+export const toolStart = (
+  callId: string,
+  tool = "sf_development_pipeline_summary",
+  server: unknown = { name: "sf-housing", label: "SF Housing", tool: tool.replace(/^sf_/, "") }
+) => ({
   _tag: "ToolStart",
   callId,
   tool,
+  server,
   arguments: { groupBy: "status" }
 })
 

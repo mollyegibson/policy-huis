@@ -1482,9 +1482,37 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@policyhuis/scripts@workspace:scripts":
+  version: 0.0.0-use.local
+  resolution: "@policyhuis/scripts@workspace:scripts"
+  dependencies:
+    "@types/node": "npm:26.6.6"
+    effect: "npm:4.1.2"
+    typescript: "npm:5.9.3"
+  languageName: unknown
+  linkType: soft
+
 "@policyhuis/sf-housing-server@workspace:san-francisco/housing-server":
   version: 0.0.0-use.local
   resolution: "@policyhuis/sf-housing-server@workspace:san-francisco/housing-server"
+  dependencies:
+    "@effect/platform-node": "npm:4.1.2"
+    "@effect/sql-pg": "npm:4.1.2"
+    "@effect/vitest": "npm:4.1.2"
+    "@policyhuis/mcp-kit": "workspace:*"
+    "@policyhuis/node-config": "workspace:*"
+    "@policyhuis/protocol": "workspace:*"
+    "@testcontainers/postgresql": "npm:12.2.1"
+    "@types/node": "npm:26.6.6"
+    effect: "npm:4.1.2"
+    typescript: "npm:5.9.3"
+    vitest: "npm:5.1.0"
+  languageName: unknown
+  linkType: soft
+
+"@policyhuis/sf-legal-text-server@workspace:san-francisco/legal-text-server":
+  version: 0.0.0-use.local
+  resolution: "@policyhuis/sf-legal-text-server@workspace:san-francisco/legal-text-server"
   dependencies:
     "@effect/platform-node": "npm:4.1.2"
     "@effect/sql-pg": "npm:4.1.2"
