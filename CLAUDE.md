@@ -41,7 +41,7 @@ Never commit secrets. Credentials live only in a gitignored `.env`; never write 
 Every number, label, passage and coordinate in the database must be reproducible from the repo. Data reaches it in exactly two ways:
 
 1. **Raw data from a source**, fetched by a loader, with the downloaded file archived in object storage with its hash and the load recorded in the manifest.
-2. **A transformation in checked-in code**: a dbt model or macro, or Python code under `shared/ingest/` or a city's `ingest/` (passage splitting, translation, embeddings).
+2. **A transformation in checked-in code**: a dbt model or macro, or Python code under `shared/ingest/` or a city's `ingest/` projects (passage splitting, translation, embeddings).
 
 Never write data by hand, and never from a one-off query or a scratch script:
 
@@ -83,31 +83,31 @@ PolicyHuis is a monorepo: a single agent that answers housing-policy questions f
 |---|---|---|
 | `backend/` | TypeScript | The backend: the question API and the agent loop |
 | `browser-app/` | TypeScript, React | Web app: asks questions and shows streamed, cited answers |
-| `protocol/` | TypeScript | The API between the backend and the browser app, including the citation schema the browser renders |
-| `shared/mcp-kit/` | TypeScript | Optional helpers for MCP servers: formats, the tool errors (`UnknownValue`, `DatabaseUnavailable`, `DataUnavailable`) and the mapping of database failures to them, citation ID construction |
-| `shared/node-config/` | TypeScript | Library every TypeScript node uses to read its configuration: YAML files decoded with a `Schema`, the `.env`-first provider, and `ConfigFileError` for anything missing |
+| `protocol/` | TypeScript | The API between the backend and the browser app: the question endpoint, its streamed events and the citation schema the browser renders |
+| `shared/node-config/` | TypeScript | Library every TypeScript node uses to read its configuration: YAML files decoded with a `Schema`, the `.env`-first provider and its `load`, and `ConfigFileError` for anything missing |
 | `shared/ingest/` | Python (uv), dbt | Library: fetch, archive and load public sources into a raw schema; shared dbt macros; run dbt |
-| `shared/legal-text/pipeline/` | Python (uv) | Library: the passage pipeline that splits, summarizes, embeds and stores a corpus's passages and search entries |
-| `san-francisco/housing-server/` | TypeScript | The `sf-housing` MCP server: San Francisco's housing pipeline and climate-zone tools |
-| `san-francisco/ingest/` | Python (uv), dbt | San Francisco's `sources.yaml`, `raw_sf` migrations and `sf` dbt models |
-| `san-francisco/legal-text/` | Python (uv), YAML | San Francisco's corpus, its passage rules, the `raw_sf` and `policy_text_sf` migrations and the `sf-legal-text` command |
-| `san-francisco/legal-text-server/` | TypeScript | The `sf-legal-text` MCP server: search, provisions and outlines over `policy_text_sf` |
+| `san-francisco/ingest/data/` | Python (uv), dbt | San Francisco's data sources, the `raw_sf_data` migrations, the `sf_data` dbt models and the `sf-data-ingest` command |
+| `san-francisco/ingest/documents/` | Python (uv), YAML | San Francisco's documents, the passage pipeline and its rules for each document, the `raw_sf_docs` and `sf_docs` migrations and the `sf-docs-ingest` command |
+| `san-francisco/mcp-servers/data/` | TypeScript | The `sf-data` MCP server: San Francisco's housing pipeline, climate-zone and eviction tools over `sf_data` |
+| `san-francisco/mcp-servers/documents/` | TypeScript | The `sf-docs` MCP server: search, provisions and outlines over `sf_docs` |
 | `netherlands/` | | The Dutch nodes, in the same shape |
 | `evaluation/` | YAML / Markdown | Question set and expected answers |
 | `scripts/` | TypeScript | Repo tooling: `yarn dev` and its `--include <group>` selection of each city's servers |
-
-**Each node runs on its own device.** Shared code is a library each node installs (a uv path dependency with its own lockfile, or a yarn workspace package), never a service a node calls. A city project depends on `shared/`; `shared/` never depends on a city, and no city depends on another.
 | `docs/plans/` | Markdown | Technical designs. Read the relevant plan before changing a component. |
 
-Contexts communicate through published contracts (database schemas, MCP tools and their results, the backend API), never by importing each other's code. MCP servers share nothing with the backend but MCP itself; `protocol/` is shared only by the backend and the browser app, and holds only schemas. No MCP server reads another server's schema. See [Domain-Driven Design](./docs/domain-driven-design.md).
+**Code is organized by deployable unit, then by domain.** Each city has ingestion projects, which run as scheduled jobs with write access to their schemas, and MCP servers, which run as long-lived services with read-only roles; the two are never deployed together. A server and the ingestion project that builds its schema share a short name (`sf_data`, `sf_docs`) in every identifier: server, tool prefix, citation namespace, schemas, reader role, environment variables, packages.
 
-## Python (`shared/ingest/`, `*/ingest/`)
+**Shared code is plumbing, never a contract.** A library under `shared/` does work several nodes need done the same way (reading configuration, fetching and loading sources), installed as a uv path dependency or a yarn workspace package, never a service a node calls. It never defines what one context publishes to another: tool errors, citation shapes and tool results are conventions, documented in the plans, that each node implements in its own code and tests against. A city project depends on `shared/`; `shared/` never depends on a city, and no city depends on another.
+
+Contexts communicate through published contracts (database schemas, MCP tools and their results, the backend API), never by importing each other's code. MCP servers share nothing with the backend but MCP itself and the conventions their results follow; `protocol/` is shared only by the backend and the browser app, and holds only schemas. No MCP server reads another server's schema. See [Domain-Driven Design](./docs/domain-driven-design.md).
+
+## Python (`shared/ingest/`, `*/ingest/*/`)
 
 - Manage dependencies with `uv` (`uv sync`, `uv run …`, `uv add …`). Never `pip install` into the project.
 - Lint and format with `ruff`; test with `pytest`. Run `uv run ruff check . && uv run ruff format --check . && uv run pytest` before finishing a change.
 - Integration tests run against a throwaway Postgres testcontainer started for each test session; they need Docker running. Never run them against a real database: they reset the schema.
-- Settings are read from the project's own `.env` (for example `san-francisco/ingest/.env`), which takes priority over the shell, so other projects' variables (`DATABASE_URL`, `AWS_PROFILE`) can't leak in. Object storage uses only the project's own settings, never ambient AWS configuration.
-- Migrations for the `raw_*` and `policy_text_*` schemas are Alembic with raw SQL, sequential ids (`uv run alembic revision -m "…" --rev-id 0005`) and are append-only once applied. Only the database owner runs them.
+- Settings are read from the project's own `.env` (for example `san-francisco/ingest/data/.env`), which takes priority over the shell, so other projects' variables (`DATABASE_URL`, `AWS_PROFILE`) can't leak in. Object storage uses only the project's own settings, never ambient AWS configuration.
+- Migrations for the raw and documents schemas (`raw_sf_data`, `raw_sf_docs`, `sf_docs`) are Alembic with raw SQL, sequential ids (`uv run alembic revision -m "…" --rev-id 0005`) and are append-only once applied. Only the database owner runs them. Applied migrations were deleted once, in the [restructure](./docs/plans/restructure.md), because every database they had run on was replaced; that is the only case in which an applied migration may be removed.
 - Loaders archive each downloaded file, then parse the archived copy into `raw_*`, writing the manifest row and data rows in one transaction. Row filters (such as filtering a nationwide dataset to one city) live in the city's `config/sources.yaml` and are recorded in the manifest.
 
 ## TypeScript (`backend/`, `browser-app/`, `protocol/`, `shared/`, city servers)
@@ -117,9 +117,10 @@ Contexts communicate through published contracts (database schemas, MCP tools an
 - **Never edit `yarn.lock` by hand**, and never hand-edit dependencies in a `package.json`: add, remove and upgrade them with `yarn add` / `yarn remove` / `yarn up` (`yarn workspace <name> add <pkg>@<version>` for one workspace), and let Yarn write the lockfile.
 - TypeScript runs directly on Node's type stripping (`node src/main.ts`), so use only erasable syntax (no enums, namespaces or parameter properties); `tsc` only typechecks.
 - Import `@effect/platform-node` modules by path (`@effect/platform-node/NodeRuntime`): its index also loads the Redis module, which needs the optional `redis` package.
-- Server tests run against a throwaway PostGIS container (`imresamu/postgis:17-3.5`), so Docker must be running. The legal-text projects use `imresamu/postgis:17-3.5-bundle0-bookworm`, which adds pgvector for the search entries' embeddings.
+- Server tests run against a throwaway PostGIS container (`imresamu/postgis:17-3.5`), so Docker must be running. The documents projects use `imresamu/postgis:17-3.5-bundle0-bookworm`, which adds pgvector for the search entries' embeddings.
 - Use Effect 4 (`effect` 4.x, AI modules under `effect/ai`). Model access goes through a config layer, not conditional imports.
 - Validate with Effect `Schema`, not Zod.
+- Read environment variables only in the node's one configuration module (`backend/src/config/BackendConfig.ts`, `src/<Node>ServerConfig.ts` in each MCP server), as `Context.Service` groups read once at startup; never `process.env` or `Config.String(…)` elsewhere. See [Effect Style § 13](./docs/effect-style.md#13-read-the-environment-through-one-configuration-module).
 - The `app` schema is defined with Drizzle in `backend/src/db/schema.ts`. Run `yarn workspace @policyhuis/backend db:generate` after changing it, which writes a SQL migration to `backend/drizzle/`; the backend applies pending migrations at startup. Applied migrations never change. **Never write or edit a Drizzle migration by hand**: every migration is exactly what `drizzle-kit generate` writes. If a generated migration cannot run (for example, a column type change Postgres cannot apply), stop and ask; the fix is to delete the unapplied migration, change `schema.ts`, and have the database owner drop and recreate the schema, never custom SQL.
 
 # Information Source Hierarchy
@@ -144,6 +145,7 @@ When guidance conflicts, higher sources win:
 - [Browser App Plan](./docs/plans/browser-app.md): the browser app's Phase 1 prototype: the streamed answer, tool calls and citations, shared by every city
 - [Netherlands Ingestion and Tools Plan](./docs/plans/netherlands-ingestion.md): loading the Dutch sources and designing the Dutch data server's tools
 - [Provisional Questions](./docs/plans/provisional-questions.md): the draft question set, pending confirmation from the research team
+- [Restructuring Plan](./docs/plans/restructure.md): the layout by deployable unit, the `sf-data` and `sf-docs` names, and the citation and lookup contracts
 
 # Contributing
 

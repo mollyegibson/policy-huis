@@ -11,11 +11,12 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | **Question** | One request from a user, answered on its own. Requests are stateless: there is no conversation memory. |
 | **Answer** | The agent's reply to a question, in English and plain language, streamed to the caller with its citations. |
 | **Claim** | One statement in an answer. Every claim has at least one citation. |
-| **Citation** | The object behind a claim: source, title, provision or table, version or effective date, source URL, language, and its source and citation IDs. Its schema is in `protocol/`; only tools produce citations, and the browser app shows them. |
-| **Source ID** | A citation's stable name for one version of its source: `<documentId>@<versionDate>` or `<datasetKey>@<sourceVersion>`. Citations of the same dataset or document version share it. |
-| **Citation ID** | A citation's stable name for the part of the source a claim rests on: the source ID plus a provision or a query key. The model marks claims with it. |
+| **Citation** | The object behind a claim: its citation and source IDs, the source's title, publisher, URL and version, and optionally a locator and a quote. Servers produce citations by the citation convention (see [Domain-Driven Design](./domain-driven-design.md#conventions-between-servers-and-the-backend)), each with its own schema; the backend reads them and sends them to the browser app in `Sources`, whose schema is in `protocol/`. |
+| **Source ID** | A citation's stable name for one version of its source: `<namespace>.<key>@<version>`, where the namespace is the server's short name (`sf_docs.rent_ordinance@2026-06-29`). Citations of the same dataset or document version share it. |
+| **Citation ID** | A citation's stable name for the part of the source a claim rests on: the source ID, `#`, and a part the server chooses, such as a provision or a query key. The model marks claims with it. |
+| **Locator** | A citation's description, in words, of which part of the source it used: a provision ("Sec. 37.9(a)(8)") or the data selected ("Planning pipeline projects, with status BP Filed"). Built from the source's fields and the tool's parameters only. |
 | **Decline** | An answer that does not give what was asked, says why, and points to the right body (the San Francisco Rent Board or the Huurcommissie) or to the missing data. Used for legal advice, causal conclusions and questions the data can't answer. |
-| **Question type** | One of Rule (legal-text server only), Ground (data server only), Rule + data (both), Climate, Cross-city (both cities' servers) and Decline. |
+| **Question type** | One of Rule (docs server only), Ground (data server only), Rule + data (both), Climate, Cross-city (both cities' servers) and Decline. |
 | **Rule-plus-data pair** | A provision and a dataset that answer questions about it together, e.g. Chapter 37 of the SF Administrative Code with the Eviction Notices dataset. Each city's first pair is loaded in full before other sources. |
 
 ## Agent and servers
@@ -25,14 +26,17 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | **Agent** | The one reasoning loop that answers a question: it calls the model, calls tools and assembles the answer. There is one agent, not one per city. |
 | **Backend** | The TypeScript service that is both the question API and the agent loop (`backend/`). |
 | **MCP server** | An independent server exposing tools over the Model Context Protocol. A server's specialization is its data and tools, not its model. |
-| **Legal-text server** | The MCP server for a city's laws, ordinances and policy documents, one per city (`sf-legal-text`). A shared passage pipeline builds each city's corpus. |
-| **Data server** | The MCP server for one city's housing, demographic and climate data (`sf-housing` for San Francisco). |
+| **Docs server** | The MCP server for a city's laws, ordinances, reports and reference documents, one per city (`sf-docs`). Its city's documents ingestion builds its corpus. |
+| **Data server** | The MCP server for one city's housing, demographic and climate data (`sf-data` for San Francisco). |
+| **Short name** | The name a server and the ingestion project that builds its schema share in every identifier: `sf_data`, `sf_docs`. It is the server's tool prefix and citation namespace, and names its schemas, reader role, environment variables and packages. |
+| **Ingestion project** | A Python project that loads sources into one node's schemas, run as a scheduled job with write access (`san-francisco/ingest/data/`, `san-francisco/ingest/documents/`). Never deployed with the server that reads its schema. |
 | **Tool** | One operation an MCP server exposes, with an input and output schema. |
-| **Tool prefix** | The server's prefix on every tool name (e.g. `sf_`, `ams_data_`), so the model can tell same-purpose tools apart across cities. |
-| **Tool error** | A typed failure returned as a tool's result (e.g. no data for that period), not a transport failure. Every server that reads a database can return **`DatabaseUnavailable`** (it could not connect or log in) and **`DataUnavailable`** (it reached the database, but the data the tool reads is not loaded or could not be read). |
-| **Call ID** | The UUID the backend gives each tool call, sent to the browser and used as the call's key in the trace. The model's provider has its own ID for the call (the provider call ID), which the trace keeps but which need not be unique. |
+| **Tool prefix** | The server's prefix on every tool name (e.g. `sf_data_`, `sf_docs_`), so the model can tell same-purpose tools apart across cities. |
+| **Tool error** | A typed failure returned as a tool's result (e.g. no data for that period), not a transport failure. Every server that reads a database can return **`DatabaseUnavailable`** (it could not connect or log in; the backend treats the server as unavailable) and **`DataUnavailable`** (it reached the database, but the data the tool reads is not loaded or could not be read). |
+| **Lookup** | The agent consulting a server: one tool call, as the browser app shows it, with its source's label, the tool's title and its outcome (`succeeded`, `failed` or `unavailable`). Streamed as `LookupStarted` and `LookupEnded`. Not to be confused with a step, which is a model turn. |
+| **Call ID** | The UUID the backend gives each tool call, sent to the browser as the lookup ID and used as the call's key in the trace. The model's provider has its own ID for the call (the provider call ID), which the trace keeps but which need not be unique. |
 | **Directory file** | The file in the repo listing each server's name, address, owner and tool prefix (`backend/config/servers.yaml`, decoded as `ServerDirectory`). The agent connects to every server it lists. |
-| **Unavailable server** | A server in the directory file that the agent could not reach for a question: never connected, so its tools were left out, or a call to it failed in transport. The answer names it, and may be missing its data. |
+| **Unavailable server** | A server in the directory file that the agent could not reach for a question: never connected, so its tools were left out, or a call to it failed in transport or with `DatabaseUnavailable`. The answer names it, and may be missing its data. |
 | **Step** | One model turn with tools and the resolution of the tool calls it makes; one `LanguageModel.streamText` call. A question takes at most `maxSteps` steps. |
 | **Final turn** | The model turn without tools that answers from what was gathered when a limit is reached (the step limit or the context budget). |
 | **Narration** | Text a model writes in a turn that also calls a tool ("Let me look that up"). It stays in the prompt but is never sent to the browser. |
@@ -46,7 +50,7 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 
 | Term | Meaning |
 |---|---|
-| **Corpus** | The set of documents one legal-text server instance searches: one per city. Corpus membership is declared in the city's `legal-text/` config. |
+| **Corpus** | The set of documents one docs server searches: one per city. Corpus membership, with each document's description, is declared in the city's documents ingestion config (`san-francisco/ingest/documents/config/corpus.yaml`); the docs server lists the corpus in its tool descriptions. |
 | **Document** | One law, ordinance or policy document in a corpus, e.g. the Huisvestingsverordening Amsterdam 2024. |
 | **Version** | One edition of a document, with its effective date. A citation names the version a rule applies to. |
 | **Effective date** | The date a version takes legal effect. Not the publication or fetch date. |
@@ -56,10 +60,10 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | **Outline** | A list of a document's sections or of one provision's children, each with its number, a one-line summary (a section's heading, or a provision's first sentence) and its number of children. Returned by `list_provisions`, and by `get_provision` for a provision too long to return whole. For navigation, never quoted. |
 | **Original text** | A passage's text in its source language (`text_nl` for Amsterdam). Citations quote it. |
 | **Machine translation** | The stored English translation of a Dutch passage (`text_en`), with the translation model's identifier. Always labeled as machine translation when shown. |
-| **Hybrid search** | Vector search and keyword search run over the same passages, with their rankings combined by RRF. |
+| **Hybrid search** | Vector search and keyword search run over the same passages, with their rankings combined by RRF. Spike S4 found it added nothing over vector search on Chapter 37, so `sf-docs` uses vector search. |
 | **RRF** | Reciprocal rank fusion: each passage scores the sum of `1 / (k + rank)` over the searches that found it, with `k = 60`. Ties are broken by vector distance. |
 | **Identifier search** | An optional keyword search over the Dutch original with the `simple` configuration, for exact identifiers. Kept only if spike S3 shows it adds value. |
-| **Embedding model** | The one model both the passage pipeline and the legal-text server use to embed text. Its identifier is stored with every embedding. |
+| **Embedding model** | The one model both the passage pipeline and the docs server use to embed text. Its identifier is stored with every embedding. |
 
 ## Data platform
 
@@ -74,7 +78,7 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | **Snapshot** | One quarter of San Francisco's development pipeline as Planning published it (e.g. "2026 Q2"). Every snapshot loaded is kept; a tool answers from the latest, read once per call, and counts days in a status to the snapshot's source version. |
 | **Query key** | The first 16 hex characters of the SHA-256 of a tool name and its parameters as canonical JSON; the part of a dataset citation's ID that names the query, so the same query always has the same citation ID. |
 | **Filter** | Rows dropped as a load is parsed, such as a nationwide dataset filtered to one city. Set in the city's `config/sources.yaml` and recorded in the manifest. |
-| **raw_* / sf, ams / policy_text_* / app** | The database schemas: data as fetched per city; dbt models each data server reads; passages each legal-text server reads; agent traces and evaluation results. |
+| **raw_sf_data, raw_sf_docs / sf_data / sf_docs / app** | The database schemas: sources as fetched, per node; the dbt models the data server reads; the passages the docs server reads; agent traces and evaluation results. The Dutch nodes follow the same pattern. |
 
 ## Evaluation and energy
 

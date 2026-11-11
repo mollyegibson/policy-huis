@@ -1443,19 +1443,6 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@policyhuis/mcp-kit@workspace:*, @policyhuis/mcp-kit@workspace:shared/mcp-kit":
-  version: 0.0.0-use.local
-  resolution: "@policyhuis/mcp-kit@workspace:shared/mcp-kit"
-  dependencies:
-    "@effect/vitest": "npm:4.1.2"
-    "@policyhuis/protocol": "workspace:*"
-    "@types/node": "npm:26.6.6"
-    effect: "npm:4.1.2"
-    typescript: "npm:5.9.3"
-    vitest: "npm:5.1.0"
-  languageName: unknown
-  linkType: soft
-
 "@policyhuis/node-config@workspace:*, @policyhuis/node-config@workspace:shared/node-config":
   version: 0.0.0-use.local
   resolution: "@policyhuis/node-config@workspace:shared/node-config"
@@ -1489,19 +1476,18 @@ __metadata:
     "@types/node": "npm:26.6.6"
     effect: "npm:4.1.2"
     typescript: "npm:5.9.3"
+    vitest: "npm:5.1.0"
   languageName: unknown
   linkType: soft
 
-"@policyhuis/sf-housing-server@workspace:san-francisco/housing-server":
+"@policyhuis/sf-data-server@workspace:san-francisco/mcp-servers/data":
   version: 0.0.0-use.local
-  resolution: "@policyhuis/sf-housing-server@workspace:san-francisco/housing-server"
+  resolution: "@policyhuis/sf-data-server@workspace:san-francisco/mcp-servers/data"
   dependencies:
     "@effect/platform-node": "npm:4.1.2"
     "@effect/sql-pg": "npm:4.1.2"
     "@effect/vitest": "npm:4.1.2"
-    "@policyhuis/mcp-kit": "workspace:*"
     "@policyhuis/node-config": "workspace:*"
-    "@policyhuis/protocol": "workspace:*"
     "@testcontainers/postgresql": "npm:12.2.1"
     "@types/node": "npm:26.6.6"
     effect: "npm:4.1.2"
@@ -1510,16 +1496,14 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@policyhuis/sf-legal-text-server@workspace:san-francisco/legal-text-server":
+"@policyhuis/sf-docs-server@workspace:san-francisco/mcp-servers/documents":
   version: 0.0.0-use.local
-  resolution: "@policyhuis/sf-legal-text-server@workspace:san-francisco/legal-text-server"
+  resolution: "@policyhuis/sf-docs-server@workspace:san-francisco/mcp-servers/documents"
   dependencies:
     "@effect/platform-node": "npm:4.1.2"
     "@effect/sql-pg": "npm:4.1.2"
     "@effect/vitest": "npm:4.1.2"
-    "@policyhuis/mcp-kit": "workspace:*"
     "@policyhuis/node-config": "workspace:*"
-    "@policyhuis/protocol": "workspace:*"
     "@testcontainers/postgresql": "npm:12.2.1"
     "@types/node": "npm:26.6.6"
     effect: "npm:4.1.2"

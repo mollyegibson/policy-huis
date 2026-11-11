@@ -16,8 +16,8 @@ Expected answers are not drafted here. They are written and checked by the resea
 |---|---|
 | Rule | Legal-text server only |
 | Ground | Data server only |
-| Rule + data | Both: a rule from the legal-text server, numbers from a data server |
-| Climate | Mostly the data server, sometimes the legal-text server |
+| Rule + data | Both: a rule from the docs server, numbers from a data server |
+| Climate | Mostly the data server, sometimes the docs server |
 | Cross-city | Both cities' servers |
 | Decline | None. The agent should decline, explain why, and point to the right body or say what data is missing. |
 

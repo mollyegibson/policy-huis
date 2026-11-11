@@ -23,10 +23,10 @@ describe("questionView", () => {
   })
 
   it("shows an incomplete answer's message and each unreachable server", () => {
-    const state = finished(complete("step_limit", "This answer is incomplete.", ["sf-housing"]))
+    const state = finished(complete("step_limit", "This answer is incomplete.", ["sf-data"]))
     expect(texts(AsyncResult.success(state))).toEqual([
       "This answer is incomplete.",
-      "The sf-housing data server could not be reached, so this answer may be missing its data.",
+      "The sf-data server could not be reached, so this answer may be missing its data.",
       LOGGED_NOTICE.text
     ])
   })

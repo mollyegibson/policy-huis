@@ -2,7 +2,7 @@
 
 Draft, November 5, 2026.
 
-The browser app sends a question to the backend and shows the answer as it streams in: the agent's tool calls while it works, the answer text, and the sources behind each claim. Like the agent loop, it is the same for every city; it knows a city only through the tools and citations the backend streams to it.
+The browser app sends a question to the backend and shows the answer as it streams in: the agent's lookups while it works, the answer text, and the sources behind each claim. Like the agent loop, it is the same for every city; it knows a city only through the lookups and citations the backend streams to it.
 
 This plan covers the Phase 1 prototype, enough to show the agent working, built to be iterated on. It builds on the [Agent Loop Plan](agent-loop.md), whose [API contract](agent-loop.md#api-contract) defines everything the app receives. The full web app design (pages, Dutch originals beside machine translations, hosting, the energy dashboard) remains the MVP plan's [follow-up](mvp-technical-plan.md#follow-up).
 
@@ -37,12 +37,12 @@ The design follows the reference project's browser app (`browser-sdk-internal`) 
 | Reference app | This app | Why |
 |---|---|---|
 | A state atom updated by pure, exported reducers (`onMessageReducer`), unit-tested on their own | The same: one pure `reduce(state, event)` per event, unit-tested | The core of both designs |
-| Tool-call lifecycle kept apart from message text, updated by `callId` (`upsertToolCall`) | The same | Tool events must never leak into the answer |
+| Tool-call lifecycle kept apart from message text, updated by `callId` (`upsertToolCall`) | The same, by `lookupId` | Lookup events must never leak into the answer |
 | Chunks carry the accumulated text, so the newer chunk replaces the text | `TextChunk` carries a delta, so the reducer appends it | Our protocol streams deltas |
 | An `Atom.fn` writes to a separate state atom through the registry, guarded by a `streamGeneration` counter so a stale stream cannot write | The atom function returns a stream of states (`Stream.scan(() => initialState, reduce)`), so its value is the latest state; asking again interrupts the previous run | One question at a time and no threads, so there is no stale stream to guard against. In Effect 4, writing a new argument to an `Atom.fn` interrupts the computation it replaces, and `Atom.Interrupt` cancels it |
 | `@effect-atom/atom-react` on Effect 3 | `effect/reactivity` and `@effect/atom-react` on Effect 4 | The atoms moved into Effect 4 |
-| `ToolsUsed`: a "Used N tools" toggle once the message is committed | A live list while the agent works, collapsing to "Used N tools" when the answer is complete | Shows progress during the 10 to 60 seconds an answer can take |
-| `humanizeToolName` strips the provider prefix | Tags the call with its server's label, which the backend sends in `ToolStart`, and humanizes the tool's own name (`SF Housing · Development pipeline summary`) | A tool from the wrong city's server stands out, and the browser never parses prefixes |
+| `ToolsUsed`: a "Used N tools" toggle once the message is committed | A live list of lookups while the agent works, collapsing to "Made N lookups" when the answer is complete | Shows progress during the 10 to 60 seconds an answer can take |
+| `humanizeToolName` strips the provider prefix | Tags the lookup with its server's label and shows the tool's title, both of which the backend sends in `LookupStarted` (`SF Data · Planning pipeline totals`) | A tool from the wrong city's server stands out, and the browser never parses tool names |
 | A private Markdown component | `react-markdown`, with citation markers turned into links before parsing | The private component is not available |
 | Client-side tools, approvals, interrupts, threads, artifacts, generated UI, auth, analytics | None | Not part of this app |
 
@@ -58,10 +58,9 @@ The design follows the reference project's browser app (`browser-sdk-internal`) 
 | `src/questions/useAsk.ts` | The hook components use: the page's view of the result, `ask` and `stop` |
 | `src/questions/notices.ts` | `questionView`: the latest state, whether it is streaming, and the notices, from the atom's result |
 | `src/questions/useQuestionDraft.ts`, `src/hooks/useDisclosure.ts` | The draft question, and open or closed sections, as the style guide puts all state in hooks |
-| `src/questions/citations.ts` | Linking markers, numbering sources and grouping the sources cited in the answer; `reduce` decodes the citations |
-| `src/questions/toolLabels.ts` | `toolLabel`: the server tag and humanized name |
+| `src/questions/citations.ts` | Linking markers, numbering sources and grouping the sources cited in the answer |
 | `src/components/QuestionForm.tsx` | The question box and Ask button |
-| `src/components/ToolCalls.tsx`, `ToolCallRow.tsx` | The tool call list and each expandable row |
+| `src/components/Lookups.tsx`, `LookupRow.tsx` | The lookup list and each expandable row |
 | `src/components/Answer.tsx` | The answer as Markdown with linked citation markers |
 | `src/components/Sources.tsx` | The sources list |
 | `src/components/Notices.tsx` | Incomplete answers, unreachable servers, busy and offline states, and the logging note |
@@ -73,62 +72,58 @@ Everything the page shows comes from one value, folded from the event stream:
 
 ```ts
 // src/questions/QuestionState.ts
-import { Option, Schema } from "effect"
+import type { Citation } from "@policyhuis/protocol/Citation"
+import type { AgentStreamEvent, Complete, LookupOutcome, LookupSource } from "@policyhuis/protocol/QuestionsApi"
 
-import { Citation } from "@policyhuis/protocol/Citation"
-import type { AgentStreamEvent, Complete } from "@policyhuis/protocol/QuestionsApi"
+export type LookupStatus = "running" | LookupOutcome | "unfinished"
 
-export type ToolCallStatus = "running" | "done" | "failed" | "unfinished"
-
-export interface ToolCallView {
-  readonly callId: string
+export interface LookupView {
+  readonly lookupId: string
+  /** The server the lookup went to, as the backend named it; null when no server offered the tool. */
+  readonly source: LookupSource | null
+  /** The name the model called, with its server's prefix. */
   readonly tool: string
-  /** The server the call went to, as the backend named it; null when no server offered the tool. */
-  readonly server: ToolServer | null
+  readonly title: string
   readonly arguments: unknown
-  readonly status: ToolCallStatus
-  /** The tool's `structuredContent`; null until it succeeds. */
+  readonly status: LookupStatus
+  /** The tool's `structuredContent`, shown as it is; null until it succeeds. Citations are never read from it. */
   readonly result: unknown
-  /** The failure's type only, such as `UnknownValue`; null unless it failed. */
+  /** The failure's type only, such as `UnknownValue`; null unless it failed or its server was unavailable. */
   readonly error: string | null
 }
 
+/** Everything the page shows about one question, folded from its event stream. */
 export interface QuestionState {
   readonly answer: string
-  readonly toolCalls: ReadonlyArray<ToolCallView>
-  /** Every citation received so far, by `citationId`. */
+  readonly lookups: ReadonlyArray<LookupView>
+  /** Every citation received so far in `Sources`, by `citationId`. */
   readonly citations: ReadonlyMap<string, Citation>
   /** Set by `Complete`, the last event of every stream that is not interrupted. */
   readonly complete: Complete | null
 }
 
-export const initialState: QuestionState = { answer: "", toolCalls: [], citations: new Map(), complete: null }
+export const initialState: QuestionState = { answer: "", lookups: [], citations: new Map(), complete: null }
 
-const ResultCitations = Schema.Struct({ citations: Schema.Array(Citation) })
-
-/** A successful result's citations; none when its `citations` field is missing or fails to decode. */
-const citationsOf = (result: unknown): ReadonlyArray<Citation> =>
-  Option.match(Schema.decodeUnknownOption(ResultCitations)(result), {
-    onNone: () => [],
-    onSome: ({ citations }) => citations
-  })
-
-const updateCall = (calls: ReadonlyArray<ToolCallView>, callId: string, update: (call: ToolCallView) => ToolCallView) =>
-  calls.map((call) => (call.callId === callId ? update(call) : call))
+const updateLookup = (
+  lookups: ReadonlyArray<LookupView>,
+  lookupId: string,
+  update: (lookup: LookupView) => LookupView
+): ReadonlyArray<LookupView> => lookups.map((lookup) => (lookup.lookupId === lookupId ? update(lookup) : lookup))
 
 export const reduce = (state: QuestionState, event: AgentStreamEvent): QuestionState => {
   switch (event._tag) {
     case "TextChunk":
       return { ...state, answer: state.answer + event.text }
-    case "ToolStart":
+    case "LookupStarted":
       return {
         ...state,
-        toolCalls: [
-          ...state.toolCalls,
+        lookups: [
+          ...state.lookups,
           {
-            callId: event.callId,
+            lookupId: event.lookupId,
+            source: event.source,
             tool: event.tool,
-            server: event.server,
+            title: event.title,
             arguments: event.arguments,
             status: "running",
             result: null,
@@ -136,29 +131,30 @@ export const reduce = (state: QuestionState, event: AgentStreamEvent): QuestionS
           }
         ]
       }
-    case "ToolEnd": {
-      const citations = new Map(state.citations)
-      for (const citation of event.outcome === "success" ? citationsOf(event.result) : []) {
-        citations.set(citation.citationId, citation)
-      }
+    case "LookupEnded":
       return {
         ...state,
-        citations,
-        toolCalls: updateCall(state.toolCalls, event.callId, (call) => ({
-          ...call,
-          status: event.outcome === "success" ? "done" : "failed",
+        lookups: updateLookup(state.lookups, event.lookupId, (lookup) => ({
+          ...lookup,
+          status: event.outcome,
           result: event.result,
           error: event.error
         }))
       }
-    }
+    case "Sources":
+      return {
+        ...state,
+        citations: new Map([...state.citations, ...event.citations.map((c): [string, Citation] => [c.citationId, c])])
+      }
     case "Keepalive":
       return state
     case "Complete":
       return {
         ...state,
         complete: event,
-        toolCalls: state.toolCalls.map((call) => (call.status === "running" ? { ...call, status: "unfinished" } : call))
+        lookups: state.lookups.map((lookup) =>
+          lookup.status === "running" ? { ...lookup, status: "unfinished" } : lookup
+        )
       }
   }
 }
@@ -219,7 +215,7 @@ export const askAtom = runtime.fn((question: string) =>
 - **While streaming**, the atom's value is `AsyncResult.Success` with the latest `QuestionState` and `waiting: true`. It starts with `initialState`, so the page clears at once.
 - **When the stream ends**, `waiting` turns false and the value holds the final state, with `complete` set.
 - **A `503`** fails the stream with `AgentUnavailable`, whose `message` the page shows.
-- **An unreachable backend, or a stream that breaks before `Complete`,** fails with an `HttpClientError`, and the page shows the offline notice. A failed stream atom keeps its last state as `previousSuccess` (`effect/reactivity`, 4.1.2), so a broken or stopped stream still shows the partial answer and tool calls.
+- **An unreachable backend, or a stream that breaks before `Complete`,** fails with an `HttpClientError`, and the page shows the offline notice. A failed stream atom keeps its last state as `previousSuccess` (`effect/reactivity`, 4.1.2), so a broken or stopped stream still shows the partial answer and lookups.
 
 Components reach the atom through one hook, as the style guide requires:
 
@@ -257,52 +253,42 @@ Stop, asking a new question, and leaving the page all interrupt the stream, whic
 From top to bottom:
 
 1. **The question box** (`QuestionForm`): a multi-line field of 1 to 2,000 characters, matching `QuestionRequest`, with an Ask button. While an answer streams, the button becomes Stop (`stop`).
-2. **Tool calls** (see [Tool calls](#tool-calls)).
-3. **The answer**, rendered as Markdown as it arrives, with any table the model writes (a GitHub-style Markdown table) shown as an MUI `Table`, with citation markers as links (see [Citations](#citations)). The backend never sends text from a turn that called a tool, so the answer comes after the tool calls. It usually arrives when its turn finishes; an answer written at a limit (`step_limit`, `context_limit`) streams as it is written (see [Narration](agent-loop.md#runagentloop)).
-4. **Sources**, grouped by source.
+2. **Lookups** (see [Lookups](#lookups)).
+3. **The answer**, rendered as Markdown as it arrives, with any table the model writes (a GitHub-style Markdown table) shown as an MUI `Table`, with citation markers as links (see [Citations](#citations)). The backend never sends text from a turn that called a tool, so the answer comes after the lookups. It usually arrives when its turn finishes; an answer written at a limit (`step_limit`, `context_limit`) streams as it is written (see [Narration](agent-loop.md#runagentloop)).
+4. **Sources**, grouped by source (see [Citations](#citations)).
 5. **Notices** (`Notices`), from the state and the result:
 
 | Condition | Notice |
 |---|---|
 | `complete.outcome` is not `answered` | `complete.message`, as it is; the backend writes every message (see [Messages for the user](agent-loop.md#messages-for-the-user)) |
-| A server in `complete.unavailableServers` | "The {server} data server could not be reached, so this answer may be missing its data." |
+| A server in `complete.unavailableServers` | "The {server} server could not be reached, so this answer may be missing its data." |
 | The result failed with `AgentUnavailable` | Its `message` |
-| The result was interrupted by Stop (`Cause.hasInterruptsOnly`) | "Stopped.", below the partial answer and tool calls |
+| The result was interrupted by Stop (`Cause.hasInterruptsOnly`) | "Stopped.", below the partial answer and lookups |
 | The result failed any other way | "The agent host could not be reached. It may be offline; try again shortly." |
 | Always | "Questions you ask are logged." |
 
-## Tool calls
+## Lookups
 
-A question can make several tool calls in each of up to `maxSteps` steps. While the agent works, each call is a row, so the user sees progress; when `Complete` arrives, the rows collapse under a "Used N tools" toggle, so the answer leads.
+A lookup is one tool call: the agent consulting a server. A question can make several in each of up to `maxSteps` steps (model turns). While the agent works, each lookup is a row, so the user sees progress; when `Complete` arrives, the rows collapse under a "Made N lookups" toggle, so the answer leads.
 
 | Status | Row | Expanded |
 |---|---|---|
-| `running` | Label and a progress spinner | Tool name and arguments |
-| `done` | Label and a done mark | Tool name, arguments, and `result` (the tool's `structuredContent`) as formatted JSON |
-| `failed` | Label and a failed mark | Tool name, arguments, and the error type (for example `UnknownValue`) |
-| `unfinished` | Label and "did not finish" | Tool name and arguments |
+| `running` | Source label, title and a progress spinner | Tool name and arguments |
+| `succeeded` | Source label, title and a done mark | Tool name, arguments, and `result` (the tool's `structuredContent`) as formatted JSON |
+| `failed` | Source label, title and a failed mark | Tool name, arguments, and the error type (for example `UnknownValue`) |
+| `unavailable` | Source label, title and an unavailable mark | Tool name, arguments, and the error type (`TransportError`, `ClosedError` or `DatabaseUnavailable`) |
+| `unfinished` | Source label, title and "did not finish" | Tool name and arguments |
 
-- **Labels** tag each call with the label of the server the backend routed it to, so a call to the wrong city's server is visible: `sf_development_pipeline_summary` on `sf-housing` shows as "SF Housing · Development pipeline summary", and `sf_law_search_policy` on `sf-legal-text` as "SF Law · Search policy". A call no server offered has no tag. The full tool name appears when the row is expanded.
-- **Order** is the order of `ToolStart` events. Calls from the same turn run at once, and each `ToolEnd` updates its own row by `callId`.
-- **Size:** results are formatted JSON in a scrolling block with a fixed maximum height, like the reference app's argument view; a list result holds at most what the server returns (`sf-housing` returns up to 50 projects).
-
-```ts
-// src/questions/toolLabels.ts
-/** { tag: "SF Housing", name: "Development pipeline summary" } for `development_pipeline_summary` on `sf-housing`. */
-export const toolLabel = (tool: string, server: ToolServer | null): ToolLabel => {
-  const words = (server?.tool ?? tool).replace(/_/g, " ")
-  return { tag: server?.label ?? null, name: words.charAt(0).toUpperCase() + words.slice(1) }
-}
-```
-
-Labels come from `backend/config/servers.yaml` through `ToolStart.server`; the browser never splits a tool name, so a prefix of several words (`sf_law_`) labels correctly.
+- **Labels** come from the backend: `LookupStarted.source` carries the label of the server the backend routed the call to, from `backend/config/servers.yaml`, and `LookupStarted.title` the tool's title as its server publishes it. `sf_data_development_pipeline_summary` on `sf-data` shows as "SF Data · Planning pipeline totals", and `sf_docs_search_policy` on `sf-docs` as "SF Documents · Search the documents". A call no server offered has no source label, and its title is the name the model called. The browser never parses a tool name.
+- **Order** is the order of `LookupStarted` events. Lookups from the same turn run at once, and each `LookupEnded` updates its own row by `lookupId`.
+- **Results are for display only.** `result` is decoded as `Schema.Unknown` and shown as formatted JSON in a scrolling block with a fixed maximum height; the browser never reads citations from it. A list result holds at most what the server returns (`sf-data` returns up to 50 projects).
 
 ## Citations
 
-- **Source of citations:** each successful `ToolEnd`'s `result.citations`, decoded with `protocol/`'s `Citation` schema in `reduce`. A result whose citations fail to decode contributes none.
+- **Source of citations:** `Sources` events only. The backend reads each lookup's citations from its result, drops any that break the citation convention, and sends each `citationId` once per question; `reduce` keeps them by `citationId`.
 - **Markers:** the model writes each `citationId` in square brackets. Before the text goes to `react-markdown`, `linkCitations` replaces each marker with a Markdown link to `#cite-<n>`, numbered by source in order of first use, and the link component renders it as a small numbered chip that scrolls to the source. A marker whose ID matches no citation becomes a muted "?" chip, titled with the unmatched ID. Markers in a row (separated only by spaces) that lead to the same chip become one chip, so two queries of one source cited together show a single number. Replacing markers before Markdown parsing also keeps a marker followed by `(` from being read as a link.
 - **While streaming,** a marker cut off mid-ID stays as plain text until the rest arrives.
-- **Sources list:** citations grouped by `sourceId` (one dataset or document version), numbered to match the chips, each showing the title, publisher and a link to `sourceUrl`, and underneath each query (dataset citations: the tool and its parameters) or provision (document citations) cited.
+- **Sources list:** citations grouped by `sourceId` (one dataset or document version), numbered to match the chips, each showing the title, publisher, version and a link to `sourceUrl`, and underneath each citation's `locator` (the provision, or the data selected, in words) and its `quote`, when it has one.
 - **Versions:** each source shows the version cited and notes that the live link may show newer data, since users can open only the publisher's live link, not our archived copy.
 
 ```ts
@@ -373,16 +359,15 @@ export default defineConfig(({ mode }) => {
 })
 ```
 
-The proxy passes server-sent events through as they arrive, checked on November 5, 2026 against a test server sending one every 0.7 seconds. `BACKEND_URL` is required only by the dev server; `vite build` does not need it. `yarn dev` at the repo root gains the browser app, so the data server, the backend and the app start together. Serving the built app from another origin needs CORS on the backend, decided with hosting.
+The proxy passes server-sent events through as they arrive, checked on November 5, 2026 against a test server sending one every 0.7 seconds. `BACKEND_URL` is required only by the dev server; `vite build` does not need it. `yarn dev` at the repo root starts the browser app with the backend, and with each city's servers named by `--include`. Serving the built app from another origin needs CORS on the backend, decided with hosting.
 
 ## Testing
 
 Pure modules carry the logic, so most tests need no browser:
 
 - **Notices:** which notice each result shows, including Stop (an interruption) as "Stopped." rather than the offline notice.
-- **`reduce`:** recorded event sequences: tool calls that succeed, fail and never finish; calls finishing out of order; text arriving after every tool call, in one chunk and in several; every `Complete` outcome; unavailable servers; a result whose citations fail to decode.
+- **`reduce`:** recorded event sequences: lookups that succeed, fail, find their server unavailable and never finish; lookups finishing out of order; text arriving after every lookup, in one chunk and in several; citations collected from `Sources` and never from a result; every `Complete` outcome; unavailable servers.
 - **`linkCitations` and `sourceNumbers`:** markers for known and unknown IDs; several markers for one source; a marker followed by `(`; a marker cut off mid-stream.
-- **`toolLabel`:** a call with its server, and a call no server offered.
 - **Decoding:** the recorded event sequences are decoded with `AgentStreamEvent`, so a backend change that breaks the contract fails these tests.
 
-`Answer` is tested by rendering it with `react-dom/server`: a Markdown table becomes a table with citation chips in its cells. Other component tests (for example, that rows collapse when `Complete` arrives) are added if the components grow logic of their own.
+`Answer` and `Sources` are tested by rendering them with `react-dom/server`: a Markdown table becomes a table with citation chips in its cells, and each cited source lists its locators and quotes. Other component tests (for example, that rows collapse when `Complete` arrives) are added if the components grow logic of their own.

@@ -82,11 +82,17 @@ export const foldTrace = (trace: Trace, event: LoopEvent): Trace => {
       }
     case "ToolCallEnded":
       return updateCall(trace, event.callId, (call) => ({ ...call, endedAt: event.at }))
-    case "ToolEnd":
-      return updateCall(trace, event.callId, (call) => ({ ...call, outcome: event.outcome, result: event.result }))
+    case "LookupEnded":
+      return updateCall(trace, event.lookupId, (call) => ({
+        ...call,
+        outcome: event.outcome === "succeeded" ? "success" : "failure",
+        result: event.result
+      }))
     case "ToolFailed":
       return updateCall(trace, event.callId, (call) => ({ ...call, result: event.encodedError }))
-    case "ToolStart":
+    case "LookupStarted":
+    case "Sources":
+    case "CitationsRejected":
       return trace
     case "ModelRetried":
       return { ...trace, modelRetries: trace.modelRetries + 1 }

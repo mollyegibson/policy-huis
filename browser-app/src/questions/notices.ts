@@ -32,7 +32,7 @@ const completeNotices = (state: QuestionState): ReadonlyArray<Notice> => {
       : []),
     ...complete.unavailableServers.map((server) => ({
       severity: "warning" as const,
-      text: `The ${server} data server could not be reached, so this answer may be missing its data.`
+      text: `The ${server} server could not be reached, so this answer may be missing its data.`
     }))
   ]
 }

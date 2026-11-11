@@ -1,7 +1,7 @@
 import { Data } from "effect"
 import type { Response } from "effect/ai"
 
-import type { TextChunk, ToolEnd, ToolStart } from "@policyhuis/protocol/QuestionsApi"
+import type { LookupEnded, LookupStarted, Sources, TextChunk } from "@policyhuis/protocol/QuestionsApi"
 
 import type { Failure } from "./Failures.ts"
 import type { Outcome } from "./Outcome.ts"
@@ -41,10 +41,21 @@ export class ToolCallEnded extends Data.TaggedClass("ToolCallEnded")<{
   readonly at: number
 }> {}
 
-/** The full encoded error of a failed tool call, for the trace only; the browser receives its type in `ToolEnd`. */
+/** The full encoded error of a failed tool call, for the trace only; the browser receives its type in `LookupEnded`. */
 export class ToolFailed extends Data.TaggedClass("ToolFailed")<{
   readonly callId: string
   readonly encodedError: unknown
+}> {}
+
+/**
+ * A successful result's citations that could not be read: `rejected` entries broke the citation convention, or the
+ * result had no `citations` list at all. They are left out of `Sources`; the result itself, in the trace, keeps them.
+ */
+export class CitationsRejected extends Data.TaggedClass("CitationsRejected")<{
+  readonly callId: string
+  readonly tool: string
+  readonly rejected: number
+  readonly missing: boolean
 }> {}
 
 export class ModelRetried extends Data.TaggedClass("ModelRetried")<{
@@ -58,11 +69,22 @@ export class Finished extends Data.TaggedClass("Finished")<{
 }> {}
 
 /** Events the browser app receives. */
-export type BrowserEvent = TextChunk | ToolStart | ToolEnd
+export type BrowserEvent = TextChunk | LookupStarted | LookupEnded | Sources
 
 /** Everything the loop emits: the browser's events plus the internal events the trace is folded from. */
 export type LoopEvent =
-  BrowserEvent | StepStarted | StepEnded | ToolCallStarted | ToolCallEnded | ToolFailed | ModelRetried | Finished
+  | BrowserEvent
+  | StepStarted
+  | StepEnded
+  | ToolCallStarted
+  | ToolCallEnded
+  | ToolFailed
+  | CitationsRejected
+  | ModelRetried
+  | Finished
 
 export const isBrowserEvent = (event: LoopEvent): event is BrowserEvent =>
-  event._tag === "TextChunk" || event._tag === "ToolStart" || event._tag === "ToolEnd"
+  event._tag === "TextChunk" ||
+  event._tag === "LookupStarted" ||
+  event._tag === "LookupEnded" ||
+  event._tag === "Sources"

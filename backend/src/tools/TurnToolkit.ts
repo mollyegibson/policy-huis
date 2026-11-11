@@ -1,8 +1,7 @@
-import { Effect, Option } from "effect"
-import { AiError } from "effect/ai"
+import { Context, Effect, Option } from "effect"
+import { AiError, Tool } from "effect/ai"
 
-import type { ToolServer } from "@policyhuis/protocol/QuestionsApi"
-
+import type { ToolOwner } from "../loop/AgentLoop.ts"
 import type { McpTool, McpToolkit, ServerState } from "./McpConnections.ts"
 
 /** One request's tools: every connected server's tools, merged, and the servers that were left out. */
@@ -10,22 +9,32 @@ export interface TurnTools {
   readonly toolkit: McpToolkit
   /** Servers with no connection, whose tools are not offered for this request. */
   readonly unavailable: ReadonlyArray<string>
-  /** The server a prefixed tool name belongs to, with its label and the tool's own name; null if none offers it. */
-  readonly serverOf: (toolName: string) => ToolServer | null
+  /** The server a prefixed tool name belongs to, with its label and the tool's title; null if none offers it. */
+  readonly serverOf: (toolName: string) => ToolOwner | null
   /** Tool names more than one connected server offers, with those servers; such a tool is offered by none. */
   readonly collisions: ReadonlyArray<{ readonly tool: string; readonly servers: ReadonlyArray<string> }>
 }
 
 /**
+ * A tool's title as its server publishes it (`annotations.title`, which the client copies into `Tool.Title`), or, for
+ * a server that publishes none, the tool's own name in words.
+ */
+const titleOf = (tool: McpTool, ownName: string): string =>
+  Option.getOrElse(Context.getOption(tool.annotations, Tool.Title), () => {
+    const words = ownName.replace(/_/g, " ")
+    return words.charAt(0).toUpperCase() + words.slice(1)
+  })
+
+/**
  * Merges the connected servers' toolkits, routing each call to the server whose toolkit has the tool. Unique prefixes
- * do not guarantee unique names when one prefix starts another (`sf_` with a tool `law_search` and `sf_law_` with a
- * tool `search`), so a name offered by two servers is routed to neither and listed in `collisions`.
+ * do not guarantee unique names when one prefix starts another (`sf_` with a tool `docs_search` and `sf_docs_` with
+ * a tool `search`), so a name offered by two servers is routed to neither and listed in `collisions`.
  */
 export const turnTools = (states: ReadonlyArray<ServerState>): TurnTools => {
   const unavailable: Array<string> = []
   const offers = new Map<
     string,
-    Array<{ readonly server: ToolServer; readonly toolkit: McpToolkit; readonly tool: McpTool }>
+    Array<{ readonly server: ToolOwner; readonly toolkit: McpToolkit; readonly tool: McpTool }>
   >()
   for (const { server, connection } of states) {
     if (Option.isNone(connection)) {
@@ -34,12 +43,16 @@ export const turnTools = (states: ReadonlyArray<ServerState>): TurnTools => {
     }
     const { toolkit } = connection.value
     for (const [name, tool] of Object.entries(toolkit.tools)) {
-      const owner: ToolServer = { name: server.name, label: server.label, tool: name.slice(server.prefix.length) }
+      const owner: ToolOwner = {
+        name: server.name,
+        label: server.label,
+        title: titleOf(tool, name.slice(server.prefix.length))
+      }
       offers.set(name, [...(offers.get(name) ?? []), { server: owner, toolkit, tool }])
     }
   }
   const tools: Record<string, McpTool> = {}
-  const owners = new Map<string, { readonly server: ToolServer; readonly toolkit: McpToolkit }>()
+  const owners = new Map<string, { readonly server: ToolOwner; readonly toolkit: McpToolkit }>()
   const collisions: Array<{ readonly tool: string; readonly servers: ReadonlyArray<string> }> = []
   for (const [name, offered] of offers) {
     const [only, ...others] = offered

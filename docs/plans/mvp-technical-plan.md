@@ -8,8 +8,8 @@ This plan covers the backend: the agent, its tools, the data layer, the network 
 
 The MVP is one AI agent that answers questions about housing policy in San Francisco and Amsterdam in plain language, citing the law, policy or dataset behind every claim. The agent runs an open-weight model on the group's own hardware and reaches its knowledge through independent [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) servers:
 
-- one **legal-text server** codebase, run once per city's corpus, for laws, ordinances and policy documents;
-- one **data server per city**, for housing, demographic and climate data, queried with code so numbers come from data, not from the model.
+- one **docs server per city** (`sf-docs`, `nl-docs`), for laws, ordinances and policy documents;
+- one **data server per city** (`sf-data`, `nl-data`), for housing, demographic and climate data, queried with code so numbers come from data, not from the model.
 
 The same agent can swap the local model for a cloud model, so accuracy, latency and energy per query can be compared directly.
 
@@ -49,10 +49,10 @@ flowchart LR
     cloud["Cloud model<br/>(baseline only)"]
 
     subgraph mesh["Private network (Tailscale)"]
-        lt_sf["legal-text MCP<br/>SF corpus<br/>+ local embedding model"]
-        lt_ams["legal-text MCP<br/>Amsterdam corpus<br/>+ local embedding model"]
-        d_sf["sf-housing MCP"]
-        d_ams["ams-data MCP"]
+        lt_sf["sf-docs MCP<br/>SF documents<br/>+ local embedding model"]
+        lt_ams["nl-docs MCP<br/>Amsterdam documents<br/>+ local embedding model"]
+        d_sf["sf-data MCP"]
+        d_ams["nl-data MCP"]
     end
 
     subgraph neon["Neon (Postgres + object storage)"]
@@ -111,17 +111,17 @@ One TypeScript service is both the backend API the web app calls and the agent l
 
 ### MCP servers
 
-All servers are TypeScript, built with Effect's MCP server (`effect/ai/McpServer`, served over Streamable HTTP with `McpServer.layerHttp`). Each tool is an `effect/ai` `Tool` with Effect `Schema` input and output, registered through a `Toolkit`, and returns its result as MCP `structuredContent` described by the tool's `outputSchema`. Servers share nothing with the backend but MCP itself, plus these conventions (helpers for TypeScript servers are in `shared/mcp-kit`):
+All servers are TypeScript, built with Effect's MCP server (`effect/ai/McpServer`, served over Streamable HTTP with `McpServer.layerHttp`). Each tool is an `effect/ai` `Tool` with Effect `Schema` input and output, registered through a `Toolkit`, and returns its result as MCP `structuredContent` described by the tool's `outputSchema`. Servers share nothing with the backend but MCP itself, plus these conventions, which each server implements in its own code (see [Domain-Driven Design](../domain-driven-design.md#conventions-between-servers-and-the-backend)):
 
-- **Tool naming.** Each tool is prefixed with its server (for example `sf_policy_search`, `ams_data_social_rent_pipeline`), so the model can tell same-purpose tools apart across cities.
-- **Citation object.** Every result carries the citations behind it: source, title, provision or table, version or effective date, source URL, language, and stable source and citation IDs, in the shape of the citation schema in `protocol/`. The backend passes citations to the browser app unchanged; the browser shows them, and the evaluation checks them from traces. The archived file's hash stays in the load record, reached through the source ID.
-- **Errors.** Typed and returned to the model as tool results (`failureMode: "return"`), never thrown as transport failures, so the model can say "no data" rather than guess.
+- **Tool naming.** Each tool is prefixed with its server's short name (for example `sf_docs_search_policy`, `nl_data_social_rent_pipeline`), so the model can tell same-purpose tools apart across cities. The prefix comes from the backend's directory file; servers name tools without it.
+- **Citation object.** Every result carries the citations behind it, by the citation convention: stable source and citation IDs namespaced by the server, the source's title, publisher, URL and version, and optionally a locator (the provision or the data selected, in words) and a quote. The backend reads them from results and streams them to the browser app; the browser shows them, and the evaluation checks them from traces. The archived file's hash stays in the load record, reached through the source ID.
+- **Errors.** Typed and returned to the model as tool results (`failureMode: "return"`), never thrown as transport failures, so the model can say "no data" rather than guess. A server that cannot reach its own database returns `DatabaseUnavailable`, which the backend treats as the server being unavailable.
 - **Sessionless MCP.** Servers and the backend's client use MCP protocol version `2026-07-28`, which has no session, so a server can restart without breaking the backend's connection (see [MCP connections](agent-loop.md#mcp-connections)). If a server is down, the agent answers with the others and says which could not be reached.
 - **Database access.** Each server connects with a role that can only read its own schema.
 
-#### Legal-text server
+#### Docs server
 
-One server per city, in the city's directory (`san-francisco/legal-text-server/`), reading its city's `policy_text_*` schema, since one city's documents may need tools another's do not. The Python passage pipeline in `shared/legal-text/pipeline/` is shared: it builds each city's passages and search entries.
+One server per city (`san-francisco/mcp-servers/documents/`), reading its city's documents schema (`sf_docs`), since one city's documents need their own structure and tools. Each city's documents ingestion (`san-francisco/ingest/documents/`) holds its own passage pipeline: San Francisco's splits along American legal numbering ((a), (1), (A), (i)), which Dutch law does not use, so no pipeline is shared.
 
 | Tool | Purpose |
 |---|---|
@@ -156,13 +156,13 @@ Translating at load time rather than per question:
 - removes translation latency and energy from every query;
 - lets the translation model be chosen for quality rather than speed, since it runs offline in batch;
 - makes every translation stored, reviewable and traceable to the model that produced it;
-- keeps translation out of the legal-text servers, which read only stored text.
+- keeps translation out of the docs servers, which read only stored text.
 
 The costs are about 2 KB more storage per Amsterdam passage, and translating the new passages when a law version changes. Translation energy is a one-time cost, measured and reported separately from per-query energy.
 
 #### City data servers
 
-One per city (`sf-housing` for San Francisco). Their tools are specific to each city's datasets and include its climate data (flood and sea-level-rise zones, heat stress, energy labels, building age).
+One per city (`sf-data` for San Francisco, `nl-data` for the Netherlands). Their tools are specific to each city's datasets and include its climate data (flood and sea-level-rise zones, heat stress, energy labels, building age).
 
 Climate data sits inside each city's server because the MVP sources are city-specific. A separate climate server becomes worthwhile when one source covers many places (for example FEMA's national flood maps for several US cities); it would answer by location, not by city.
 
@@ -174,7 +174,7 @@ A Python package (uv, ruff, pytest) owns everything that loads or transforms dat
 2. **Nationwide datasets** (BAG, EP-Online, CBS StatLine) are archived whole and filtered to the city on load. The filter lives in config and is recorded in the manifest.
 3. **PDF extraction** (Housing Element, Housing Inventory, Woningbouwplan, Wonen in Amsterdam) uses Python tools; the library is chosen in spike S6.
 4. **dbt** builds the city data models each data server reads.
-5. **Passage pipeline** for the legal-text corpus: split documents into passages along their own structure (article, section, paragraph), keep the version and effective date, translate Dutch passages to English (storing both texts and the translation model's identifier), compute embeddings, and write to the `policy_text_*` schemas. Passages that already exist unchanged in an earlier version reuse their stored translation and embedding.
+5. **Passage pipeline** for each city's documents corpus: split documents into passages along their own structure (article, section, paragraph), keep the version and effective date, translate Dutch passages to English (storing both texts and the translation model's identifier), compute embeddings, and write to the city's documents schema (`sf_docs`). Passages that already exist unchanged in an earlier version reuse their stored translation and embedding.
 
 **Provenance rules.**
 
@@ -189,9 +189,10 @@ A Python package (uv, ruff, pytest) owns everything that loads or transforms dat
 
 | Schema | Written by | Migrations | Read by |
 |---|---|---|---|
-| `raw_sf`, `raw_ams` | Python loaders | Alembic (raw SQL) | dbt |
-| `sf`, `ams` | dbt | dbt | The city's data server |
-| `policy_text_sf`, `policy_text_ams` | Python passage pipeline | Alembic | The matching legal-text server |
+| `raw_sf_data`, `raw_nl_data` | Data ingestion loaders | Alembic (raw SQL) | dbt |
+| `sf_data`, `nl_data` | dbt | dbt | The city's data server |
+| `raw_sf_docs`, `raw_nl_docs` | Documents ingestion loaders | Alembic (raw SQL) | The passage pipeline |
+| `sf_docs`, `nl_docs` | The city's passage pipeline | Alembic | The city's docs server |
 | `app` | Backend | Drizzle (`backend/drizzle/`) | Backend, evaluation reports |
 
 No server reads another server's schema. Moving a server to its own database later is then a connection-string change.
@@ -224,15 +225,15 @@ That is about 6–10 KB per passage, or on the order of 100,000 passages per GB.
 
 Embeddings are stored as `halfvec` from the start. That halves vector storage, and pgvector's HNSW index supports `halfvec` up to 4,000 dimensions (versus 2,000 for `vector`), which keeps larger embedding models open.
 
-**Escape hatch if storage runs short:** give the legal-text server its own Neon project, adding a separate 1 GB. Servers never join across schemas, so this needs only a connection-string change.
+**Escape hatch if storage runs short:** each server already has its own Neon project; a server whose data outgrows 1 GB moves to a paid plan or splits by source. Servers never join across schemas, so this needs only a connection-string change.
 
 ### Embeddings
 
-The passage pipeline (Python) and the legal-text server (TypeScript) must embed text with exactly the same model, or search quality degrades silently.
+The passage pipeline (Python) and the docs server (TypeScript) must embed text with exactly the same model, or search quality degrades silently.
 
-- **Each legal-text node serves the chosen embedding model itself** (for example a local Ollama instance on the same machine), so search does not depend on any other node being up. The passage pipeline runs the same model wherever it runs.
+- **Each docs node serves the chosen embedding model itself** (for example a local Ollama instance on the same machine), so search does not depend on any other node being up. The passage pipeline runs the same model wherever it runs.
 - Every embedding row stores its model identifier.
-- The legal-text server checks on startup that its configured model matches the stored identifier, and refuses to start if it does not. **(verify)** in S4 that the same model identifier gives the same embeddings across the runtimes and quantizations the nodes use; if not, the identifier includes the quantization.
+- The docs server checks on startup that its configured model matches the stored identifier, and refuses to start if it does not. **(verify)** in S4 that the same model identifier gives the same embeddings across the runtimes and quantizations the nodes use; if not, the identifier includes the quantization.
 
 ## Network
 
@@ -304,11 +305,10 @@ One shared repository.
 backend/                 the question API and the agent loop
 browser-app/             web app (React)
 protocol/                API between the backend and the browser app, including the citation schema
-shared/mcp-kit/          optional MCP server helpers: formats, tool errors, citation IDs
 shared/node-config/      TypeScript library: config files, .env and ConfigFileError, for every node
 shared/ingest/           Python library: fetch, archive and load sources; run dbt
-shared/legal-text/pipeline/  Python library: the passage pipeline every city's corpus uses
-san-francisco/           sf-housing and sf-legal-text servers, SF ingestion (sources, raw_sf migrations, dbt), SF legal-text corpus
+san-francisco/ingest/    SF ingestion projects: data/ (sources, migrations, dbt) and documents/ (corpus, passage pipeline)
+san-francisco/mcp-servers/   SF MCP servers: data/ (sf-data) and documents/ (sf-docs)
 netherlands/             the Dutch nodes, same shape
 evaluation/              question set and expected answers
 docs/plans/              technical plans
@@ -338,9 +338,9 @@ Each spike answers one question and records its result in `docs/plans/spikes/`. 
 | Milestone | Done when |
 |---|---|
 | M0. Sources and questions | A source proposal per city records each chosen source and the reason for choosing it, with its access method, license or reuse terms, and actual format checked. Provisional questions are drafted (see [Provisional questions](provisional-questions.md)), pending confirmation from the research team. The first rule-plus-data pair per city is chosen. Spikes S1–S6 run alongside and are recorded with decisions. |
-| M1. Contracts | The data servers' tool schemas, the citation contract and the backend API contract (the question endpoint and its streamed events) are defined as Effect `Schema` (the tool schemas in each server, the API and citation schemas in `protocol/`), and reviewed against the provisional questions. |
+| M1. Contracts | The data servers' tool schemas, the citation contract and the backend API contract (the question endpoint and its streamed events) are defined as Effect `Schema` (the tool schemas and each server's citation schema in the server, following the citation convention; the API and the citation schema the browser decodes in `protocol/`), and reviewed against the provisional questions. |
 | M2. Data foundation | Database schemas, roles and migrations exist; source files are archived in object storage; the first rule-plus-data pair per city is loaded **in full** with provenance (for example, for San Francisco, a section of the Administrative Code and a dataset that answers questions about it). |
-| M3. First answer | The agent loop, the legal-text server and each city's data server (with tools for the first pair) are running, and a rule-plus-data question returns a cited answer through the API endpoint, with a trace in `app`. |
+| M3. First answer | The agent loop, each city's docs server and data server (with tools for the first pair) are running, and a rule-plus-data question returns a cited answer through the API endpoint, with a trace in `app`. |
 | M4. Remaining sources | The other chosen sources are loaded and their tools implemented. |
 | M5. Evaluation | The question set runs against all three configurations; accuracy, latency and energy are reported. |
 | M6. Demo | Servers run on separate machines over the private network, the web app is connected through the tunnel, and the demo questions are chosen from user research. |
@@ -349,7 +349,7 @@ Loading one complete pair per city before the remaining sources tests both pipel
 
 M2 depends on spikes S3 and S4, because loading legal text means translating and embedding it.
 
-San Francisco work (source proposal, ingestion, corpus, `sf-housing`) is owned by Molly. Amsterdam work (source proposal, pipelines, corpus, `ams-data`) is owned by Martin. Ownership of shared pieces is an open question.
+San Francisco work (source proposal, ingestion, corpus, `sf-data` and `sf-docs`) is owned by Molly. Amsterdam work (source proposal, pipelines, corpus, `nl-data` and `nl-docs`) is owned by Martin. Ownership of shared pieces is an open question.
 
 ## Deferred options
 

@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: raw_sf_data
+    schema: raw_sf_data
+    tables:
+      - name: load_manifest
+      - name: development_pipeline
+      - name: affordable_pipeline
+      - name: analysis_neighborhoods
+      - name: slr_66in_100yr_storm
+      - name: air_pollutant_exposure_zone
+      - name: sfpuc_100yr_storm
+      - name: eviction_notices
+      - name: eviction_report

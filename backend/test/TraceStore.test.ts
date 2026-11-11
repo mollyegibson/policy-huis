@@ -1,10 +1,11 @@
 import { describe, expect, layer } from "@effect/vitest"
 import { PostgreSqlContainer } from "@testcontainers/postgresql"
-import { ConfigProvider, Context, Duration, Effect, Layer, Redacted } from "effect"
+import { Context, Duration, Effect, Layer, Redacted } from "effect"
 import pg from "pg"
 
 import type { AgentConfigFile } from "../src/config/AgentConfig.ts"
 import { AgentConfig } from "../src/config/AgentConfig.ts"
+import { AppDatabaseConfig } from "../src/config/BackendConfig.ts"
 import { runMigrations } from "../src/db/Migrations.ts"
 import type { Trace } from "../src/trace/Trace.ts"
 import { emptyTrace } from "../src/trace/Trace.ts"
@@ -79,7 +80,7 @@ const write = (url: string, written: TraceRecord) =>
 const storeFor = (url: string) =>
   TraceStore.layer.pipe(
     Layer.provide(Layer.succeed(AgentConfig, CONFIG)),
-    Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ APP_DATABASE_URL: url })))
+    Layer.provide(Layer.succeed(AppDatabaseConfig, { url: Redacted.make(url) }))
   )
 
 const call = (callId: string, step: number) => ({

@@ -26,8 +26,8 @@ describe("linkCitations", () => {
   })
 
   it("keeps one chip per source for markers in a row that lead to different sources", () => {
-    expect(link(`A [${first.citationId}] [sf.other@2026-01-01#ffffffffffffffff].`)).toBe(
-      `A [1](#cite-1) [?](#cite-missing "sf.other@2026-01-01#ffffffffffffffff").`
+    expect(link(`A [${first.citationId}] [sf_data.other@2026-01-01#ffffffffffffffff].`)).toBe(
+      `A [1](#cite-1) [?](#cite-missing "sf_data.other@2026-01-01#ffffffffffffffff").`
     )
   })
 
@@ -38,8 +38,8 @@ describe("linkCitations", () => {
   })
 
   it("links an unknown ID to the missing chip, titled with the ID", () => {
-    expect(link("C [sf.other@2026-01-01#ffffffffffffffff].")).toBe(
-      `C [?](#cite-missing "sf.other@2026-01-01#ffffffffffffffff").`
+    expect(link("C [sf_data.other@2026-01-01#ffffffffffffffff].")).toBe(
+      `C [?](#cite-missing "sf_data.other@2026-01-01#ffffffffffffffff").`
     )
   })
 

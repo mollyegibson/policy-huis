@@ -1,67 +1,41 @@
 import { Schema } from "effect"
 
-import { IsoDate } from "./Formats.ts"
+const PART = "[A-Za-z0-9_.()-]+"
+const SOURCE_ID = `[a-z][a-z0-9_]*\\.${PART}@${PART}`
 
-const IdPart = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^[A-Za-z0-9_.()-]+$/, { message: "letters, digits, _ . ( ) - only" }))
-)
-
+/** One version of one source: `<namespace>.<key>@<version>`, where the namespace is the server that cites it. */
 export const SourceId = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^[A-Za-z0-9_.()-]+@[A-Za-z0-9_.()-]+$/, { message: "a source ID, <key>@<version>" })),
+  Schema.check(Schema.isPattern(new RegExp(`^${SOURCE_ID}$`), { message: "a source ID, <namespace>.<key>@<version>" })),
   Schema.brand("SourceId")
 )
 
+/** The part of a source a claim rests on: `<sourceId>#<part>`. Answers cite claims with it in square brackets. */
 export const CitationId = Schema.String.pipe(
-  Schema.check(
-    Schema.isPattern(/^[A-Za-z0-9_.()-]+@[A-Za-z0-9_.()-]+#[A-Za-z0-9_.()-]+$/, {
-      message: "a citation ID, <sourceId>#<part>"
-    })
-  ),
+  Schema.check(Schema.isPattern(new RegExp(`^${SOURCE_ID}#${PART}$`), { message: "a citation ID, <sourceId>#<part>" })),
   Schema.brand("CitationId")
 )
 
-const idsMatch = (sourceId: string, expectedSource: string, citationId: string, part: string) =>
-  sourceId !== expectedSource
-    ? `sourceId must be ${expectedSource}`
-    : citationId !== `${sourceId}#${part}`
-      ? `citationId must be ${sourceId}#${part}`
-      : true
-
-export class LegalCitation extends Schema.TaggedClass<LegalCitation>()(
-  "LegalCitation",
-  Schema.Struct({
-    sourceId: SourceId,
-    citationId: CitationId,
-    documentId: IdPart,
-    documentTitle: Schema.String,
-    documentType: Schema.Literals(["law", "report", "reference"]),
-    provision: IdPart,
-    versionDate: IsoDate,
-    quote: Schema.String,
-    publisher: Schema.String,
-    sourceUrl: Schema.String
-  }).check(
-    Schema.makeFilter((c) => idsMatch(c.sourceId, `${c.documentId}@${c.versionDate}`, c.citationId, c.provision))
+/**
+ * A source behind the answer, as the backend read it from a tool result. Citations with the same `sourceId` are parts
+ * of one source. `locator` says in words which part a citation used, such as a section or the data selected; `quote`
+ * is the cited text, verbatim.
+ */
+export const Citation = Schema.Struct({
+  citationId: CitationId,
+  sourceId: SourceId,
+  title: Schema.String,
+  publisher: Schema.NullOr(Schema.String),
+  sourceUrl: Schema.String,
+  version: Schema.String,
+  locator: Schema.NullOr(Schema.String),
+  quote: Schema.NullOr(Schema.String)
+}).check(
+  Schema.makeFilter((c) =>
+    !c.sourceId.endsWith(`@${c.version}`)
+      ? "sourceId must end with @<version>"
+      : !c.citationId.startsWith(`${c.sourceId}#`)
+        ? "citationId must start with <sourceId>#"
+        : true
   )
-) {}
-
-export class DatasetCitation extends Schema.TaggedClass<DatasetCitation>()(
-  "DatasetCitation",
-  Schema.Struct({
-    sourceId: SourceId,
-    citationId: CitationId,
-    datasetKey: IdPart,
-    title: Schema.String,
-    publisher: Schema.NullOr(Schema.String),
-    sourceUrl: Schema.String,
-    sourceVersion: IdPart,
-    tool: IdPart,
-    parameters: Schema.Record(Schema.String, Schema.Unknown),
-    queryKey: Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f]{16}$/)))
-  }).check(
-    Schema.makeFilter((c) => idsMatch(c.sourceId, `${c.datasetKey}@${c.sourceVersion}`, c.citationId, c.queryKey))
-  )
-) {}
-
-export const Citation = Schema.Union([LegalCitation, DatasetCitation])
+)
 export type Citation = typeof Citation.Type

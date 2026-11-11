@@ -32,7 +32,8 @@ export interface ConnectionSettings {
 
 /**
  * Opens a sessionless client to `server`, initializes it, lists its tools and builds their toolkit under the
- * server's prefix, within `callTimeout`; the connection owns its own scope.
+ * server's prefix, within `callTimeout`; the connection owns its own scope. Annotations are trusted so each tool's
+ * published title becomes its `Tool.Title`; the read-only and destructive hints that come with them are not used.
  */
 const connect = Effect.fn("McpConnections.connect")(function* (server: ServerEntry, settings: ConnectionSettings) {
   const scope = yield* Scope.make()
@@ -46,6 +47,7 @@ const connect = Effect.fn("McpConnections.connect")(function* (server: ServerEnt
       tools: yield* client.listTools(),
       resultMode: "complete",
       failureMode: "return",
+      trustAnnotations: true,
       timeout: settings.callTimeout
     })
     const connection: Connection = { toolkit, scope }

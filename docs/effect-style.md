@@ -1,6 +1,6 @@
 # Effect Style Guidance
 
-How we write TypeScript with [Effect 4](https://effect.website/) in the backend, the MCP servers, `protocol/` and `shared/mcp-kit/`. The examples were typechecked against `effect` 4.1.2 under `strict`. In Effect 4, most modules that were separate `@effect/*` packages in Effect 3 live inside `effect` itself: `effect/ai`, `effect/http`, `effect/http-api` and `effect/sql`. Database drivers such as `@effect/sql-pg` and the model providers such as `@effect/ai-openai-compat` are still separate packages.
+How we write TypeScript with [Effect 4](https://effect.website/) in the backend, the MCP servers, `protocol/` and `shared/node-config/`. The examples were typechecked against `effect` 4.1.2 under `strict`. In Effect 4, most modules that were separate `@effect/*` packages in Effect 3 live inside `effect` itself: `effect/ai`, `effect/http`, `effect/http-api` and `effect/sql`. Database drivers such as `@effect/sql-pg` and the model providers such as `@effect/ai-openai-compat` are still separate packages.
 
 ## 1. Use Effect.fn for functions returning Effects
 
@@ -298,7 +298,7 @@ Never use plain `Error` subclasses or plain objects as typed errors; they can't 
 
 ### Tool errors are returned to the model
 
-An MCP tool's expected errors (no data for a period, a provision not in this version) are returned as the tool's result, typed by the server (with `UnknownValue` from `shared/mcp-kit`), so the model can say "no data" rather than guess. They are not thrown as transport failures. Tools are `effect/ai` `Tool` definitions served by `McpServer`; set `failureMode: "return"` on each, so a handler's typed error becomes the tool's result. See [Domain-Driven Design § Tool errors are results](./domain-driven-design.md#tool-errors-are-results).
+An MCP tool's expected errors (no data for a period, a provision not in this version) are returned as the tool's result, typed by the server (each server defines its own, following the [tool-error convention](./domain-driven-design.md#conventions-between-servers-and-the-backend)), so the model can say "no data" rather than guess. They are not thrown as transport failures. Tools are `effect/ai` `Tool` definitions served by `McpServer`; set `failureMode: "return"` on each, so a handler's typed error becomes the tool's result. See [Domain-Driven Design § Tool errors are results](./domain-driven-design.md#tool-errors-are-results).
 
 ## 8. Distinguish expected errors from defects
 
@@ -391,3 +391,57 @@ Decoding with a branded schema produces the branded type, so no casting is neede
 ## 12. Test with @effect/vitest
 
 Write tests with `it.effect` from `@effect/vitest`, provide test layers in place of real adapters, and assert on typed errors with `Effect.flip` rather than `try`/`catch`. The agent loop is tested with a stub `LanguageModel` and stub tools; tool handlers are tested against a throwaway Postgres testcontainer, never a shared database.
+
+## 13. Read the environment through one configuration module
+
+Each node declares every environment variable it reads in one module: `backend/src/config/BackendConfig.ts`, and `src/<Node>ServerConfig.ts` in each MCP server (`SfDataServerConfig.ts`, `SfDocsServerConfig.ts`). Related variables are grouped into a `Context.Service` class whose static `layer` reads them once at startup with `Config`, through the node's `dotEnv(path).load`, which makes a missing or invalid variable a `ConfigFileError` naming it and the `.env` file. Each field is documented with JSDoc, since Effect 4's `Config` has no `withDescription`.
+
+- **Nothing else reads the environment.** No `Config.String("…")` in a repo or handler, no `process.env`. Code that needs a value `yield*`s its config service, so what a node reads is listed in one place and a test provides it with `Layer.succeed`.
+- **Variable names keep the node's short name** through `Config.nested` (`Config.nested("SF_DATA")` with `Config.Port("PORT")` reads `SF_DATA_PORT`). A variable another project reads for the same thing, such as `OLLAMA_URL`, is not namespaced.
+- **One `ConfigLive` layer** in `Server.ts` merges the node's config layers and provides the `.env` provider to them.
+- **A test pins the names** by reading every config service from `ConfigProvider.fromEnvRecord` with the names in `.env.example`. Use `fromEnvRecord`, not `fromUnknown`: only the environment providers join `nested` prefixes with `_`.
+- **Settings that are not secrets or per-machine values** (model limits, tool prefixes, search settings) stay in the node's YAML files, decoded with a `Schema` into their own `Context.Service`.
+
+```ts
+// san-francisco/mcp-servers/data/src/SfDataServerConfig.ts
+import { fileURLToPath } from "node:url"
+
+import { Config, Context, Layer } from "effect"
+import type { Redacted } from "effect"
+
+import { dotEnv } from "@policyhuis/node-config"
+
+/**
+ * `san-francisco/mcp-servers/data/.env`, whose values take priority over the shell's. Every environment variable this
+ * server reads is declared in this module, each group read once at startup into its service below.
+ */
+export const SfDataEnv = dotEnv(fileURLToPath(new URL("../.env", import.meta.url)))
+
+/** The database this server reads. Environment: `SF_DATA_READER_DATABASE_URL`. */
+export class DatabaseConfig extends Context.Service<
+  DatabaseConfig,
+  {
+    /** The connection string of the read-only `sf_data_reader` role, which can read only the `sf_data` schema. */
+    readonly readerUrl: Redacted.Redacted
+  }
+>()("sf-data/DatabaseConfig") {
+  static readonly layer = Layer.effect(
+    this,
+    SfDataEnv.load(Config.all({ readerUrl: Config.Redacted("READER_DATABASE_URL") }).pipe(Config.nested("SF_DATA")))
+  )
+}
+
+/** The HTTP server that serves the MCP endpoint. Environment: `SF_DATA_PORT`. */
+export class HttpConfig extends Context.Service<
+  HttpConfig,
+  {
+    /** The port to serve `/mcp` on, which the backend's `config/servers.yaml` names for `sf-data`. */
+    readonly port: number
+  }
+>()("sf-data/HttpConfig") {
+  static readonly layer = Layer.effect(
+    this,
+    SfDataEnv.load(Config.all({ port: Config.Port("PORT") }).pipe(Config.nested("SF_DATA")))
+  )
+}
+```

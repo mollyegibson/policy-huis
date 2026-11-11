@@ -1,0 +1,13 @@
+# How the passage pipeline builds the corpus's search entries, as spike S4 decided
+# (docs/plans/spikes/s4-embeddings.md#decision). The docs server (san-francisco/mcp-servers/documents) embeds queries
+# with the model build in its own config/search.yaml, and refuses to start unless it matches the build stored with
+# every entry.
+
+# The Ollama model and the first 12 characters of its digest (`ollama list`); the pipeline refuses another build.
+embedding_model: qwen3-embedding:4b
+embedding_build: df5bd2e3c74c
+# Ollama's context for the embedding model, in tokens: enough for the longest search entry, and it caps memory.
+num_ctx: 4096
+# A provision with children is searched with all its descendants' text up to this many characters, and with an
+# outline of its children above it.
+subtree_chars: 10000

@@ -1,19 +1,20 @@
-import { Config, ConfigProvider, Effect, Option } from "effect"
-import type { Redacted } from "effect"
+import { ConfigProvider, Effect, Option } from "effect"
+import type { Config } from "effect"
 
 import { ConfigFileError } from "./ConfigFile.ts"
 
-/** One node's `.env` file: the configuration provider that reads it, and its required variables. */
+/**
+ * One node's `.env` file. A node declares every variable it reads as a typed `Config` in its own configuration
+ * module, and reads each group with `load`; nothing else reads the environment by name.
+ */
 export interface DotEnv {
   /**
    * Provides configuration from the `.env` file, which takes priority over the shell, then from the environment,
    * so another project's variables cannot leak in. A missing file leaves the environment alone.
    */
   readonly layer: ReturnType<typeof providerLayer>
-  /** A required secret, such as a database URL or an API key. */
-  readonly secret: (name: string) => Effect.Effect<Redacted.Redacted, ConfigFileError>
-  /** A required port number. */
-  readonly port: (name: string) => Effect.Effect<number, ConfigFileError>
+  /** Reads `config`; a missing or invalid variable is a `ConfigFileError` naming it and this file. */
+  readonly load: <A>(config: Config.Config<A>) => Effect.Effect<A, ConfigFileError>
 }
 
 const providerLayer = (path: string) =>
@@ -25,17 +26,9 @@ const providerLayer = (path: string) =>
     })
   )
 
-const required =
-  (path: string) =>
-  <A>(name: string, config: Config.Config<A>): Effect.Effect<A, ConfigFileError> =>
-    Effect.mapError(
-      config,
-      (error) => new ConfigFileError({ path, message: `${name} is missing or invalid: ${error.cause.message}` })
-    )
-
-/** The `.env` file at `path`; a missing variable is a `ConfigFileError` naming it and this file. */
+/** The `.env` file at `path`. */
 export const dotEnv = (path: string): DotEnv => ({
   layer: providerLayer(path),
-  secret: (name) => required(path)(name, Config.Redacted(name)),
-  port: (name) => required(path)(name, Config.Port(name))
+  load: (config) =>
+    Effect.mapError(config, (error) => new ConfigFileError({ path, message: `missing or invalid: ${error.message}` }))
 })

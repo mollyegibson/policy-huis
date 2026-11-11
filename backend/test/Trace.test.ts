@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 
-import { TextChunk, ToolEnd, ToolStart } from "@policyhuis/protocol/QuestionsApi"
+import { LookupEnded, LookupStarted, TextChunk } from "@policyhuis/protocol/QuestionsApi"
 
 import { Failure } from "../src/loop/Failures.ts"
 import type { LoopEvent } from "../src/loop/LoopEvent.ts"
@@ -24,9 +24,9 @@ const started = (args: unknown, at: number) =>
 
 const toolStep: ReadonlyArray<LoopEvent> = [
   new StepStarted({ step: 0, final: false }),
-  ToolStart.make({ callId: CALL, tool: "sf_lookup", server: null, arguments: { key: "k" } }),
+  LookupStarted.make({ lookupId: CALL, source: null, tool: "sf_lookup", title: "sf_lookup", arguments: { key: "k" } }),
   started({ key: "k" }, 1_000),
-  ToolEnd.make({ callId: CALL, tool: "sf_lookup", outcome: "success", result: { value: "v" }, error: null }),
+  LookupEnded.make({ lookupId: CALL, outcome: "succeeded", result: { value: "v" }, error: null }),
   new ToolCallEnded({ callId: CALL, at: 1_250 }),
   new StepEnded({ parts: [], finishReason: "tool-calls", inputTokens: 40, outputTokens: 5 })
 ]
@@ -75,9 +75,9 @@ describe("foldTrace", () => {
   it("keeps a failed call's full encoded error, which the browser does not receive", () => {
     const trace = fold([
       new StepStarted({ step: 0, final: false }),
-      ToolStart.make({ callId: CALL, tool: "sf_lookup", server: null, arguments: {} }),
+      LookupStarted.make({ lookupId: CALL, source: null, tool: "sf_lookup", title: "sf_lookup", arguments: {} }),
       started({}, 1_000),
-      ToolEnd.make({ callId: CALL, tool: "sf_lookup", outcome: "failure", result: null, error: "TransportError" }),
+      LookupEnded.make({ lookupId: CALL, outcome: "unavailable", result: null, error: "TransportError" }),
       new ToolFailed({ callId: CALL, encodedError: { reason: { _tag: "TransportError", description: "refused" } } })
     ])
     expect(trace.toolCalls[0]?.outcome).toBe("failure")

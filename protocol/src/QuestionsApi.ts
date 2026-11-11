@@ -1,6 +1,8 @@
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api"
 
+import { Citation } from "./Citation.ts"
+
 export class QuestionRequest extends Schema.Class<QuestionRequest>("QuestionRequest")({
   question: Schema.String.pipe(
     Schema.check(
@@ -10,43 +12,56 @@ export class QuestionRequest extends Schema.Class<QuestionRequest>("QuestionRequ
   )
 }) {}
 
-/** The UUID the backend gives each tool call. */
-export const CallId = Schema.String.pipe(Schema.check(Schema.isUUID()))
+/** The UUID the backend gives each lookup. */
+export const LookupId = Schema.String.pipe(Schema.check(Schema.isUUID()))
 
 export class TextChunk extends Schema.TaggedClass<TextChunk>()("TextChunk", {
   text: Schema.String
 }) {}
 
-/** The data server a tool call goes to: its name, the label shown for it, and the tool's own name on that server. */
-export const ToolServer = Schema.Struct({
+/** The server a lookup goes to: its name in the backend's server directory, and the label shown for it. */
+export const LookupSource = Schema.Struct({
   name: Schema.String,
-  label: Schema.String,
-  tool: Schema.String
+  label: Schema.String
 })
-export type ToolServer = typeof ToolServer.Type
+export type LookupSource = typeof LookupSource.Type
 
 /**
- * A tool call the model made. `tool` is the name the model called, with its server's prefix; `server` is null when no
- * connected server offers that name, and the call fails.
+ * The agent consulting a server: one tool call the model made. `tool` is the name the model called, with its server's
+ * prefix, and `title` the tool's title as its server publishes it. `source` is null when no connected server offers
+ * that name, and the lookup fails.
  */
-export class ToolStart extends Schema.TaggedClass<ToolStart>()("ToolStart", {
-  callId: CallId,
+export class LookupStarted extends Schema.TaggedClass<LookupStarted>()("LookupStarted", {
+  lookupId: LookupId,
+  source: Schema.NullOr(LookupSource),
   tool: Schema.String,
-  server: Schema.NullOr(ToolServer),
+  title: Schema.String,
   arguments: Schema.Unknown
 }) {}
 
 /**
- * A tool call's outcome. On success, `result` is the tool's `structuredContent`, passed through unchanged for the
- * browser to render, and `error` is null. On failure, `result` is null and `error` is the failure's type only, such as
- * `UnknownValue` or `TransportError`; its details stay in the trace.
+ * How a lookup ended. `unavailable` means its server, or the server's own database, could not be reached; `failed`
+ * means the call itself was wrong, such as an unknown value.
  */
-export class ToolEnd extends Schema.TaggedClass<ToolEnd>()("ToolEnd", {
-  callId: CallId,
-  tool: Schema.String,
-  outcome: Schema.Literals(["success", "failure"]),
+export const LookupOutcome = Schema.Literals(["succeeded", "failed", "unavailable"])
+export type LookupOutcome = typeof LookupOutcome.Type
+
+/**
+ * A lookup's end. On success, `result` is the tool's `structuredContent`, unchanged, for display only: the browser
+ * never reads citations from it, only from `Sources`. Otherwise `result` is null and `error` is the failure's type,
+ * such as `UnknownValue` or `TransportError`; its details stay in the trace.
+ */
+export class LookupEnded extends Schema.TaggedClass<LookupEnded>()("LookupEnded", {
+  lookupId: LookupId,
+  outcome: LookupOutcome,
   result: Schema.Unknown,
   error: Schema.NullOr(Schema.String)
+}) {}
+
+/** The citations the backend read from a lookup's result; each `citationId` is sent once per question. */
+export class Sources extends Schema.TaggedClass<Sources>()("Sources", {
+  lookupId: LookupId,
+  citations: Schema.Array(Citation)
 }) {}
 
 /** Sent when nothing else has been for `api.keepaliveInterval`, so the connection stays open; the browser app ignores it. */
@@ -63,7 +78,7 @@ export class Complete extends Schema.TaggedClass<Complete>()("Complete", {
   unavailableServers: Schema.Array(Schema.String)
 }) {}
 
-export const AgentStreamEvent = Schema.Union([TextChunk, ToolStart, ToolEnd, Keepalive, Complete])
+export const AgentStreamEvent = Schema.Union([TextChunk, LookupStarted, LookupEnded, Sources, Keepalive, Complete])
 export type AgentStreamEvent = typeof AgentStreamEvent.Type
 
 /** Returned as `503` before the stream starts, when the backend is already answering as many questions as it can. */

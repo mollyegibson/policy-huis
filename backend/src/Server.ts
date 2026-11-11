@@ -8,7 +8,7 @@ import { FetchHttpClient, HttpRouter } from "effect/http"
 import { Agent } from "./agent/Agent.ts"
 import { QuestionsApiLive } from "./api/QuestionsHandler.ts"
 import { AgentConfig } from "./config/AgentConfig.ts"
-import { BackendEnv } from "./config/Env.ts"
+import { AppDatabaseConfig, BackendEnv, HttpConfig, ModelApiKeysConfig } from "./config/BackendConfig.ts"
 import { ServerDirectory } from "./config/ServerDirectory.ts"
 import { runMigrations } from "./db/Migrations.ts"
 import { SystemPrompt } from "./loop/SystemPrompt.ts"
@@ -19,7 +19,7 @@ import { TraceStore } from "./trace/TraceStore.ts"
 /** Applies pending `app` migrations before anything writes a trace. */
 const MigrationsLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    yield* runMigrations(yield* BackendEnv.secret("APP_DATABASE_URL"))
+    yield* runMigrations((yield* AppDatabaseConfig).url)
   })
 )
 
@@ -32,9 +32,17 @@ const Services = Layer.mergeAll(
   ModelLayer
 )
 
-/** Node's HTTP server on `BACKEND_PORT`. */
+/** Node's HTTP server on the configured port. */
 const HttpServerLive = Layer.unwrap(
-  Effect.map(BackendEnv.port("BACKEND_PORT"), (port) => NodeHttpServer.layer(createServer, { port }))
+  Effect.gen(function* () {
+    const { port } = yield* HttpConfig
+    return NodeHttpServer.layer(createServer, { port })
+  })
+)
+
+/** Every environment variable the backend reads, from `.env` first, read once at startup. */
+const ConfigLive = Layer.mergeAll(AppDatabaseConfig.layer, HttpConfig.layer, ModelApiKeysConfig.layer).pipe(
+  Layer.provide(BackendEnv.layer)
 )
 
 /** The question API over HTTP. */
@@ -44,6 +52,6 @@ export const ServerLive = HttpRouter.serve(QuestionsApiLive).pipe(
   Layer.provide(Settings),
   Layer.provide(Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer)),
   Layer.provide(HttpServerLive),
-  Layer.provide(BackendEnv.layer),
+  Layer.provide(ConfigLive),
   Layer.provide(NodeServices.layer)
 )

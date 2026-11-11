@@ -3,7 +3,7 @@ import { Context, Duration, Effect, Layer, Redacted, Schema } from "effect"
 import pg from "pg"
 
 import { AgentConfig } from "../config/AgentConfig.ts"
-import { BackendEnv } from "../config/Env.ts"
+import { AppDatabaseConfig } from "../config/BackendConfig.ts"
 import { requests, toolCalls } from "../db/schema.ts"
 import type { Trace } from "./Trace.ts"
 import { traceErrorDetail, traceOutcome } from "./Trace.ts"
@@ -30,7 +30,7 @@ export class TraceStore extends Context.Service<
   { readonly write: (record: TraceRecord) => Effect.Effect<void, TraceWriteFailed> }
 >()("backend/TraceStore") {
   /**
-   * Writes to the `app` schema with Drizzle, over a pool on `APP_DATABASE_URL`. A write that has not finished within
+   * Writes to the `app` schema with Drizzle, over a pool on the `app` database (`AppDatabaseConfig`). A write that has not finished within
    * `trace.writeTimeout` fails, and the pool gives up connecting or querying after the same time, so an unreachable
    * database cannot hold a write open.
    */
@@ -38,7 +38,7 @@ export class TraceStore extends Context.Service<
     this,
     Effect.gen(function* () {
       const config = yield* AgentConfig
-      const url = yield* BackendEnv.secret("APP_DATABASE_URL")
+      const { url } = yield* AppDatabaseConfig
       const timeout = config.trace.writeTimeout
       const timeoutMillis = Duration.toMillis(timeout)
       const pool = yield* Effect.acquireRelease(

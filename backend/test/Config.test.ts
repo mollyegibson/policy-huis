@@ -144,10 +144,10 @@ describe("servers.yaml", () => {
     })
   )
 
-  it.effect("accepts a prefix of several words, such as sf_law_", () =>
+  it.effect("accepts a prefix of several words, such as sf_docs_", () =>
     Effect.gen(function* () {
-      const directory = yield* servers(`servers:${entry("a-data", "sf_")}${entry("b-data", "sf_law_")}`)
-      expect(directory.servers.map((s) => s.prefix)).toEqual(["sf_", "sf_law_"])
+      const directory = yield* servers(`servers:${entry("a-data", "sf_")}${entry("b-data", "sf_docs_")}`)
+      expect(directory.servers.map((s) => s.prefix)).toEqual(["sf_", "sf_docs_"])
     })
   )
 
@@ -155,7 +155,7 @@ describe("servers.yaml", () => {
     Effect.gen(function* () {
       const directory = yield* loadServerDirectory(SERVER_DIRECTORY_FILE)
       expect(Schema.is(ServerDirectoryFile)(directory)).toBe(true)
-      expect(directory.servers.map((s) => s.name)).toContain("sf-housing")
+      expect(directory.servers.map((s) => s.name)).toContain("sf-data")
     }).pipe(Effect.provide(NodeServices.layer))
   )
 })

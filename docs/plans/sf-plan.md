@@ -8,10 +8,10 @@ This plan covers the San Francisco build: its sources and its MCP servers. The a
 
 - **Focus:** San Francisco's affordable housing pipeline. Two questions run through the demo: *where is it, and is it moving?* and *is it climate-ready?* The research behind this choice is in [*SF affordable housing challenges*](../research/reports/SF%20affordable%20housing%20challenges.md) (November 4, 2026): money, not zoning, now holds projects back, and the figures cited in public debate are often real dataset totals with misleading labels, which is where cited answers help most.
 - **Users:** policy makers and residents. One answer style for now; the API is designed so an audience attribute can be added later without breaking callers.
-- **Phase 1, prototype:** the two project pipelines (Planning's and MOHCD's), two flood maps and the air-pollutant exposure zone, served by `sf-housing`, answered through the agent loop and shown in a simple web app. Answers cite datasets only.
-- **Phase 2, rules and evictions:** the legal-text server, with the inclusionary, all-electric and air-quality ordinances and the analysis reports that explain stalls, then the Rent Ordinance, the California tenant-protection statutes and the Eviction Notices dataset with its tools.
+- **Phase 1, prototype:** the two project pipelines (Planning's and MOHCD's), two flood maps and the air-pollutant exposure zone, served by `sf-data`, answered through the agent loop and shown in a simple web app. Answers cite datasets only.
+- **Phase 2, rules and evictions:** the docs server, with the inclusionary, all-electric and air-quality ordinances and the analysis reports that explain stalls, then the Rent Ordinance, the California tenant-protection statutes and the Eviction Notices dataset with its tools.
 - **Phase 3, evaluation:** the San Francisco questions run against the three model configurations.
-- **Servers:** one San Francisco data server (see [Data servers](#data-servers)), and from Phase 2 the shared legal-text server with a San Francisco corpus.
+- **Servers:** one San Francisco data server, `sf-data` (see [Data servers](#data-servers)), and from Phase 2 the docs server, `sf-docs`, over San Francisco's own corpus.
 - **Data tools:** fixed, parameterized tools backed by tested queries. No free-form query tool.
 - **Agent loop:** a custom multi-step loop over Effect's `LanguageModel`, the same for every city, with no conversation history, streaming typed events to the API (see the [Agent Loop Plan](agent-loop.md)).
 
@@ -76,7 +76,7 @@ Nothing in Phase 1 or 2 branches on audience, so adding it touches the request s
 
 Checked on November 3 and 4, 2026. DataSF moved from `data.sfgov.org` to `data.sf.gov`; old links redirect.
 
-**Publicly available sources only.** This is a demo, so it uses sources the city and state publish openly and does not seek reuse permissions. Every citation names the publisher and links to the source, and each dataset's stated license (or the absence of one) is recorded with the load and returned by `sf_dataset_info`.
+**Publicly available sources only.** This is a demo, so it uses sources the city and state publish openly and does not seek reuse permissions. Every citation names the publisher and links to the source, and each dataset's stated license (or the absence of one) is recorded with the load and returned by `sf_data_dataset_info`.
 
 **Size.** Phase 1 is about 2,100 project rows and four zone layers; Phase 2 adds about 49,000 eviction notices and a few thousand passages. At the MVP plan's estimate of 6–10 KB per passage, everything fits well inside one 1 GB Neon project per server. This is an estimate, confirmed by measuring after the first load.
 
@@ -97,7 +97,7 @@ Checked on November 3 and 4, 2026. DataSF moved from `data.sfgov.org` to `data.s
 
 ### Phase 2 documents
 
-The legal-text server's corpus holds laws and the analysis reports that explain them. Each citation carries a `documentType` (`law`, `report` or `reference`), and answers label reports as analysis, not rules.
+The docs server's corpus holds laws and the analysis reports that explain them. Each citation carries a `documentType` (`law`, `report` or `reference`), and answers label reports as analysis, not rules.
 
 | Document | Publisher | Access | Type | As of | Notes |
 |---|---|---|---|---|---|
@@ -108,7 +108,7 @@ The legal-text server's corpus holds laws and the analysis reports that explain 
 | Housing Production and Development Pipeline, 2026 Q2 | SF Planning, [sfplanning.org](https://sfplanning.org/sites/default/files/documents/reports/Housing_Production_Development_Pipeline-2026Q2.pdf) | PDF | Report | 2026 Q2 | The narrative behind the `6jgi-cpb4` snapshot. |
 | Pipeline data dictionary | SF Planning, [sfplanning.org](https://sfplanning.org/sites/default/files/documents/reports/pipeline_data_dictionary.pdf) | PDF | Reference | Undated | What each pipeline status means. |
 | Rent Ordinance (Administrative Code, Chapter 37) | San Francisco Rent Board | PDF, [sf.gov](https://media.api.sf.gov/documents/600_Ordinance_6-29-26.pdf), 146 pages, 27 sections (Sec. 37.1 to Sec. 37.16) | Law | Amended through June 29, 2026 | The PDF states it is "not an official record" and that it reflects court decisions and state legislation the official record may not. A separate [list of amendments](https://media.api.sf.gov/documents/601_List_of_Ord_Amendments_6-29-26.pdf) is published alongside. Citations link to this PDF. |
-| California Civil Code: Tenant Protection Act sections (1946.2, 1947.12, 1947.13) and the Costa-Hawkins Rental Housing Act (1954.50 and following) | California Legislature | Daily bulk database downloads at [downloads.leginfo.legislature.ca.gov](https://downloads.leginfo.legislature.ca.gov/) | Law | Daily | The exact sections loaded are corpus membership in `san-francisco/legal-text/corpus.yaml`. A 2025 bill (SB 522) proposed amendments to 1946.2 and 1947.12; whether it was enacted is unconfirmed, which is why every load records the version it took. |
+| California Civil Code: Tenant Protection Act sections (1946.2, 1947.12, 1947.13) and the Costa-Hawkins Rental Housing Act (1954.50 and following) | California Legislature | Daily bulk database downloads at [downloads.leginfo.legislature.ca.gov](https://downloads.leginfo.legislature.ca.gov/) | Law | Daily | The exact sections loaded are corpus membership in `san-francisco/ingest/documents/config/corpus.yaml`. A 2025 bill (SB 522) proposed amendments to 1946.2 and 1947.12; whether it was enacted is unconfirmed, which is why every load records the version it took. |
 
 American Legal Publishing, the official host of the city's codes, refused automated requests during the research, so code sections come from the enacted ordinances and the Rent Board's copy, and citations link to those. The city's older raw code files on GitHub ([SFMOCI/openlaw](https://github.com/SFMOCI/openlaw)) were last updated in April 2014, so they cannot serve as the source for current law.
 
@@ -131,7 +131,7 @@ The Rent Ordinance PDF's text extracts cleanly. Each section starts with a "Sec.
 
 ## Data servers
 
-**One San Francisco data server, `sf-housing`**, holding the housing pipelines, the zones they are checked against and, from Phase 2, the eviction data in one schema. Its code is in `san-francisco/housing-server/`; its sources, migrations and dbt models are in `san-francisco/ingest/`. Code every node reuses (fetching, archiving and loading sources; MCP server setup; citation IDs; the legal-text server) is in `shared/`, installed by each node as a library, so each node still runs on its own device.
+**One San Francisco data server, `sf-data`**, holding the housing pipelines, the zones they are checked against and, from Phase 2, the eviction data in one schema. Its code is in `san-francisco/mcp-servers/data/`; its sources, migrations and dbt models are in `san-francisco/ingest/data/`. The two are deployed apart: the ingestion project runs as a scheduled job with the owner role, the server as a long-lived service with the read-only `sf_data_reader` role. Code several nodes need done the same way (fetching, archiving and loading sources; reading configuration) is in `shared/`, installed by each node as a library; what a server publishes (its tools, citations and errors) is its own code, following the [conventions](#citations-and-tool-errors).
 
 The climate question needs a spatial join: which pipeline projects fall inside which zone. Done in the database, that join is one tested query with PostGIS. Split across a housing server and a climate server, the model would have to carry each project's coordinates from one server's result into another server's call, which a small model does unreliably and which no test can pin.
 
@@ -141,44 +141,28 @@ The split is revisited when a climate source covers places beyond San Francisco 
 
 | Neon project | Holds | From |
 |---|---|---|
-| `sf-housing` | Both pipelines, the flood and exposure zones and neighborhoods with PostGIS; eviction notices from Phase 2 | Phase 1 |
+| `sf-data` | Both pipelines, the flood and exposure zones and neighborhoods with PostGIS; eviction notices from Phase 2 | Phase 1 |
 | `app` | Traces and evaluation results (shared with every city) | Phase 1 |
-| `sf-legal-text` | The ordinances, reports, Chapter 37 and the California sections: passages, embeddings, search indexes | Phase 2 |
+| `sf-docs` | The ordinances, reports, Chapter 37 and the California sections: passages, embeddings, search indexes | Phase 2 |
 
 Neon supports both extensions needed: PostGIS (3.5.7 on Postgres 17) and pgvector (0.8.0 on Postgres 17), per [Neon's extension list](https://neon.com/docs/extensions/pg-extensions).
 
-## Protocol and shared helpers
+## Citations and tool errors
 
-Once servers run on their own devices, the only interface between a server and the backend is what the server exposes over MCP: its tool definitions and results. So no schema package is shared between servers and the backend. Three things are shared, for different reasons:
+Once servers run on their own devices, the only interface between a server and the backend is what the server exposes over MCP: its tool definitions and results, following two conventions, for citations and tool errors, defined in [Domain-Driven Design](../domain-driven-design.md#conventions-between-servers-and-the-backend). No package is shared between the servers and the backend, or between the servers: each server holds its own copy of the few helpers it uses, and `protocol/` is the contract between the backend and the browser app only.
 
-| Package | Holds | Used by |
+| Where | Holds | Used by |
 |---|---|---|
-| `protocol/` | The API between the backend and the browser app: the question endpoint, the streamed events, and the citation schema the browser renders | The backend and the browser app, as in the reference project's `protocol` package. Servers produce citations that match its citation schema (published as JSON Schema), without importing it. |
-| `shared/mcp-kit/` | Helpers for building MCP servers: common formats, `OptionalParam` for optional tool inputs, the tool errors (`UnknownValue`, `DatabaseUnavailable`, `DataUnavailable`) and `withDataErrors`, citation ID construction | TypeScript MCP servers that choose to use it; a server in another language follows the same conventions without it |
-| `shared/node-config/` | Reading a node's configuration: `ConfigFileError`, YAML files decoded with a `Schema`, and `dotEnv(path)`, the `.env`-first configuration provider with `secret` and `port` for required variables | Every TypeScript node (the backend and each server), installed as a library; it is not a contract between nodes |
+| Each server's `src/` | `Formats.ts` (dates, months, counts), `Params.ts` (`OptionalParam`), `ToolErrors.ts` (`UnknownValue`, `DatabaseUnavailable`, `DataUnavailable`, `withDataErrors`), and its own `Citations.ts`: the citation schema and how its IDs are built. `sf-data` adds `Locators.ts` | That server alone. A fix to a copied helper is made in each server that has it |
+| `protocol/` | The API between the backend and the browser app: the question endpoint, the streamed events, and the citation schema the browser renders | The backend and the browser app |
+| `shared/node-config/` | Reading a node's configuration: `ConfigFileError`, YAML files decoded with a `Schema`, and `dotEnv(path)`, the `.env`-first configuration provider and its `load`, which each server's one configuration module (`SfDataServerConfig.ts`, `SfDocsServerConfig.ts`) uses to read its environment variables into services | Every TypeScript node, installed as a library; plumbing, not a contract between nodes |
 
-The code below is copied from the repo, where it typechecks against `effect` 4.1.2; the legal-text tool block is a draft until that server is built.
-
-**Formats.** Months, dates and counts as tool inputs and results.
-
-```ts
-// shared/mcp-kit/src/Formats.ts
-import { Schema } from "effect"
-
-export { IsoDate } from "@policyhuis/protocol/Formats"
-
-export const YearMonth = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^\d{4}-(0[1-9]|1[0-2])$/, { message: "a month as YYYY-MM" }))
-).annotate({ description: "A month, as YYYY-MM" })
-
-export const PositiveInt = Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0)))
-export const NonNegativeInt = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
-```
+The code below is copied from the repo, where it typechecks against `effect` 4.1.2.
 
 **Optional parameters.** Models often send `null` for a parameter they leave unset, which a plain optional field rejects, so the call fails and the model retries. Every optional tool input is an `OptionalParam`: its published schema allows `null`, and `null` decodes as not given.
 
 ```ts
-// shared/mcp-kit/src/Params.ts
+// san-francisco/mcp-servers/data/src/Params.ts
 import { Option, Schema, SchemaTransformation } from "effect"
 
 /**
@@ -197,105 +181,124 @@ export const OptionalParam = <S extends Schema.Top>(schema: S) =>
   )
 ```
 
-**Citations.** Every tool result carries the citations behind it in its `structuredContent` (see [Tool results](agent-loop.md#tool-results)). A citation is either a passage from a document (a law, a report or a reference) or a dataset query. Phase 1 uses dataset citations only; document citations arrive with the legal-text server in Phase 2. Every citation carries two stable IDs, assigned by the tool that returns it:
+**Citations.** Every tool result carries the citations behind it in its `structuredContent` (see [Tool results](agent-loop.md#tool-results)). A citation is either a passage from a document (a law, a report or a reference), from `sf-docs`, or a dataset query, from `sf-data`. Every citation carries two stable IDs, assigned by the tool that returns it, and namespaced by the server's short name so they stay unique across servers without coordination:
 
-- **`sourceId`** names one version of a source: `<documentId>@<versionDate>` for a document (`rent_ordinance@2026-06-29`), `<datasetKey>@<sourceVersion>` for a dataset (`sf.development_pipeline@2026-08-28`). Every citation of the same dataset or PDF version, from any call, has the same `sourceId`.
-- **`citationId`** names the part of that source a claim rests on: `<sourceId>#<provision>` for a document (`rent_ordinance@2026-06-29#37.9(a)(8)`), `<sourceId>#<queryKey>` for a dataset. `queryKey` is the first 16 hex characters of the SHA-256 of the tool name and its decoded parameters as canonical JSON (keys sorted, absent optional fields omitted), so the same query always gets the same ID.
+- **`sourceId`** names one version of a source: `sf_docs.<documentId>@<versionDate>` for a document (`sf_docs.rent_ordinance@2026-06-29`), `sf_data.<datasetKey>@<sourceVersion>` for a dataset (`sf_data.development_pipeline@2026-08-28`). Every citation of the same dataset or PDF version, from any call, has the same `sourceId`.
+- **`citationId`** names the part of that source a claim rests on: `<sourceId>#<provision>` for a document (`sf_docs.rent_ordinance@2026-06-29#37.9(a)(8)`), `<sourceId>#<queryKey>` for a dataset. `queryKey` is the first 16 hex characters of the SHA-256 of the tool name and its decoded parameters as canonical JSON (keys sorted, absent optional fields omitted), so the same query always gets the same ID.
 
-Both IDs are derived from the citation's own fields, so they are the same across calls, requests, model configurations and evaluation runs. The schema rejects a citation whose IDs do not match its fields, so anything decoding citations (the browser app, the evaluation) can rely on the rule. The model cites claims with the full `citationId` (see [Citations in answers](agent-loop.md#citations-in-answers)).
+Both IDs are derived from the citation's own fields, so they are the same across calls, requests, model configurations and evaluation runs. Each server's citation schema rejects a citation whose `citationId` is not under its `sourceId`, or whose `sourceId` does not end with its `version`, and each server's tests decode every citation its tools return with it. The model cites claims with the full `citationId` (see [Citations in answers](agent-loop.md#citations-in-answers)).
 
-**The archived file's hash is not in the citation.** Users can only open the publisher's live link (`sourceUrl`), not our archive, so the hash would cost the model tokens in every tool result without anything a user could check. It stays in `raw_sf.load_manifest`, where `sourceId` leads to the archived file and its hash for reproducing an answer or detecting that the publisher replaced a file. The browser app shows the version cited and notes that the live link may show newer data (see [Browser App Plan](browser-app.md#citations)). Serving archived public-domain files by `sourceId` can be added later without changing the citation.
+| Field | Document (`sf-docs`) | Dataset (`sf-data`) |
+|---|---|---|
+| Identity | `sourceId`, `citationId` | `sourceId`, `citationId`, whose part is the query key |
+| Which part | `locator`: the provision, as "Sec. 37.9(a)(8)" for a law; `quote`: the passage's text, or an outline entry's summary | `locator`: what the query selected, in words, built from the tool's parameters only ("Planning pipeline projects, with status BP Filed, in Mission"); `quote` is null |
+| Which version | `version`: the "amended through" or effective date | `version`: the dataset's `rowsUpdatedAt` or the layer's edit date, as `YYYY-MM-DD` |
+| Where it came from | `title`, `publisher`, `sourceUrl` (the copy loaded and quoted) | `title`, `publisher`, `sourceUrl`; the license is returned by `dataset_info` |
+| The server's own | `documentType` (`law`, `report` or `reference`), so the model can label a report as analysis; the backend ignores it | None |
 
-The citation schema is in `protocol/`, because the browser app decodes it to show each source. `shared/mcp-kit` builds the IDs for TypeScript servers.
+The tool and parameters behind a dataset citation are not in the citation: a reader checks the locator against the source, and the trace keeps the tool call that produced each citation.
+
+**The archived file's hash is not in the citation.** Users can only open the publisher's live link (`sourceUrl`), not our archive, so the hash would cost the model tokens in every tool result without anything a user could check. It stays in the raw schema's `load_manifest` (`raw_sf_data`, `raw_sf_docs`), where `sourceId` leads to the archived file and its hash for reproducing an answer or detecting that the publisher replaced a file. The browser app shows the version cited and notes that the live link may show newer data (see [Browser App Plan](browser-app.md#citations)). Serving archived public-domain files by `sourceId` can be added later without changing the citation.
+
+The backend reads each result's citations by the convention and sends them to the browser app in `Sources`; the browser decodes them with `protocol/`'s `Citation`. Neither server imports `protocol/`.
 
 ```ts
-// protocol/src/Citation.ts
+// san-francisco/mcp-servers/data/src/Citations.ts
+import { createHash } from "node:crypto"
+
 import { Schema } from "effect"
 
-import { IsoDate } from "./Formats.ts"
+/** This server's namespace in every `sourceId`, so its IDs stay unique among every server's citations. */
+export const NAMESPACE = "sf_data"
 
-const IdPart = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^[A-Za-z0-9_.()-]+$/, { message: "letters, digits, _ . ( ) - only" }))
-)
+const PART = "[A-Za-z0-9_.()-]+"
+const SOURCE_ID = `[a-z][a-z0-9_]*\\.${PART}@${PART}`
 
-export const SourceId = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^[A-Za-z0-9_.()-]+@[A-Za-z0-9_.()-]+$/, { message: "a source ID, <key>@<version>" })),
-  Schema.brand("SourceId")
-)
-
-export const CitationId = Schema.String.pipe(
-  Schema.check(
-    Schema.isPattern(/^[A-Za-z0-9_.()-]+@[A-Za-z0-9_.()-]+#[A-Za-z0-9_.()-]+$/, {
-      message: "a citation ID, <sourceId>#<part>"
-    })
-  ),
-  Schema.brand("CitationId")
-)
-
-const idsMatch = (sourceId: string, expectedSource: string, citationId: string, part: string) =>
-  sourceId !== expectedSource
-    ? `sourceId must be ${expectedSource}`
-    : citationId !== `${sourceId}#${part}`
-      ? `citationId must be ${sourceId}#${part}`
-      : true
-
-export class LegalCitation extends Schema.TaggedClass<LegalCitation>()(
-  "LegalCitation",
-  Schema.Struct({
-    sourceId: SourceId,
-    citationId: CitationId,
-    documentId: IdPart,
-    documentTitle: Schema.String,
-    documentType: Schema.Literals(["law", "report", "reference"]),
-    provision: IdPart,
-    versionDate: IsoDate,
-    quote: Schema.String,
-    publisher: Schema.String,
-    sourceUrl: Schema.String
-  }).check(
-    Schema.makeFilter((c) => idsMatch(c.sourceId, `${c.documentId}@${c.versionDate}`, c.citationId, c.provision))
+/**
+ * One source a result rests on, in the shape every PolicyHuis MCP server returns in `structuredContent.citations`.
+ * `sourceId` is `<namespace>.<key>@<version>`; `citationId` is `<sourceId>#<part>`, where the part here is the query
+ * key. `locator` says in words which part of the source the result used.
+ */
+export const Citation = Schema.Struct({
+  citationId: Schema.String.pipe(Schema.check(Schema.isPattern(new RegExp(`^${SOURCE_ID}#${PART}$`)))),
+  sourceId: Schema.String.pipe(Schema.check(Schema.isPattern(new RegExp(`^${SOURCE_ID}$`)))),
+  title: Schema.String,
+  publisher: Schema.NullOr(Schema.String),
+  sourceUrl: Schema.String,
+  version: Schema.String,
+  locator: Schema.NullOr(Schema.String),
+  quote: Schema.NullOr(Schema.String)
+}).check(
+  Schema.makeFilter((c) =>
+    !c.sourceId.endsWith(`@${c.version}`)
+      ? "sourceId must end with @<version>"
+      : !c.citationId.startsWith(`${c.sourceId}#`)
+        ? "citationId must start with <sourceId>#"
+        : true
   )
-) {}
-
-export class DatasetCitation extends Schema.TaggedClass<DatasetCitation>()(
-  "DatasetCitation",
-  Schema.Struct({
-    sourceId: SourceId,
-    citationId: CitationId,
-    datasetKey: IdPart,
-    title: Schema.String,
-    publisher: Schema.NullOr(Schema.String),
-    sourceUrl: Schema.String,
-    sourceVersion: IdPart,
-    tool: IdPart,
-    parameters: Schema.Record(Schema.String, Schema.Unknown),
-    queryKey: Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f]{16}$/)))
-  }).check(
-    Schema.makeFilter((c) => idsMatch(c.sourceId, `${c.datasetKey}@${c.sourceVersion}`, c.citationId, c.queryKey))
-  )
-) {}
-
-export const Citation = Schema.Union([LegalCitation, DatasetCitation])
+)
 export type Citation = typeof Citation.Type
+
+/** JSON with object keys sorted at every level and `undefined` fields left out, so equal values serialize identically. */
+export const canonicalJson = (value: unknown): string => JSON.stringify(sortKeys(value))
+
+const sortKeys = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(sortKeys)
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, v]) => v !== undefined)
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([k, v]) => [k, sortKeys(v)])
+    )
+  }
+  return value
+}
+
+/** The first 16 hex characters of the SHA-256 of a tool name and its decoded parameters as canonical JSON. */
+export const queryKey = (tool: string, parameters: Readonly<Record<string, unknown>>): string =>
+  createHash("sha256").update(canonicalJson({ tool, parameters })).digest("hex").slice(0, 16)
+
+export interface DatasetCitationInput {
+  readonly datasetKey: string
+  readonly title: string
+  readonly publisher: string | null
+  readonly sourceUrl: string
+  readonly sourceVersion: string
+  readonly tool: string
+  readonly parameters: Readonly<Record<string, unknown>>
+  readonly locator: string
+}
+
+/**
+ * A dataset's citation for one query: `sf_data.<datasetKey>@<sourceVersion>`, and the query key of the tool and its
+ * parameters, so the same query of the same version always has the same `citationId`.
+ */
+export const datasetCitation = (input: DatasetCitationInput): Citation => {
+  const sourceId = `${NAMESPACE}.${input.datasetKey}@${input.sourceVersion}`
+  return Citation.make({
+    citationId: `${sourceId}#${queryKey(input.tool, input.parameters)}`,
+    sourceId,
+    title: input.title,
+    publisher: input.publisher,
+    sourceUrl: input.sourceUrl,
+    version: input.sourceVersion,
+    locator: input.locator,
+    quote: null
+  })
+}
 ```
 
-| Field | Document | Dataset |
-|---|---|---|
-| Identity | `sourceId`, `citationId` | `sourceId`, `citationId`, `queryKey` |
-| What was cited | `documentId`, `documentType`, `provision` (a section number for a law; a section number or `p<page>` for a report), `quote` | `datasetKey`, `title`, `tool` and `parameters`: the fixed tool that ran and the arguments it ran with, from which `queryKey` is computed |
-| Which version | `versionDate`: the "amended through" or effective date | `sourceVersion`: the dataset's `rowsUpdatedAt` or the layer's edit date, as `YYYY-MM-DD` |
-| Where it came from | `publisher`, `sourceUrl` (the copy loaded and quoted) | `publisher`, `sourceUrl`; the license is returned by `dataset_info` |
-
-**Tool errors.** Returned to the model as results (`failureMode: "return"`), so it can correct its call or say there is no data. The backend does not interpret them. Three are shared through `shared/mcp-kit`; errors specific to one server's tools (such as `PeriodOutOfRange` for eviction counts) are defined with those tools.
+**Tool errors.** Returned to the model as results (`failureMode: "return"`), so it can correct its call or say there is no data. Each server defines the three below in its own `ToolErrors.ts`; errors specific to one server's tools (such as `PeriodOutOfRange` for eviction counts) are defined with those tools.
 
 - `UnknownValue` always lists the valid values.
-- `DatabaseUnavailable`: the server could not connect or log in to its database (`ConnectionError` or `AuthenticationError` from `effect/sql`). The same call may succeed later.
+- `DatabaseUnavailable`: the server could not connect or log in to its database (`ConnectionError` or `AuthenticationError` from `effect/sql`). The same call may succeed later. By the tool-error convention, the backend treats it as the server being unavailable: the lookup's outcome is `unavailable` and the server is listed in `Complete.unavailableServers`.
 - `DataUnavailable`: the database was reached, but the data the tool reads is not loaded (a dataset with no load, a zone with no row) or could not be read (any other query failure, or rows that do not decode). It names the datasets the tool reads.
 
 A database failure is never a defect: `withDataErrors`, passed to each handler's `Effect.fn`, turns `SqlError` and `SchemaError` into one of the two, and logs the cause for whoever runs the server.
 
 ```ts
-// shared/mcp-kit/src/ToolErrors.ts
+// san-francisco/mcp-servers/data/src/ToolErrors.ts
 import { Effect, Schema } from "effect"
 import { SqlError } from "effect/sql"
 
@@ -355,19 +358,19 @@ export const withDataErrors =
 
 ## Data server tools
 
-Fixed tools, each backed by a tested dbt model or query. Servers name tools without a prefix; the agent's directory file gives each server its prefix (`sf_`), and `McpClient.toolkit(client, prefix)` applies it, so the model sees `sf_development_pipeline_projects`. Phase 1 gives the model seven tools; Phase 2 adds two eviction tools and the legal-text server's three (`sf_law_search_policy`, `sf_law_get_provision`, `sf_law_list_provisions`), for twelve, which spike S2 tests for tool selection; S2 has not been run.
+Fixed tools, each backed by a tested dbt model or query. Servers name tools without a prefix; the agent's directory file gives each server its prefix (`sf_data_`), and `McpClient.toolkit(client, prefix)` applies it, so the model sees `sf_data_development_pipeline_projects`. Each tool also publishes a title (`Tool.Title`, sent as the MCP tool's `annotations.title`), which the browser app shows for each lookup. Phase 1 gives the model seven tools; Phase 2 adds two eviction tools and the docs server's three (`sf_docs_search_policy`, `sf_docs_get_provision`, `sf_docs_list_provisions`), for twelve, which spike S2 tests for tool selection; S2 has not been run.
 
 | Tool (as the model sees it) | Phase | Answers | Errors |
 |---|---|---|---|
-| `sf_development_pipeline_projects` | 1 | Which projects are at a stage, since when, and with how many affordable units | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
-| `sf_development_pipeline_summary` | 1 | Totals by status, neighborhood, district or year of approval | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
-| `sf_affordable_pipeline_projects` | 1 | Which MOHCD projects, with units by income band and estimated dates | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
-| `sf_affordable_pipeline_summary` | 1 | Projects and affordable units by status, construction stage, neighborhood or district | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
-| `sf_affordable_pipeline_units_by_income_band` | 1 | Units in each income band, and how many projects have units in it | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
-| `sf_project_hazard_exposure` | 1 | Which projects from either pipeline sit inside one flood or exposure zone, and how many units they hold | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
-| `sf_dataset_info` | 1 | How current each dataset is, its license, and the publisher's own description of it | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
-| `sf_eviction_notice_counts` | 2 | How many notices, when, where, for which grounds; a period with no notices returns zero counts | `UnknownValue`, `PeriodOutOfRange`, `DatabaseUnavailable`, `DataUnavailable` |
-| `sf_eviction_grounds` | 2 | Which grounds the data records, each with the reason and Rent Ordinance section the Rent Board's annual eviction report gives for it | `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_data_development_pipeline_projects` | 1 | Which projects are at a stage, since when, and with how many affordable units | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_data_development_pipeline_summary` | 1 | Totals by status, neighborhood, district or year of approval | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_data_affordable_pipeline_projects` | 1 | Which MOHCD projects, with units by income band and estimated dates | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_data_affordable_pipeline_summary` | 1 | Projects and affordable units by status, construction stage, neighborhood or district | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_data_affordable_pipeline_units_by_income_band` | 1 | Units in each income band, and how many projects have units in it | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_data_project_hazard_exposure` | 1 | Which projects from either pipeline sit inside one flood or exposure zone, and how many units they hold | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_data_dataset_info` | 1 | How current each dataset is, its license, and the publisher's own description of it | `UnknownValue`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_data_eviction_notice_counts` | 2 | How many notices, when, where, for which grounds; a period with no notices returns zero counts | `UnknownValue`, `PeriodOutOfRange`, `DatabaseUnavailable`, `DataUnavailable` |
+| `sf_data_eviction_grounds` | 2 | Which grounds the data records, each with the reason and Rent Ordinance section the Rent Board's annual eviction report gives for it | `DatabaseUnavailable`, `DataUnavailable` |
 
 **"Is it moving" is a filter, not a label.** `development_pipeline_projects` returns each project's status date and days in that status, counted to the snapshot's source version (the date its rows were published, which its citation carries) rather than to today, so the same query gives the same number for as long as the snapshot is current; it takes `inStatusSinceBefore` and `approvedBefore`, so a question such as "approved before 2020 and not yet under construction" is answered from the data. No tool decides what counts as stalled.
 
@@ -386,20 +389,14 @@ Fixed tools, each backed by a tested dbt model or query. Servers name tools with
 The answer rules (cite the snapshot, never say "stalled", notices are not evictions) are in these tool descriptions, not the backend's system prompt, which names no city (see [The system prompt](agent-loop.md#the-system-prompt)). The evaluation checks them. If the evaluation shows answers dropping a rule, the fix is a structured flag in the result (for example `countsOverlap: true`), not prose.
 
 ```ts
-// san-francisco/housing-server/src/Tools.ts
+// san-francisco/mcp-servers/data/src/Tools.ts
 import { Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 
-import {
-  DataErrors,
-  IsoDate,
-  NonNegativeInt,
-  OptionalParam,
-  PositiveInt,
-  UnknownValue,
-  YearMonth
-} from "@policyhuis/mcp-kit"
-import { Citation } from "@policyhuis/protocol/Citation"
+import { Citation } from "./Citations.ts"
+import { IsoDate, NonNegativeInt, PositiveInt, YearMonth } from "./Formats.ts"
+import { OptionalParam } from "./Params.ts"
+import { DataErrors, UnknownValue } from "./ToolErrors.ts"
 
 const Citations = Schema.Array(Citation)
 
@@ -484,7 +481,7 @@ export const DevelopmentPipelineProjects = Tool.make("development_pipeline_proje
   }),
   failure: ToolFailure,
   failureMode: "return"
-})
+}).annotate(Tool.Title, "Planning pipeline projects")
 
 export const DevelopmentPipelineSummary = Tool.make("development_pipeline_summary", {
   description:
@@ -508,7 +505,7 @@ export const DevelopmentPipelineSummary = Tool.make("development_pipeline_summar
   }),
   failure: ToolFailure,
   failureMode: "return"
-})
+}).annotate(Tool.Title, "Planning pipeline totals")
 
 export const AffordablePipelineProjects = Tool.make("affordable_pipeline_projects", {
   description:
@@ -529,7 +526,7 @@ export const AffordablePipelineProjects = Tool.make("affordable_pipeline_project
   }),
   failure: ToolFailure,
   failureMode: "return"
-})
+}).annotate(Tool.Title, "MOHCD affordable projects")
 
 export const AffordablePipelineSummary = Tool.make("affordable_pipeline_summary", {
   description:
@@ -547,7 +544,7 @@ export const AffordablePipelineSummary = Tool.make("affordable_pipeline_summary"
   }),
   failure: ToolFailure,
   failureMode: "return"
-})
+}).annotate(Tool.Title, "MOHCD affordable pipeline totals")
 
 export const AffordablePipelineUnitsByIncomeBand = Tool.make("affordable_pipeline_units_by_income_band", {
   description:
@@ -562,7 +559,7 @@ export const AffordablePipelineUnitsByIncomeBand = Tool.make("affordable_pipelin
   }),
   failure: ToolFailure,
   failureMode: "return"
-})
+}).annotate(Tool.Title, "Affordable units by income band")
 
 export const ProjectHazardExposure = Tool.make("project_hazard_exposure", {
   description:
@@ -587,13 +584,18 @@ export const ProjectHazardExposure = Tool.make("project_hazard_exposure", {
     unitsInside: Schema.Int,
     affordableUnitsInside: NonNegativeInt,
     projects: Schema.Array(
-      Schema.Struct({ id: Schema.String, name: Schema.String, status: Schema.String, affordableUnits: NonNegativeInt })
+      Schema.Struct({
+        id: Schema.String,
+        name: Schema.String,
+        status: Schema.String,
+        affordableUnits: NonNegativeInt
+      })
     ),
     citations: Citations
   }),
   failure: ToolFailure,
   failureMode: "return"
-})
+}).annotate(Tool.Title, "Projects in a flood or exposure zone")
 
 export const DatasetInfo = Tool.make("dataset_info", {
   description:
@@ -615,7 +617,7 @@ export const DatasetInfo = Tool.make("dataset_info", {
   }),
   failure: ToolFailure,
   failureMode: "return"
-})
+}).annotate(Tool.Title, "Dataset details")
 
 /** A month range outside the months the Eviction Notices data covers. */
 export class PeriodOutOfRange extends Schema.TaggedError<PeriodOutOfRange>()("PeriodOutOfRange", {
@@ -649,7 +651,7 @@ export const EvictionNoticeCounts = Tool.make("eviction_notice_counts", {
   }),
   failure: Schema.Union([UnknownValue, PeriodOutOfRange, ...DataErrors]),
   failureMode: "return"
-})
+}).annotate(Tool.Title, "Eviction notice counts")
 
 export const EvictionGrounds = Tool.make("eviction_grounds", {
   description:
@@ -662,9 +664,9 @@ export const EvictionGrounds = Tool.make("eviction_grounds", {
   }),
   failure: Schema.Union([...DataErrors]),
   failureMode: "return"
-})
+}).annotate(Tool.Title, "Eviction grounds")
 
-export const SfHousingToolkit = Toolkit.make(
+export const SfDataToolkit = Toolkit.make(
   DevelopmentPipelineProjects,
   DevelopmentPipelineSummary,
   AffordablePipelineProjects,
@@ -677,121 +679,187 @@ export const SfHousingToolkit = Toolkit.make(
 )
 ```
 
-### Legal-text tools (Phase 2)
+### Docs server tools (Phase 2)
 
-San Francisco's own server, `sf-legal-text` in the directory file, with the tool prefix `sf_law_` (`sf_law_search_policy`), beside `sf-housing`'s `sf_`. Each document is loaded in one version, so the tools take no date. Search is vector search with `qwen3-embedding:4b`, served locally by Ollama, as [spike S4](spikes/s4-embeddings.md#decision) decided: the MVP plan's hybrid search added nothing over vector search on Chapter 37 with any model tried, and S4 left keyword search for exact terms (section numbers, named acts) as an open question. When the embedding model cannot be reached, serves another build or returns an unusable vector, a search fails with `EmbeddingModelUnavailable` rather than falling back; `get_provision` and `list_provisions` do not need the model. Search is exact: it computes every search entry's distance to the query, which takes milliseconds at a few thousand entries and returns what S4 measured, where an HNSW index scan would return at most `hnsw.ef_search` entries (40 by default). With no limit given, it returns 10 provisions, the depth S4's threshold is set at. The server is built in [`san-francisco/legal-text-server/`](../../san-francisco/legal-text-server/README.md), beside `housing-server/`, and shares only the database with the passage pipeline: each has its own `config/search.yaml`, and the server checks at startup that its model build is the one stored with every search entry.
+San Francisco's own server, `sf-docs` in the directory file, with the tool prefix `sf_docs_` (`sf_docs_search_policy`), beside `sf-data`'s `sf_data_`. Each document is loaded in one version, so the tools take no date. Search is vector search with `qwen3-embedding:4b`, served locally by Ollama, as [spike S4](spikes/s4-embeddings.md#decision) decided: the MVP plan's hybrid search added nothing over vector search on Chapter 37 with any model tried, and S4 left keyword search for exact terms (section numbers, named acts) as an open question. When the embedding model cannot be reached, serves another build or returns an unusable vector, a search fails with `EmbeddingModelUnavailable` rather than falling back; `get_provision` and `list_provisions` do not need the model. Search is exact: it computes every search entry's distance to the query, which takes milliseconds at a few thousand entries and returns what S4 measured, where an HNSW index scan would return at most `hnsw.ef_search` entries (40 by default). With no limit given, it returns 10 provisions, the depth S4's threshold is set at. The server is built in [`san-francisco/mcp-servers/documents/`](../../san-francisco/mcp-servers/documents/README.md), beside `data/`, and shares only the database with the passage pipeline in [`san-francisco/ingest/documents/`](../../san-francisco/ingest/documents/README.md): each has its own `config/search.yaml`, and the server checks at startup that its model build is the one stored with every search entry.
+
+**The model learns what the corpus covers from the tool list.** Asked "how much can my landlord raise the rent in a rent-controlled apartment?", the model made no tool call and said none of its tools covered rent control: `search_policy`'s description named no place, subject or document, and Chapter 37's title ("Residential Rent Stabilization and Arbitration Ordinance") never says "rent control". So the server reads `sf_docs.documents` at startup and writes the corpus into its tool descriptions: `search_policy` lists each document's ID, title, type, version and a description of what it covers, and tells the model to search before saying the documents cannot answer; `get_provision` and `list_provisions` list the document IDs, so the model can browse a document without searching first. Each description is declared in `config/corpus.yaml`, worded from the document itself (Chapter 37's is drawn from its own phrase "the rent control provisions of this Chapter 37", in Sec. 37.3, and its table of contents), and stored in `sf_docs.documents.description` (migration 0002). The listing costs no extra model turn, unlike a `list_documents` tool the model would have to call first. A corpus change needs the server restarted, then the backend, which lists each server's tools when it connects. The system prompt has the matching city-neutral rule (see [The system prompt](agent-loop.md#the-system-prompt)).
 
 **A provision often means little without its parent or its children.** 37.9(a)(8)(ii) ("For the use or occupancy of the landlords grandparents…") is a ground for eviction only because of the lead-ins of 37.9(a) and 37.9(a)(8) above it; 37.9(a) ("A landlord shall not endeavor to recover possession of a rental unit unless:") holds nothing until its 17 children. Search finds the right part of a document, and three things let the agent move from there to the provision that answers:
 
 - **Every passage carries its place in the tree.** Search results and `get_provision` return each passage with its `context` (the section heading and its ancestors' lead-ins), its `parentProvision` and its `childCount`, so a hit that is only a lead-in shows that its children hold the substance.
-- **`get_provision` returns a provision with its descendants**, each as its own passage with its own citation, so answers still quote and cite the exact subsection. A provision whose text with its descendants exceeds the server's limit (`subtree_chars` in `san-francisco/legal-text-server/config/search.yaml`, 10,000 characters, the size S4 tested) returns its own text and an outline of its children instead, and the agent asks for the child it needs. In Chapter 37, 10 of the 151 provisions with children are over the limit, among them 37.9(a), 37.7(c) and 37.2(r). The limit, not a depth parameter, bounds the result, so it fits the chat model's context and the model has no extra argument to get wrong.
+- **`get_provision` returns a provision with its descendants**, each as its own passage with its own citation, so answers still quote and cite the exact subsection. A provision whose text with its descendants exceeds the server's limit (`subtree_chars` in `san-francisco/mcp-servers/documents/config/search.yaml`, 10,000 characters, the size S4 tested) returns its own text and an outline of its children instead, and the agent asks for the child it needs. In Chapter 37, 10 of the 151 provisions with children are over the limit, among them 37.9(a), 37.7(c) and 37.2(r). The limit, not a depth parameter, bounds the result, so it fits the chat model's context and the model has no extra argument to get wrong.
 - **`list_provisions` browses a document:** its sections, or one provision's children, as an outline. A broad question ("What are the grounds for eviction?") is answered by listing 37.9(a)'s children rather than by hoping search ranks all 17.
 
-An outline lists each child's number, its summary (a section's heading, or the first sentence of any other provision's text) and its own number of children. The passage pipeline computes each passage's summary and stores it in `policy_text_sf.passages.summary` (migration 0002); the server builds outlines from the stored summaries, and the pipeline builds the outline search entries from the same column, so search and browsing summarize a provision the same way. Outlines are for navigation: each entry carries a citation quoting its summary, which is verbatim (a heading or a first sentence), so the agent can name what it listed; an answer about what a provision says quotes its full text from `get_provision` or search.
+An outline lists each child's number, its summary (a section's heading, or the first sentence of any other provision's text) and its own number of children. The passage pipeline computes each passage's summary and stores it in `sf_docs.passages.summary`; the server builds outlines from the stored summaries, and the pipeline builds the outline search entries from the same column, so search and browsing summarize a provision the same way. Outlines are for navigation: each entry carries a citation quoting its summary, which is verbatim (a heading or a first sentence), so the agent can name what it listed; an answer about what a provision says quotes its full text from `get_provision` or search.
 
 ```ts
-// san-francisco/legal-text-server/src/Tools.ts
+// san-francisco/mcp-servers/documents/src/Tools.ts
+import { Schema } from "effect"
+import { Tool, Toolkit } from "effect/ai"
+
+import { Citation } from "./Citations.ts"
+import { IsoDate, NonNegativeInt } from "./Formats.ts"
+import { OptionalParam } from "./Params.ts"
+import { DataErrors, UnknownValue } from "./ToolErrors.ts"
+
 export class ProvisionNotFound extends Schema.TaggedError<ProvisionNotFound>()("ProvisionNotFound", {
   documentId: Schema.String,
   provision: Schema.String
 }) {}
 
+/**
+ * The embedding model that turns a search query into a vector could not be reached or returned an unusable vector,
+ * so the law could not be searched; `get_provision` and `list_provisions` still work.
+ */
 export class EmbeddingModelUnavailable extends Schema.TaggedError<EmbeddingModelUnavailable>()(
   "EmbeddingModelUnavailable",
   { model: Schema.String }
 ) {}
 
-const DocumentId = Schema.String.annotate({ description: "A document ID, such as appears in search results" })
-const ProvisionNumber = Schema.String.annotate({
-  description: "A section or subsection number, such as appears in search results"
+const Citations = Schema.Array(Citation)
+
+const DocumentId = Schema.NonEmptyString.annotate({ description: "A document ID, as the tool description lists them" })
+const ProvisionNumber = Schema.NonEmptyString.annotate({
+  description: "A section or subsection number, such as appears in tool results, e.g. 37.9(a)(8)"
 })
 
-const Passage = Schema.Struct({
+export const Passage = Schema.Struct({
   documentId: Schema.String,
   provision: Schema.String,
   parentProvision: Schema.NullOr(Schema.String),
-  childCount: Schema.Int,
+  childCount: NonNegativeInt,
   heading: Schema.String,
   context: Schema.String.annotate({ description: "The section heading and the lead-in text of each provision above" }),
   text: Schema.String,
   versionDate: IsoDate
 })
 
-const OutlineEntry = Schema.Struct({
+export const OutlineEntry = Schema.Struct({
   provision: Schema.String,
   summary: Schema.String.annotate({
-    description: "The section's heading, or the first sentence of the provision's text; not for quoting"
+    description: "The section's heading, or the first sentence of the provision's text"
   }),
-  childCount: Schema.Int
+  childCount: NonNegativeInt
 })
 
-export const SearchPolicy = Tool.make("search_policy", {
-  description: "Search the loaded laws and policies for passages relevant to a question.",
-  parameters: Schema.Struct({
-    query: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(500))),
-    documentId: OptionalParam(DocumentId),
-    limit: OptionalParam(Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 10 }))))
-  }),
-  success: Schema.Struct({ passages: Schema.Array(Passage), citations: Citations }),
-  failure: Schema.Union([UnknownValue, EmbeddingModelUnavailable, ...DataErrors]),
-  failureMode: "return"
-})
+const searchPolicy = (corpus: string) =>
+  Tool.make("search_policy", {
+    description:
+      "Search these documents for the provisions most relevant to a question, best first. Use it for any question " +
+      "about what one of them says, even when the question does not name the document, and search before saying the " +
+      "documents cannot answer. A result whose childCount is above zero may hold its substance in its subsections: get " +
+      `them with get_provision.\n\nThe documents:\n${corpus}`,
+    parameters: Schema.Struct({
+      query: Schema.NonEmptyString.pipe(
+        Schema.check(Schema.isMaxLength(500, { message: "A search query must be at most 500 characters" }))
+      ),
+      documentId: OptionalParam(DocumentId),
+      limit: OptionalParam(
+        Schema.Int.pipe(
+          Schema.check(Schema.isBetween({ minimum: 1, maximum: 10 }, { message: "limit must be from 1 to 10" }))
+        )
+      )
+    }),
+    success: Schema.Struct({ passages: Schema.Array(Passage), citations: Citations }),
+    failure: Schema.Union([UnknownValue, EmbeddingModelUnavailable, ...DataErrors]),
+    failureMode: "return"
+  }).annotate(Tool.Title, "Search the documents")
 
-export const GetProvision = Tool.make("get_provision", {
-  description:
-    "Return one section or subsection with all its subsections. A provision too long to return whole comes back " +
-    "with an outline of its subsections; ask for the one you need.",
-  parameters: Schema.Struct({ documentId: DocumentId, provision: ProvisionNumber }),
-  success: Schema.Struct({
-    passages: Schema.Array(Passage), // the provision, then its descendants in document order
-    outline: Schema.NullOr(Schema.Array(OutlineEntry)), // its children, when it is over the size limit
-    citations: Citations
-  }),
-  failure: Schema.Union([UnknownValue, ProvisionNotFound, ...DataErrors]),
-  failureMode: "return"
-})
+const getProvision = (documentIds: string) =>
+  Tool.make("get_provision", {
+    description:
+      "Return one section or subsection with all its subsections, in document order. A provision too long to return " +
+      "whole comes back with an outline of its subsections instead; ask for the one you need. " +
+      `Documents: ${documentIds}.`,
+    parameters: Schema.Struct({ documentId: DocumentId, provision: ProvisionNumber }),
+    success: Schema.Struct({
+      passages: Schema.Array(Passage),
+      outline: Schema.NullOr(Schema.Array(OutlineEntry)).annotate({
+        description: "The provision's subsections, when it is too long to return with them; otherwise null"
+      }),
+      citations: Citations
+    }),
+    failure: Schema.Union([UnknownValue, ProvisionNotFound, ...DataErrors]),
+    failureMode: "return"
+  }).annotate(Tool.Title, "Read a provision")
 
-export const ListProvisions = Tool.make("list_provisions", {
-  description:
-    "List a document's sections, or one provision's subsections, with a one-line summary of each. Use it to " +
-    "browse a document when a question asks for every rule of a kind, or when search finds nothing relevant.",
-  parameters: Schema.Struct({ documentId: DocumentId, provision: OptionalParam(ProvisionNumber) }),
-  success: Schema.Struct({
-    parent: Schema.NullOr(Passage), // the provision listed, or null for the document's sections
-    outline: Schema.Array(OutlineEntry),
-    citations: Citations
-  }),
-  failure: Schema.Union([UnknownValue, ProvisionNotFound, ...DataErrors]),
-  failureMode: "return"
-})
+const listProvisions = (documentIds: string) =>
+  Tool.make("list_provisions", {
+    description:
+      "List a document's sections, or one provision's subsections, with a one-line summary of each. Use it to browse " +
+      "a document when a question asks for every rule of a kind, or when search finds nothing relevant. Quote a " +
+      `provision only from get_provision or search_policy. Documents: ${documentIds}.`,
+    parameters: Schema.Struct({ documentId: DocumentId, provision: OptionalParam(ProvisionNumber) }),
+    success: Schema.Struct({
+      parent: Schema.NullOr(Passage).annotate({
+        description: "The provision listed, or null for the document's sections"
+      }),
+      outline: Schema.Array(OutlineEntry),
+      citations: Citations
+    }),
+    failure: Schema.Union([UnknownValue, ProvisionNotFound, ...DataErrors]),
+    failureMode: "return"
+  }).annotate(Tool.Title, "List provisions")
 
-export const LegalTextToolkit = Toolkit.make(SearchPolicy, GetProvision, ListProvisions)
+/** A loaded document, as the tool descriptions list it. */
+export interface CorpusDocument {
+  readonly documentId: string
+  readonly title: string
+  readonly documentType: string
+  readonly versionDate: string
+  readonly description: string
+}
+
+/** One line per document: its ID, title, type and version, and what it covers, in the corpus file's words. */
+export const corpusListing = (documents: ReadonlyArray<CorpusDocument>): string =>
+  documents.length === 0
+    ? "None are loaded yet."
+    : documents
+        .map((d) => `- ${d.documentId}: ${d.title} (${d.documentType}, as of ${d.versionDate}). ${d.description}`)
+        .join("\n")
+
+const documentIdList = (documents: ReadonlyArray<CorpusDocument>): string =>
+  documents.length === 0 ? "none loaded yet" : documents.map((d) => `${d.documentId} (${d.title})`).join(", ")
+
+/**
+ * The server's tools, with the loaded documents written into their descriptions, so the model knows from the tool
+ * list alone which documents it can search and their IDs. Built at startup from `sf_docs.documents`.
+ */
+export const makeSfDocsToolkit = (documents: ReadonlyArray<CorpusDocument>) =>
+  Toolkit.make(
+    searchPolicy(corpusListing(documents)),
+    getProvision(documentIdList(documents)),
+    listProvisions(documentIdList(documents))
+  )
+
+export type SfDocsToolkit = ReturnType<typeof makeSfDocsToolkit>
 ```
 
 Whether the chat model uses `get_provision` and `list_provisions` well is measured end to end in the evaluation (P3.1), not by S4, which scores search alone.
 
 ## Database schemas
 
-Three Neon projects (see [Data servers](#data-servers)), each with its own schemas; `sf-legal-text` is created in Phase 2. Column names in `raw_sf` are the source's own field names, read from each dataset's DataSF metadata (`https://data.sf.gov/api/views/<id>.json`) on November 4, 2026.
+Three Neon projects (see [Data servers](#data-servers)), each with its own schemas; `sf-docs` is created in Phase 2. Column names in the raw schemas are the source's own field names, read from each dataset's DataSF metadata (`https://data.sf.gov/api/views/<id>.json`) on November 4, 2026.
 
 | Neon project | Schema | Written by | Migrations | Read by |
 |---|---|---|---|---|
-| `sf-housing` | `raw_sf` | Python loaders | Alembic (raw SQL) | dbt |
-| `sf-housing` | `sf` | dbt | dbt | `sf-housing` server (role `sf_housing_reader`) |
-| `sf-legal-text` (Phase 2) | `raw_sf` | Python loaders | Alembic | Passage pipeline |
-| `sf-legal-text` (Phase 2) | `policy_text_sf` | Python passage pipeline | Alembic | Legal-text server (role `sf_legal_text_reader`) |
+| `sf-data` | `raw_sf_data` | Data ingestion loaders | Alembic (raw SQL) | dbt |
+| `sf-data` | `sf_data` | dbt | dbt | `sf-data` server (role `sf_data_reader`) |
+| `sf-docs` (Phase 2) | `raw_sf_docs` | Documents ingestion loaders | Alembic (raw SQL) | Passage pipeline |
+| `sf-docs` (Phase 2) | `sf_docs` | Passage pipeline | Alembic (raw SQL) | `sf-docs` server (role `sf_docs_reader`) |
 | `app` | `app` | Backend | Drizzle (`backend/drizzle/`) | Backend, evaluation reports; see [The `app` schema](agent-loop.md#the-app-schema) |
 
 Each reader role has `USAGE` on its schema and `SELECT` on its tables, and nothing else.
 
-### `raw_sf` (both data projects)
+### Raw schemas (`raw_sf_data`, `raw_sf_docs`)
 
-Every load writes one manifest row and its data rows in one transaction.
+Every load writes one manifest row and its data rows in one transaction. Both raw schemas have this manifest; `raw_sf_data`'s is shown.
 
 ```sql
-CREATE TABLE raw_sf.load_manifest (
+CREATE TABLE raw_sf_data.load_manifest (
     load_id               uuid PRIMARY KEY,
-    source_key            text NOT NULL,          -- key in san-francisco/ingest/config/sources.yaml, and the raw table's name
+    source_key            text NOT NULL,          -- key in san-francisco/ingest/data/config/sources.yaml, and the raw table's name
     source_url            text NOT NULL,          -- the publisher's page, cited as sourceUrl
     data_url              text NOT NULL,          -- the request that fetched the data
     source_version        date NOT NULL,          -- rowsUpdatedAt or the layer's edit date, in UTC
@@ -813,18 +881,18 @@ Each raw table has the same four columns: `load_id`, `row_number`, `record` (the
 
 | Table | Phase | Source | Fields used downstream |
 |---|---|---|---|
-| `raw_sf.development_pipeline` | 1 | `6jgi-cpb4` | `blklot`, `case_no`, `nameaddr`, `current_status`, `current_status_date`, `approved_date_planning`, `net_pipeline_units`, `pipeline_affordable_units`, `bmr_units_ex_low`, `bmr_units_very_low`, `bmr_units_low`, `bmr_units_moderate`, `nhood41`, `sd22`, `latitude`, `longitude`; the snapshot quarter, read from the metadata's description ("as of the end of 2026 Q2") |
-| `raw_sf.affordable_pipeline` | 1 | `aaxw-2cb8` | `project_id`, `project_name`, `project_status`, `construction_status`, `housing_tenure`, `city_analysis_neighborhood`, `supervisor_district` (text in the source), `total_project_units`, `mohcd_affordable_units`, the AMI columns (`_20_ami` … `_150_ami`, `ami_undeclared`), `estimated_actual_construction_start_date`, `estimated_construction_completion`, `planning_case_number`, `block`, `lot`, `latitude`, `longitude` |
-| `raw_sf.analysis_neighborhoods` | 1 | `j2bu-swwd` | `nhood` |
-| `raw_sf.slr_66in_100yr_storm` | 1 | `6ann-usi8` | geometry → `geom` |
-| `raw_sf.sfpuc_100yr_storm` | 1 | SFPUC FeatureServer layer 2 | `objectid`, `acres`, geometry → `geom` |
-| `raw_sf.air_pollutant_exposure_zone` | 1 | `t65d-x6p8` | geometry → `geom` |
-| `raw_sf.eviction_notices` | 2 | `5cei-gny5` | `eviction_id`, `file_date`, the 19 ground flags (`non_payment` … `good_samaritan_ends`, the dataset's true-or-false fields), `neighborhood`, `supervisor_district`, `shape` |
-| `raw_sf.eviction_report` | 2 | The annual eviction report PDF | One row per page: `page`, `text` |
-| `raw_sf.document_pages` (`sf-legal-text`) | 2 | Each document PDF in `san-francisco/legal-text/config/sources.yaml`, which names this shared table (`raw_table`) | `page`, `text`; a row's document is its load's `source_key` in the manifest |
-| `raw_sf.ca_code_sections` (`sf-legal-text`) | 2 | Legislature bulk download | The section's code, number, heading, text and the bulk file's own version fields, named as in the bulk file |
+| `raw_sf_data.development_pipeline` | 1 | `6jgi-cpb4` | `blklot`, `case_no`, `nameaddr`, `current_status`, `current_status_date`, `approved_date_planning`, `net_pipeline_units`, `pipeline_affordable_units`, `bmr_units_ex_low`, `bmr_units_very_low`, `bmr_units_low`, `bmr_units_moderate`, `nhood41`, `sd22`, `latitude`, `longitude`; the snapshot quarter, read from the metadata's description ("as of the end of 2026 Q2") |
+| `raw_sf_data.affordable_pipeline` | 1 | `aaxw-2cb8` | `project_id`, `project_name`, `project_status`, `construction_status`, `housing_tenure`, `city_analysis_neighborhood`, `supervisor_district` (text in the source), `total_project_units`, `mohcd_affordable_units`, the AMI columns (`_20_ami` … `_150_ami`, `ami_undeclared`), `estimated_actual_construction_start_date`, `estimated_construction_completion`, `planning_case_number`, `block`, `lot`, `latitude`, `longitude` |
+| `raw_sf_data.analysis_neighborhoods` | 1 | `j2bu-swwd` | `nhood` |
+| `raw_sf_data.slr_66in_100yr_storm` | 1 | `6ann-usi8` | geometry → `geom` |
+| `raw_sf_data.sfpuc_100yr_storm` | 1 | SFPUC FeatureServer layer 2 | `objectid`, `acres`, geometry → `geom` |
+| `raw_sf_data.air_pollutant_exposure_zone` | 1 | `t65d-x6p8` | geometry → `geom` |
+| `raw_sf_data.eviction_notices` | 2 | `5cei-gny5` | `eviction_id`, `file_date`, the 19 ground flags (`non_payment` … `good_samaritan_ends`, the dataset's true-or-false fields), `neighborhood`, `supervisor_district`, `shape` |
+| `raw_sf_data.eviction_report` | 2 | The annual eviction report PDF | One row per page: `page`, `text` |
+| `raw_sf_docs.document_pages` (`sf-docs`) | 2 | Each document PDF in `san-francisco/ingest/documents/config/sources.yaml`, which names this shared table (`raw_table`) | `page`, `text`; a row's document is its load's `source_key` in the manifest |
+| `raw_sf_docs.ca_code_sections` (`sf-docs`) | 2 | Legislature bulk download | The section's code, number, heading, text and the bulk file's own version fields, named as in the bulk file |
 
-### `sf` (dbt models)
+### `sf_data` (dbt models)
 
 | Model | Phase | Grain | Columns | Tests |
 |---|---|---|---|---|
@@ -832,7 +900,7 @@ Each raw table has the same four columns: `load_id`, `row_number`, `record` (the
 | `development_pipeline` | 1 | One per project in the snapshot | `project_key` (PK with `snapshot`: parcel, Planning case and permit application), `block_lot`, `name_or_address`, `status`, `status_since`, `planning_approved_on`, `net_units`, `affordable_units`, `units_extremely_low` … `units_moderate`, `neighborhood` (FK, nullable, names converted to the official spelling), `supervisor_district` (int, cast from text), `geom geometry(Point, 4326)` (nullable), `snapshot`, `source_version` (the snapshot load's source version, from the manifest), `load_id` | Unique per snapshot; status values are the six documented ones after mapping `BP BP Issued`; no project's `status_since` is later than its `source_version`, since days in a status are counted to it; a warning test lists projects whose affordable units by level do not sum to `affordable_units` (18 on November 4, 2026) |
 | `affordable_pipeline` | 1 | One per project | `project_id` (PK), `name`, `status`, `construction_status`, `neighborhood` (FK), `supervisor_district` (int, cast from text), `total_units`, `affordable_units`, `estimated_start`, `estimated_completion`, `geom geometry(Point, 4326)`, `load_id` | Unique; every project has a location, or the build fails |
 | `affordable_pipeline_ami_units` | 1 | One per project and income band | `project_id`, `ami_band` (the source column name), `units` | Bands are an unpivot of the source's AMI columns; zero-unit rows are dropped |
-| `zones` | 1 | One per flood or exposure zone | `zone` (PK: `slr_66in_100yr_storm`, `sfpuc_100yr_storm`, `air_pollutant_exposure_zone`), `name`, `publisher`, `source_edited_at`, `publisher_description`, `geom` (polygons repaired with `ST_MakeValid`, then merged), `load_id` | Name, publisher, edit date and description come from each source's archived metadata; the zone key is the source's key in `san-francisco/ingest/config/sources.yaml` |
+| `zones` | 1 | One per flood or exposure zone | `zone` (PK: `slr_66in_100yr_storm`, `sfpuc_100yr_storm`, `air_pollutant_exposure_zone`), `name`, `publisher`, `source_edited_at`, `publisher_description`, `geom` (polygons repaired with `ST_MakeValid`, then merged), `load_id` | Name, publisher, edit date and description come from each source's archived metadata; the zone key is the source's key in `san-francisco/ingest/data/config/sources.yaml` |
 | `project_zone_exposure` | 1 | One per project, source and zone it falls inside | `project_source` (`development_pipeline` or `affordable_pipeline`), `project_id`, `zone` | `ST_Intersects`, for the latest pipeline snapshot; tests pin synthetic projects inside and outside a zone |
 | `datasets` | 1 | One per loaded dataset | `dataset_key`, `title`, `publisher`, `source_url`, `license`, `source_version`, `publisher_description` | Built from the latest manifest row per source and its archived metadata |
 | `eviction_report_grounds` | 2 | One per reason in the latest report's table | `reason`, `section` (null for "other or no reason given"), `page`, `load_id` | Reasons unique; a warning lists reasons no ground column records |
@@ -844,23 +912,24 @@ Each raw table has the same four columns: `load_id`, `row_number`, `record` (the
 
 `eviction_notice_counts` aggregates `eviction_notices` and `eviction_notice_grounds` at query time with fixed, parameterized SQL; the dataset is small enough that it needs no pre-aggregated models.
 
-### `policy_text_sf` (Phase 2)
+### `sf_docs` (Phase 2)
 
 ```sql
-CREATE TABLE policy_text_sf.documents (
-    document_id     text PRIMARY KEY,       -- key in san-francisco/legal-text/corpus.yaml
+CREATE TABLE sf_docs.documents (
+    document_id     text PRIMARY KEY,       -- key in san-francisco/ingest/documents/config/corpus.yaml
     title           text NOT NULL,
     document_type   text NOT NULL CHECK (document_type IN ('law', 'report', 'reference')),
+    description     text NOT NULL,          -- what it covers, from config/corpus.yaml; shown in the tool descriptions (0002)
     publisher       text NOT NULL,
     version_date    date NOT NULL,          -- "amended through", "amended in Board" or report date, from the source
     source_url      text NOT NULL,
-    load_id         uuid NOT NULL,          -- raw_sf.load_manifest in the same project
+    load_id         uuid NOT NULL,          -- raw_sf_data.load_manifest in the same project
     archive_sha256  char(64) NOT NULL
 );
 
-CREATE TABLE policy_text_sf.passages (
+CREATE TABLE sf_docs.passages (
     passage_id        uuid PRIMARY KEY,
-    document_id       text NOT NULL REFERENCES policy_text_sf.documents,
+    document_id       text NOT NULL REFERENCES sf_docs.documents,
     provision         text NOT NULL,        -- such as 37.9(a)(8)
     parent_provision  text,
     heading           text NOT NULL,        -- the section's heading, such as "Sec. 37.9 Evictions"
@@ -872,10 +941,10 @@ CREATE TABLE policy_text_sf.passages (
     UNIQUE (document_id, provision)
 );
 
-CREATE INDEX passages_tsv ON policy_text_sf.passages USING gin (tsv);
+CREATE INDEX passages_tsv ON sf_docs.passages USING gin (tsv);
 
 -- 0002
-CREATE TABLE policy_text_sf.search_entries (
+CREATE TABLE sf_docs.search_entries (
     entry_id        bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     document_id     text NOT NULL,
     provision       text NOT NULL,
@@ -883,11 +952,11 @@ CREATE TABLE policy_text_sf.search_entries (
     text            text NOT NULL,          -- the text embedded
     embedding       halfvec(2560) NOT NULL, -- qwen3-embedding:4b's dimension; another model needs a new migration
     embedding_model text NOT NULL,
-    FOREIGN KEY (document_id, provision) REFERENCES policy_text_sf.passages (document_id, provision),
+    FOREIGN KEY (document_id, provision) REFERENCES sf_docs.passages (document_id, provision),
     UNIQUE (document_id, provision, kind)
 );
 
-CREATE INDEX search_entries_embedding ON policy_text_sf.search_entries USING hnsw (embedding halfvec_cosine_ops);
+CREATE INDEX search_entries_embedding ON sf_docs.search_entries USING hnsw (embedding halfvec_cosine_ops);
 ```
 
 **A passage is searched with its context.** Chapter 37's provisions often make sense only with the lead-in above them: 37.9(a)(8) reads "The landlord seeks to recover possession in good faith…", and only 37.9(a) says this is a ground a landlord may evict on. Each passage stores its own `text`, which answers quote, and a `context` of its section heading and its ancestors' lead-in text, which search indexes with it, so a question about evicting for owner move-in finds 37.9(a)(8). Keyword search indexes the full context; each passage's `own` search entry embeds the section heading, the nearest ancestor's lead-in and the text.
@@ -898,20 +967,20 @@ CREATE INDEX search_entries_embedding ON policy_text_sf.search_entries USING hns
 
 ## Ingestion for San Francisco
 
-Python, in [`san-francisco/ingest/`](../../san-francisco/ingest/README.md), built on the shared library in [`shared/ingest/`](../../shared/ingest/README.md) and following the provenance rules in [CLAUDE.md](../../CLAUDE.md):
+Python, in [`san-francisco/ingest/data/`](../../san-francisco/ingest/data/README.md) and [`san-francisco/ingest/documents/`](../../san-francisco/ingest/documents/README.md), built on the shared library in [`shared/ingest/`](../../shared/ingest/README.md) and following the provenance rules in [CLAUDE.md](../../CLAUDE.md):
 
 | Loader | Phase | Archive | Raw tables | Notes |
 |---|---|---|---|---|
-| DataSF datasets | 1 (pipelines, zones, neighborhoods); 2 (evictions) | Each full export (CSV or GeoJSON) and the dataset's metadata (`/api/views/<id>.json`) | One `raw_sf` table per dataset; the metadata's name, attribution and description in `raw_sf.load_manifest` | Source version is the dataset's `rowsUpdatedAt` |
-| SFPUC flood map | 1 | GeoJSON export of the 2024 update's zone layer (layer 2) and the layer's JSON metadata | `raw_sf.sfpuc_100yr_storm` | Source version is the layer's edit date |
-| PDF documents (`kind: pdf` in `sources.yaml`) | 2 (the annual eviction report in `sf-housing`; the corpus documents in `sf-legal-text`) | Each PDF, and a metadata file holding the PDF's own information record and the printed date matched | `raw_sf.<source key>`, or the shared table the source names with `raw_table` (`raw_sf.document_pages` for the corpus), one row per page of text extracted by pypdf | Title and publisher are declared as printed in the document, since PDFs rarely carry them. Source version is the date printed in the document: `version_pattern` must match it exactly once or the load fails. |
-| California statutes | 2 | The bulk database file | `raw_sf.ca_code_sections` | Only sections listed in the corpus file are loaded; source version is the bulk file's date |
+| DataSF datasets | 1 (pipelines, zones, neighborhoods); 2 (evictions) | Each full export (CSV or GeoJSON) and the dataset's metadata (`/api/views/<id>.json`) | One `raw_sf_data` table per dataset; the metadata's name, attribution and description in `raw_sf_data.load_manifest` | Source version is the dataset's `rowsUpdatedAt` |
+| SFPUC flood map | 1 | GeoJSON export of the 2024 update's zone layer (layer 2) and the layer's JSON metadata | `raw_sf_data.sfpuc_100yr_storm` | Source version is the layer's edit date |
+| PDF documents (`kind: pdf` in `sources.yaml`) | 2 (the annual eviction report in `sf-data`; the corpus documents in `sf-docs`) | Each PDF, and a metadata file holding the PDF's own information record and the printed date matched | `raw_sf_data.<source key>`, or the shared table the source names with `raw_table` (`raw_sf_docs.document_pages` for the corpus), one row per page of text extracted by pypdf | Title and publisher are declared as printed in the document, since PDFs rarely carry them. Source version is the date printed in the document: `version_pattern` must match it exactly once or the load fails. |
+| California statutes | 2 | The bulk database file | `raw_sf_docs.ca_code_sections` | Only sections listed in the corpus file are loaded; source version is the bulk file's date |
 
-The dbt models are listed in [Database schemas](#sf-dbt-models).
+The dbt models are listed in [Database schemas](#sf_data-dbt-models).
 
 The passage pipeline (Phase 2) splits each law at its section headings and then at subsections ("Sec. 37.x" for Chapter 37; "SEC." headings in the ordinances), the California sections at section and subdivision, and reports at their headings, falling back to pages. Each passage keeps its provision or heading, version and source. The San Francisco corpus is English, so no translation step runs.
 
-The pipeline is in two parts: `shared/legal-text/pipeline/` splits a section into passages along its enumerated subsections and stores them, knowing no city; `san-francisco/legal-text/` holds the corpus (`config/sources.yaml` for fetching, `config/corpus.yaml` for each document's type and splitting rule), the `sf-legal-text` migrations and command, and the rules for each document's layout. `sf-legal-text ingest` loads the PDFs and `sf-legal-text passages` rebuilds each document's passages from its latest load.
+The pipeline lives in `san-francisco/ingest/documents/`, with the corpus (`config/sources.yaml` for fetching, `config/corpus.yaml` for each document's type and splitting rule), the `raw_sf_docs` and `sf_docs` migrations and the `sf-docs-ingest` command. `src/sf_docs_ingest/passages/` splits a section into passages along its enumerated subsections ((a), (1), (A), (i), (I)), summarizes them, builds and embeds their search entries and writes them; the rules for each document's layout are beside it (`rent_ordinance.py`). It is San Francisco's own: Dutch law does not number its provisions this way. `sf-docs-ingest ingest` loads the PDFs and `sf-docs-ingest passages` rebuilds each document's passages from its latest load.
 
 **Chapter 37, as the Rent Board's PDF gives it** (checked against the June 29, 2026 copy on November 9, 2026):
 
@@ -928,7 +997,7 @@ The San Francisco build sets patterns that the Dutch product reuses unchanged:
 
 - **Stable source and citation IDs**, built from each citation's own fields, work unchanged for Dutch sources.
 - **Added when the Netherlands needs them:** a jurisdiction on citations and tool inputs (for a server covering several municipalities), and a language and machine-translation label on document citations. Both are additive.
-- **One passage pipeline.** The Dutch corpus is built by the same pipeline, with a translation step added; the Dutch legal-text server is its own, with tools fitted to Dutch documents, reusing San Francisco's where they fit.
+- **Each city's documents are its own.** The Dutch corpus gets its own documents ingestion, with a translation step, and its own docs server, `nl-docs`, with a schema and tools fitted to Dutch documents. San Francisco's passage pipeline follows American legal numbering and is not shared; what carries over is the citation convention and the patterns in this plan.
 - **Data servers by source, with the place as a parameter**, rather than one server per city, once more than one place shares a source.
 - **The agent loop and API are place-independent.** Adding the Netherlands adds servers to the directory file.
 
@@ -940,24 +1009,24 @@ The browser app is the same for every city; its plan, including how tool calls a
 
 | Phase | Milestone | Done when |
 |---|---|---|
-| 1 | P1.1 Contracts | `protocol/` and the `shared/mcp-kit` helpers in [Protocol and shared helpers](#protocol-and-shared-helpers), the Phase 1 tools in [Data server tools](#data-server-tools) and [API contract](agent-loop.md#api-contract) in code, with decode tests; migrations for `raw_sf` and `app` written. |
+| 1 | P1.1 Contracts | `protocol/` and the server helpers in [Citations and tool errors](#citations-and-tool-errors), the Phase 1 tools in [Data server tools](#data-server-tools) and [API contract](agent-loop.md#api-contract) in code, with decode tests; migrations for `raw_sf_data` and `app` written. |
 | 1 | P1.2 Data loaded | Both pipelines, the three zones and neighborhoods loaded with provenance; dbt models and tests pass; database size measured. |
-| 1 | P1.3 `sf-housing` server | The seven Phase 1 tools pass tests through `McpTest` against a Postgres testcontainer. |
+| 1 | P1.3 `sf-data` server | The seven Phase 1 tools pass tests through `McpTest` against a Postgres testcontainer. |
 | 1 | P1.4 First cited answer | The agent loop answers a "where is it, and is it moving" question and a climate-ready question through `POST /api/v1/questions`, with dataset citations and a trace in `app`. |
 | 1 | P1.5 Prototype | The browser app shows streamed answers, collapsible tool calls and linked citations against the running backend, as in the [Browser App Plan](browser-app.md). |
-| 2 | P2.1 Documents | The ordinances, reports and data dictionary loaded into `sf-legal-text`; the legal-text server answers with document citations labeled by type. |
+| 2 | P2.1 Documents | The ordinances, reports and data dictionary loaded into `sf-docs`; the docs server answers with document citations labeled by type. |
 | 2 | P2.2 Rent Ordinance and statutes | Chapter 37 and the California sections loaded. |
 | 2 | P2.3 Evictions | Eviction Notices and the annual eviction report loaded, with each ground's section taken from the report; the two eviction tools pass tests; a rule-plus-data eviction question is answered end to end. |
 | 3 | P3.1 Evaluation | The San Francisco questions run against the three model configurations, with answers checked by the San Francisco reviewer. |
 
 ## Next steps
 
-- **Cache reference data in `sf-housing`.** Each tool call reads the dataset list, the latest snapshot and the values it validates inputs against (statuses, neighborhoods, districts) before its main query, each a round trip to Neon. These change only when a load runs, so the server could cache them per process, refreshed on a short interval or when a dataset's `source_version` changes, leaving one query per call. Counts and lists already come from one query (`count(*) OVER ()`).
+- **Cache reference data in `sf-data`.** Each tool call reads the dataset list, the latest snapshot and the values it validates inputs against (statuses, neighborhoods, districts) before its main query, each a round trip to Neon. These change only when a load runs, so the server could cache them per process, refreshed on a short interval or when a dataset's `source_version` changes, leaving one query per call. Counts and lists already come from one query (`count(*) OVER ()`).
 
 ## Open questions
 
 1. **Who checks San Francisco answers?** The research team is focused on the Netherlands. A reviewer with San Francisco housing knowledge is needed for the evaluation set, ideally from a policy office or a tenant organization.
-2. **Data server split.** This plan recommends one `sf-housing` server for now; confirm, or split housing and climate from the start.
+2. **Data server split.** This plan recommends one `sf-data` server for now; confirm, or split housing and climate from the start.
 3. **Past pipeline quarters.** Planning retired its earlier quarterly snapshots from DataSF as of 2024 Q3; the dataset's description says to ask the dataset owner for them. A request is in progress; until data arrives, the plan uses the current public quarter.
 4. **Enacted inclusionary text.** Confirm the enacted ordinance number and final text for Board File 260538 before loading it.
 5. **Rent Board Housing Inventory.** Add it after Phase 2, for "is my unit covered" and rent-band questions?

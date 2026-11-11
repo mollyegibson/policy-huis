@@ -89,19 +89,40 @@ If a piece of logic can only be reached through a request handler, a live model 
 
 ## Bounded contexts
 
-A bounded context is a boundary within which a term means exactly one thing. Ours, and the contract each publishes:
+A bounded context is a boundary within which a term means exactly one thing. The code is organized by deployable unit, then by domain: each city has ingestion projects, which run as scheduled jobs that write their schemas, and MCP servers, which run as long-lived services that only read them. They are never deployed together: ingestion holds write credentials and a server holds a read-only role. Ours, and the contract each publishes:
 
 | Context | Language | Writes | Reads | Published contract |
 |---|---|---|---|---|
-| **Ingestion** (`shared/ingest/`, each city's `ingest/`) | Python, dbt | `raw_sf`, `sf`, `policy_text_sf` and the Dutch equivalents | Public sources | The city data and passage schemas |
-| **Legal-text servers** (`san-francisco/legal-text-server/`, and the Dutch one) | TypeScript, Effect | Nothing | Its city's `policy_text_*` schema | Its MCP tools |
-| **City data servers** (`san-francisco/housing-server/`, and the Dutch servers) | TypeScript, Effect | Nothing | Its city's schema (`sf`) | Its MCP tools |
+| **Data ingestion** (`san-francisco/ingest/data/`, and the Dutch one) | Python, dbt | `raw_sf_data`, `sf_data` | Public sources | The `sf_data` schema |
+| **Documents ingestion** (`san-francisco/ingest/documents/`, and the Dutch one) | Python | `raw_sf_docs`, `sf_docs` | Public sources, the embedding model | The `sf_docs` schema |
+| **Data servers** (`san-francisco/mcp-servers/data/`, and the Dutch one) | TypeScript, Effect | Nothing | Its city's data schema (`sf_data`) | Its MCP tools |
+| **Docs servers** (`san-francisco/mcp-servers/documents/`, and the Dutch one) | TypeScript, Effect | Nothing | Its city's documents schema (`sf_docs`) | Its MCP tools |
 | **Backend** (`backend/`) | TypeScript, Effect | `app` | MCP tools only | The backend API |
 | **Evaluation** (`evaluation/`) | YAML, Python | Results through the backend | `app` | The question-set file format |
 
-**Contexts communicate through published contracts, never by importing each other's code.** The agent doesn't read `policy_text_*`; it calls the legal-text server's tools. A data server doesn't read another city's schema. Python and TypeScript share only database schemas. A change to a published contract (a schema another context reads, an MCP tool's input or output, the backend API) is a contract change and gets reviewed as one.
+A server and the ingestion project that builds its schema share a short name (`sf_data`, `sf_docs`) in every identifier: server, tool prefix, citation namespace, schemas, reader role, environment variables and packages.
 
-**Shared packages are libraries, never contracts between nodes.** MCP servers share nothing with the backend but MCP itself: their tool definitions, `outputSchema` and `structuredContent`, following the citation convention. `protocol/` holds the API between the backend and the browser app, including the citation schema the browser decodes, as Effect `Schema`; both import it, and it holds no logic and no database access. `shared/mcp-kit/` and `shared/ingest/` are optional helpers a node installs, not interfaces another node depends on.
+**Contexts communicate through published contracts, never by importing each other's code.** The agent doesn't read `sf_docs`; it calls the docs server's tools. A data server doesn't read another city's schema. Python and TypeScript share only database schemas. A change to a published contract (a schema another context reads, an MCP tool's input or output, the backend API) is a contract change and gets reviewed as one.
+
+**Shared code is plumbing, never a contract.** A library under `shared/` does work several nodes need done the same way: reading configuration (`shared/node-config`), fetching, archiving and loading sources (`shared/ingest`). It never defines what one context publishes to another. Tool errors, citation shapes and tool results are conventions, written down below, that each node implements in its own code and tests against; a server built in another language follows them with nothing to install. Duplicating a few small helpers across independently deployed servers is the price, and it is accepted.
+
+MCP servers share nothing with the backend but MCP itself (their tool definitions, `outputSchema` and `structuredContent`) and these conventions. `protocol/` holds the API between the backend and the browser app, including the citation schema the browser decodes, as Effect `Schema`; only those two import it, and it holds no logic and no database access.
+
+### Conventions between servers and the backend
+
+**Citations.** Every tool's `structuredContent` has a top-level `citations` array, declared in the tool's `outputSchema`. Each citation has:
+
+| Field | Meaning |
+|---|---|
+| `citationId` | `<sourceId>#<part>`, where `<part>` is letters, digits and `_ . ( ) -`; how a server builds the part is its own choice |
+| `sourceId` | `<namespace>.<key>@<version>`, where the namespace is the server's short name (`sf_data`, `sf_docs`), so IDs stay unique without coordination |
+| `title`, `publisher`, `sourceUrl`, `version` | The source, as shown to the user |
+| `locator` | Optional. Which part of the source, in words: a provision ("Sec. 37.9(a)(8)") or the data selected ("Planning pipeline projects, with status BP Filed") |
+| `quote` | Optional. The cited text, verbatim |
+
+A server may add fields of its own (the docs server adds `documentType` for the model); the backend ignores them. Each server's tests decode every citation its tools return against the convention.
+
+**Tool errors.** Errors are returned as tool results (`failureMode: "return"`), with the error's `_tag` in the JSON text content. One tag has a meaning outside its server: `DatabaseUnavailable`, for a server that cannot reach its own database. The backend treats it, like a transport failure, as the server being unavailable.
 
 Isolation extends to credentials: each MCP server connects with a database role that can only read its own schema, so the grants enforce the boundary rather than convention alone. No server reads another server's schema, so moving a server to its own database is a connection-string change.
 
@@ -115,7 +136,7 @@ An anti-corruption layer stops another system's model from leaking into ours. We
 
 - **Source loaders.** Each loader maps a source's columns, by name, into typed rows and fails the load on a value it can't parse. DataSF can add a column or the BWB can change its XML; the blast radius is one parser.
 - **Model output.** Tool-call arguments from the model are decoded through the tool's input schema before a handler runs. A small model can produce malformed arguments; they fail at the boundary and go back to the model as a typed error.
-- **Tool results.** The backend passes each result's `structuredContent` through unchanged; the browser app decodes citations through `protocol/`'s schema before rendering them, and treats anything that fails to decode as unlinked.
+- **Tool results.** The model receives each result as the server sent it. The backend reads each result's citations through its own schema of the citation convention, drops any that break it (logging them), and sends the rest to the browser app as `Sources`; the browser decodes them through `protocol/`'s schema and never reads citations from a result itself.
 
 **Rule:** every upstream response is decoded through a parser or schema we own. Raw JSON never crosses into domain code. In Python that's typed parsing (pydantic, explicit conversion); in TypeScript it's Effect `Schema`.
 

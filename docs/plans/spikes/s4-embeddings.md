@@ -4,7 +4,7 @@ Started November 9, 2026. Question from the [MVP Technical Plan](../mvp-technica
 
 ## Method
 
-- **Corpus:** the 727 passages of the Rent Board's copy of Chapter 37, amended through June 29, 2026, as loaded into `sf-legal-text` (`policy_text_sf.passages`). Each passage is searched as its `context` (section heading and the lead-in of the provisions above it) followed by its `text`.
+- **Corpus:** the 727 passages of the Rent Board's copy of Chapter 37, amended through June 29, 2026, as loaded into what was then `sf-legal-text` (`policy_text_sf.passages`, now `sf-docs` and `sf_docs.passages`). Each passage is searched as its `context` (section heading and the lead-in of the provisions above it) followed by its `text`.
 - **Questions:** [`s4-questions.yaml`](s4-questions.yaml), 50 questions, 45 of them answerable. Each lists the provisions that bear on it, graded 2 (answers it; a question can have several) or 1 (bears on the answer), with a quote from each that the harness checks against the passage's text before scoring. Questions the ordinance does not answer have no provisions and are left out of the scores. Each question's `wording` is `everyday`, `legal` or `term` (a section number, defined term or named law); five needs are asked in both everyday and legal wording, linked by `pair`. Questions were drafted from the passages; the first 34 were corrected by the San Francisco owner before any model was scored, and q35–q50 have not yet been reviewed. `--review <file>` writes every labelled provision's full text for review.
 - **Searches**, each returning its top 100:
   - keyword, all words: `websearch_to_tsquery('english', question)`, as the plan specifies, ranked by `ts_rank`;
@@ -19,7 +19,8 @@ Started November 9, 2026. Question from the [MVP Technical Plan](../mvp-technica
 
   Each hybrid search is compared with each of its parts, question by question: hit@10 by an exact McNemar test, and nDCG@10 by its mean difference with a bootstrap interval. Measures are also split by wording, and for the paired questions alone.
 - **Embedding checks:** every vector is refused if it is all zeros or holds NaN, which Ollama has been reported to return with HTTP 200, and inputs are sent with `truncate: false`, so a passage longer than the model's limit fails instead of being cut silently.
-- **Run:** `uv run python spikes/s4/search.py --model <ollama tag>` in `san-francisco/legal-text`; the harness is `san-francisco/legal-text/spikes/s4/search.py`. It reads the database and writes nothing to it. `--provider voyage` embeds with Voyage AI through MongoDB Atlas's endpoint (passages as `document`, questions as `query`, truncation off), and `--voyage-limits 3 10000` paces requests to the limits of an account without a payment method. Vectors are cached in `spikes/s4/.cache/` (gitignored), keyed by provider, model and build, request options, input type and the exact text, so a rerun embeds only text it has not seen.
+- **Harness:** removed from the repository once the decision was made; it is at commit `eecb55a` in `san-francisco/legal-text/spikes/s4/`. `scoring.py` (hit@k, near hit@k, nDCG, MRR, bootstrap intervals, McNemar) and `cache.py` (an on-disk embedding cache) know no city and can be reused for the Amsterdam embedding spike; `search.py` reads San Francisco's schema, and `entries.py` is superseded by the passage pipeline's search entries.
+- **Run (at that commit):** `uv run python spikes/s4/search.py --model <ollama tag>` in `san-francisco/legal-text`. It reads the database and writes nothing to it. `--provider voyage` embeds with Voyage AI through MongoDB Atlas's endpoint (passages as `document`, questions as `query`, truncation off), and `--voyage-limits 3 10000` paces requests to the limits of an account without a payment method. Vectors are cached in `spikes/s4/.cache/` (gitignored), keyed by provider, model and build, request options, input type and the exact text, so a rerun embeds only text it has not seen.
 
 ## Candidates
 
@@ -138,7 +139,7 @@ November 9, 2026. The same question set. `--form` sets what is embedded for each
 
 ## Findings for the design
 
-These hold whichever model is chosen, and apply to the passage pipeline and the legal-text server alike:
+These hold whichever model is chosen, and apply to the passage pipeline and the docs server alike:
 
 - **One embedding path.** Embeddings match only when the pipeline and the server call the same Ollama server, version and pinned model build over its HTTP API: published issues show Ollama's output differing from the model's reference library (sentence-transformers) and between Ollama versions ([#7085](https://github.com/ollama/ollama/issues/7085)), and between runtimes on the same file ([#11375](https://github.com/ollama/ollama/issues/11375)). The Python pipeline therefore calls Ollama's `/api/embed`, never a Python copy of the model, and the stored model identifier is the Ollama tag with its build ID (`qwen3-embedding:0.6b`, `ac6da0dfba84`).
 - **Check every vector.** Ollama has been reported to return all-zero vectors under load ([#17878](https://github.com/ollama/ollama/issues/17878)) and NaN on some inputs ([#15582](https://github.com/ollama/ollama/issues/15582)) with HTTP 200, and truncates long inputs by default. Ingestion refuses a vector that is all zeros or holds NaN, and sends `truncate: false`.

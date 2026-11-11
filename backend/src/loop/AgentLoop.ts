@@ -3,13 +3,13 @@ import { LanguageModel, Prompt } from "effect/ai"
 import type { Response, Tool, Toolkit } from "effect/ai"
 import { v5 as uuidV5 } from "uuid"
 
-import { TextChunk, ToolEnd, ToolStart } from "@policyhuis/protocol/QuestionsApi"
-import type { ToolServer } from "@policyhuis/protocol/QuestionsApi"
+import { LookupEnded, LookupStarted, Sources, TextChunk } from "@policyhuis/protocol/QuestionsApi"
 
 import { estimateNextPromptTokens, fits } from "./ContextBudget.ts"
 import { Failure, LoopFailure, modelFailure, retryClass } from "./Failures.ts"
 import type { LoopEvent } from "./LoopEvent.ts"
 import {
+  CitationsRejected,
   Finished,
   isBrowserEvent,
   ModelRetried,
@@ -20,7 +20,7 @@ import {
   ToolFailed
 } from "./LoopEvent.ts"
 import type { Outcome } from "./Outcome.ts"
-import { errorType, structuredContent } from "./ToolResults.ts"
+import { errorType, failedOutcome, readCitations, structuredContent } from "./ToolResults.ts"
 
 export interface LoopSettings {
   readonly maxSteps: number
@@ -47,8 +47,15 @@ const CONTEXT_LIMIT_NOTICE =
  */
 const callIdFor = (turnId: string, providerCallId: string) => uuidV5(providerCallId, turnId)
 
+/** The server that offers a tool: its name and label from the server directory, and the tool's title. */
+export interface ToolOwner {
+  readonly name: string
+  readonly label: string
+  readonly title: string
+}
+
 /** The server a prefixed tool name belongs to, or null if none offers it. */
-export type ServerOf = (toolName: string) => ToolServer | null
+export type ServerOf = (toolName: string) => ToolOwner | null
 
 /** The events for one stream part that arrived at `at`, in the turn with UUID `turnId`. */
 const partEvents = <Tools extends Record<string, Tool.Any>>(
@@ -63,8 +70,15 @@ const partEvents = <Tools extends Record<string, Tool.Any>>(
     case "tool-call": {
       const callId = callIdFor(turnId, part.id)
       const args: unknown = part.params
+      const owner = serverOf(part.name)
       return [
-        ToolStart.make({ callId, tool: part.name, server: serverOf(part.name), arguments: args }),
+        LookupStarted.make({
+          lookupId: callId,
+          source: owner === null ? null : { name: owner.name, label: owner.label },
+          tool: part.name,
+          title: owner?.title ?? part.name,
+          arguments: args
+        }),
         new ToolCallStarted({ callId, providerCallId: part.id, tool: part.name, arguments: args, at })
       ]
     }
@@ -74,11 +88,18 @@ const partEvents = <Tools extends Record<string, Tool.Any>>(
       const ended = new ToolCallEnded({ callId, at })
       if (!part.isFailure) {
         const result = structuredContent(part.result)
-        return [ToolEnd.make({ callId, tool: part.name, outcome: "success", result, error: null }), ended]
+        const { citations, rejected, missing } = readCitations(result)
+        return [
+          LookupEnded.make({ lookupId: callId, outcome: "succeeded", result, error: null }),
+          ...(citations.length > 0 ? [Sources.make({ lookupId: callId, citations })] : []),
+          ...(rejected > 0 || missing ? [new CitationsRejected({ callId, tool: part.name, rejected, missing })] : []),
+          ended
+        ]
       }
       const encodedError: unknown = part.encodedResult
+      const type = errorType(part.result)
       return [
-        ToolEnd.make({ callId, tool: part.name, outcome: "failure", result: null, error: errorType(part.result) }),
+        LookupEnded.make({ lookupId: callId, outcome: failedOutcome(type), result: null, error: type }),
         new ToolFailed({ callId, encodedError }),
         ended
       ]
@@ -133,7 +154,7 @@ const advanceTurn =
     const parts = [...state.parts, input.part]
     const events = partEvents(turnId, serverOf, input.part, input.at)
     if (final) return [{ ...state, parts }, events]
-    const calledTool = state.calledTool || events.some((event) => event._tag === "ToolStart")
+    const calledTool = state.calledTool || events.some((event) => event._tag === "LookupStarted")
     const text = events.filter((event) => event._tag === "TextChunk")
     const heldText = calledTool ? [] : [...state.heldText, ...text]
     return [{ parts, heldText, calledTool }, events.filter((event) => event._tag !== "TextChunk")]
@@ -193,7 +214,7 @@ export const turnEnd = (
 /**
  * Answers one question: model turns with tools until the model answers or a limit is reached, as a stream of
  * `LoopEvent`s that always ends with `Finished` unless it is interrupted. The stream itself never fails. `serverOf`
- * names the server each tool call goes to, for its `ToolStart`.
+ * names the server each tool call goes to, for its `LookupStarted`.
  */
 export const runAgentLoop = <Tools extends Record<string, Tool.Any>>(
   initialPrompt: Prompt.Prompt,

@@ -7,10 +7,9 @@
     "backend",
     "browser-app",
     "protocol",
-    "shared/mcp-kit",
     "shared/node-config",
-    "san-francisco/housing-server",
-    "san-francisco/legal-text-server",
+    "san-francisco/mcp-servers/data",
+    "san-francisco/mcp-servers/documents",
     "scripts"
   ],
   "scripts": {

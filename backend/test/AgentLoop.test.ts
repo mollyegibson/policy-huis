@@ -3,7 +3,7 @@ import { Duration, Effect, Fiber, Ref, Schema, Stream } from "effect"
 import { AiError, Prompt } from "effect/ai"
 import { TestClock } from "effect/testing"
 
-import { CallId } from "@policyhuis/protocol/QuestionsApi"
+import { LookupId } from "@policyhuis/protocol/QuestionsApi"
 
 import type { LoopSettings } from "../src/loop/AgentLoop.ts"
 import { runAgentLoop } from "../src/loop/AgentLoop.ts"
@@ -35,7 +35,7 @@ const SETTINGS: LoopSettings = {
   bytesPerToken: 4
 }
 
-const LOOKUP_SERVER = { name: "test-data", label: "Test", tool: "lookup" }
+const LOOKUP_SERVER = { name: "test-data", label: "Test", title: "Look up a key" }
 const serverOf = (toolName: string) => (toolName === "lookup" ? LOOKUP_SERVER : null)
 
 const run = (script: ReadonlyArray<ScriptedTurn>, overrides: Partial<LoopSettings> = {}) =>
@@ -81,12 +81,13 @@ describe("runAgentLoop", () => {
   it.effect("calls a tool, then answers from its result", () =>
     Effect.gen(function* () {
       const { events, calls } = yield* run([lookup("c1", "k"), answer])
-      expect(tags(events)).toEqual(["ToolStart", "ToolEnd", "TextChunk"])
-      const toolStart = events.find((event) => event._tag === "ToolStart")
-      expect(toolStart?.server).toEqual(LOOKUP_SERVER)
+      expect(tags(events)).toEqual(["LookupStarted", "LookupEnded", "TextChunk"])
+      const started = events.find((event) => event._tag === "LookupStarted")
+      expect(started?.source).toEqual({ name: "test-data", label: "Test" })
+      expect(started?.title).toBe("Look up a key")
       expect(last(events).outcome).toBe("answered")
-      const toolEnd = events.find((event) => event._tag === "ToolEnd")
-      expect(toolEnd?.outcome).toBe("success")
+      const ended = events.find((event) => event._tag === "LookupEnded")
+      expect(ended?.outcome).toBe("succeeded")
       expect(JSON.stringify(calls[1]?.prompt.content)).toContain("value of k")
     })
   )
@@ -99,7 +100,7 @@ describe("runAgentLoop", () => {
       const { events } = yield* run([both, answer])
       const started = events.filter((event) => event._tag === "ToolCallStarted")
       expect(started.map((event) => event.providerCallId)).toEqual(["c1", "c2"])
-      const ended = events.filter((event) => event._tag === "ToolEnd").map((event) => event.callId)
+      const ended = events.filter((event) => event._tag === "LookupEnded").map((event) => event.lookupId)
       expect(ended.sort()).toEqual(started.map((event) => event.callId).sort())
     })
   )
@@ -107,11 +108,11 @@ describe("runAgentLoop", () => {
   it.effect("gives every tool call its own UUID, even when the provider reuses a call ID across steps", () =>
     Effect.gen(function* () {
       const { events } = yield* run([lookup("call_0", "a"), lookup("call_0", "b"), answer])
-      const starts = events.filter((event) => event._tag === "ToolStart").map((event) => event.callId)
+      const starts = events.filter((event) => event._tag === "LookupStarted").map((event) => event.lookupId)
       expect(starts).toHaveLength(2)
       expect(new Set(starts).size).toBe(2)
-      for (const callId of starts) expect(Schema.is(CallId)(callId)).toBe(true)
-      const ends = events.filter((event) => event._tag === "ToolEnd").map((event) => event.callId)
+      for (const lookupId of starts) expect(Schema.is(LookupId)(lookupId)).toBe(true)
+      const ends = events.filter((event) => event._tag === "LookupEnded").map((event) => event.lookupId)
       expect(ends).toEqual(starts)
     })
   )
@@ -119,10 +120,10 @@ describe("runAgentLoop", () => {
   it.effect("returns arguments that fail the tool's schema as a failed result the model corrects", () =>
     Effect.gen(function* () {
       const { events } = yield* run([lookup("c1", 5), lookup("c2", "k"), answer])
-      const ends = events.filter((event) => event._tag === "ToolEnd")
+      const ends = events.filter((event) => event._tag === "LookupEnded")
       expect(ends.map((event) => [event.outcome, event.error])).toEqual([
-        ["failure", "ToolParameterValidationError"],
-        ["success", null]
+        ["failed", "ToolParameterValidationError"],
+        ["succeeded", null]
       ])
       expect(ends[0]?.result).toBeNull()
       expect(ends[1]?.result).toEqual({ value: "value of k", padding: "" })
@@ -195,7 +196,7 @@ describe("runAgentLoop", () => {
       }
       const { events, calls } = yield* run([afterCall])
       expect(calls).toHaveLength(1)
-      expect(tags(events)).toContain("ToolStart")
+      expect(tags(events)).toContain("LookupStarted")
       expect(last(events).failure?._tag).toBe("ModelStopped")
     })
   )

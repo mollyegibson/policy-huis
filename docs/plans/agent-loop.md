@@ -32,17 +32,18 @@ It does not:
 | `main.ts` | Launches the server layer with `NodeRuntime.runMain` |
 | `Server.ts` | Composes the layers once: configuration, model, MCP connections, trace store, the agent, HTTP |
 | `config/AgentConfig.ts` | Decodes `backend/config/agent.yaml` with a `Schema`; fails at startup with a `ConfigFileError` if any field is missing or invalid |
-| `config/ServerDirectory.ts` | Decodes `backend/config/servers.yaml`: each server's name, label, URL and tool prefix (words of lowercase letters and digits, each followed by one underscore, such as `sf_law_`); fails at startup if two servers share a name or a prefix |
-| `config/Env.ts` | `BackendEnv`: `backend/.env` and its required variables, through `@policyhuis/node-config` |
+| `config/ServerDirectory.ts` | Decodes `backend/config/servers.yaml`: each server's name, label, URL and tool prefix (words of lowercase letters and digits, each followed by one underscore, such as `sf_docs_`); fails at startup if two servers share a name or a prefix |
+| `config/BackendConfig.ts` | Every environment variable the backend reads, from `backend/.env` first: `AppDatabaseConfig` (`APP_DATABASE_URL`), `HttpConfig` (`BACKEND_PORT`) and `ModelApiKeysConfig` (`FRONTIER_API_KEY`, `SAME_MODEL_CLOUD_API_KEY`), each a service read once at startup through `@policyhuis/node-config` |
 | `config/HttpUrl.ts` | The schema for an absolute http or https URL in the config files |
 | `model/ModelLayer.ts` | Builds the `LanguageModel` layer for the configured model configuration (Local, Same model in the cloud, Frontier) through `@effect/ai-openai-compat`; the only module that imports a provider package |
-| `tools/McpConnections.ts` | One `McpClient` per server on the sessionless MCP protocol, and the toolkit of the tools it listed, built once when it connects |
-| `tools/TurnToolkit.ts` | `turnTools`: merges the connected servers' toolkits into one request's toolkit, with the map from each tool to its server |
-| `agent/Agent.ts` | The `Agent` service: admits a question, builds its prompt and toolkit, runs the loop, notes unreachable servers, and writes the trace |
+| `tools/McpConnections.ts` | One `McpClient` per server on the sessionless MCP protocol, and the toolkit of the tools it listed, built once when it connects with `trustAnnotations: true`, so each tool's published `annotations.title` becomes its `Tool.Title`; the read-only and destructive hints copied with it are not used |
+| `tools/TurnToolkit.ts` | `turnTools`: merges the connected servers' toolkits into one request's toolkit, with the map from each tool to its server and title (the tool's own name in words, for a server that publishes no title) |
+| `agent/Agent.ts` | The `Agent` service: admits a question, builds its prompt and toolkit, runs the loop, notes unreachable servers, sends each citation once, and writes the trace |
 | `loop/AgentLoop.ts` | `runAgentLoop`: the step loop, returning a `Stream` of `LoopEvent` |
 | `loop/LoopEvent.ts` | The loop's events: the browser's `AgentStreamEvent`s plus the internal events the trace is folded from |
 | `loop/Outcome.ts` | How the loop ends a question, and how a tool call ends: the domain's own lists, which the `app` schema's checks are built from |
 | `loop/ContextBudget.ts` | Estimates the next step's prompt size and decides whether it fits |
+| `loop/ToolResults.ts` | Reads a tool result: its `structuredContent`, its citations under the citation convention, a failure's type, and whether a failure means the server was unavailable |
 | `loop/Failures.ts` | `Failure`, a `Data.taggedEnum` of why a question ended incomplete; classifies model errors as retryable or not; gives each failure its message for the user |
 | `loop/SystemPrompt.ts` | Loads the versioned system prompt file named in config |
 | `api/QuestionsHandler.ts` | Implements the `protocol/` `QuestionsApi` group: asks the `Agent`, turns its events into `AgentStreamEvent`s, adds keepalives |
@@ -78,15 +79,15 @@ Declared choices live in `backend/config/agent.yaml`, reviewed by pull request; 
 | `tools.reconnectBaseDelay`, `tools.reconnectMaxDelay` | The exponential backoff for reconnecting to a server that could not be reached: the first delay, and the longest | 1 second, 1 minute |
 | `api.keepaliveInterval` | Longest the event stream goes without an event; a `Keepalive` is sent when nothing else has been | Below the shortest idle timeout between the browser and the backend (Cloudflare's, see [Streaming to the browser](#streaming-to-the-browser)) |
 | `trace.writeTimeout` | Longest a trace write may take, including connecting to the `app` database; the pool's connection and query timeouts are set to the same value | 10 seconds, provisional |
-| `prompt.file`, `prompt.version` | The system prompt file and its version, recorded in every trace | `backend/prompts/system.v1.md`, `v1` |
+| `prompt.file`, `prompt.version` | The system prompt file and its version, recorded in every trace | `backend/prompts/system.v2.md`, `v2` |
 
-`backend/config/servers.yaml` is the server directory, and the only place a deployment names its cities: for each server, its `name` (for example `sf-housing`), `label` (`SF Housing`, shown in the browser app beside each of its tool calls), `url` (`http://<host>:<port>/mcp`) and tool `prefix` (`sf_`). `backend/.env` holds the port to serve on (`BACKEND_PORT`), the `app` database URL (`APP_DATABASE_URL`) and each cloud model configuration's API key, named `<CONFIGURATION>_API_KEY` (`FRONTIER_API_KEY`, `SAME_MODEL_CLOUD_API_KEY`); `backend/.env.example` lists them.
+`backend/config/servers.yaml` is the server directory, and the only place a deployment names its cities: for each server, its `name` (for example `sf-data`), `label` (`SF Data`, shown in the browser app beside each of its lookups), `url` (`http://<host>:<port>/mcp`) and tool `prefix` (`sf_data_`). `backend/.env` holds the port to serve on (`BACKEND_PORT`), the `app` database URL (`APP_DATABASE_URL`) and each cloud model configuration's API key, named `<CONFIGURATION>_API_KEY` (`FRONTIER_API_KEY`, `SAME_MODEL_CLOUD_API_KEY`); `backend/.env.example` lists them.
 
-**Missing configuration is a `ConfigFileError`.** The shared library `@policyhuis/node-config` (`shared/node-config/`) reads every node's configuration the same way: YAML files decoded with a `Schema`, and a `.env` file that takes priority over the shell, so another project's variables cannot leak in. Anything missing or invalid (a field in `agent.yaml`, the prompt file it names, a selected model configuration with no entry, a variable missing from `.env`) fails startup with a `ConfigFileError` naming the file to fix and the field or variable, never a defect.
+**Missing configuration is a `ConfigFileError`.** The shared library `@policyhuis/node-config` (`shared/node-config/`) reads every node's configuration the same way: YAML files decoded with a `Schema`, and a `.env` file that takes priority over the shell, so another project's variables cannot leak in. The backend reads its `.env` variables only through `config/BackendConfig.ts` (see [Effect Style § 13](../effect-style.md#13-read-the-environment-through-one-configuration-module)). Anything missing or invalid (a field in `agent.yaml`, the prompt file it names, a selected model configuration with no entry, a variable missing from `.env`) fails startup with a `ConfigFileError` naming the file to fix and the field or variable, never a defect.
 
 ## Startup
 
-1. Decode `agent.yaml` and `servers.yaml`, and read the system prompt file; any error stops the process with a `ConfigFileError` naming the file and field. Two servers with the same name or tool prefix are an error. Unique prefixes do not guarantee unique tool names when one prefix starts another (`sf_` and `sf_law_`), so each request's toolkit offers a tool name that two connected servers share by neither, and logs an error naming both.
+1. Decode `agent.yaml` and `servers.yaml`, and read the system prompt file; any error stops the process with a `ConfigFileError` naming the file and field. Two servers with the same name or tool prefix are an error. Unique prefixes do not guarantee unique tool names when one prefix starts another (`sf_` and `sf_docs_`), so each request's toolkit offers a tool name that two connected servers share by neither, and logs an error naming both.
 2. Apply the `app` schema's pending Drizzle migrations from `backend/drizzle/`.
 3. Build the `LanguageModel` layer for `model.configuration`.
 4. For each server in the directory, open an `McpClient` with the Streamable HTTP transport (`McpClient.make` with `McpClient.http`), initialize it, list its tools and build their toolkit with `McpClient.toolkit`, within `tools.callTimeout`. A server that cannot be reached is retried in the background with exponential backoff; startup continues.
@@ -94,7 +95,7 @@ Declared choices live in `backend/config/agent.yaml`, reviewed by pull request; 
 
 ### MCP connections
 
-**Sessionless protocol.** Every client and server uses MCP protocol version `2026-07-28`, which has no session. Under the earlier, sessionful versions, a server restart makes the server answer the client's session ID with `404`, and Effect's client then fails permanently with `ClosedError({ sessionExpired: true })` (`effect/src/ai/McpClient.ts`, 4.1.2), so one restart of `sf-housing` would cut it off until the backend restarted too. Checked on November 5, 2026 with a throwaway test against 4.1.2, and kept covered by the connection tests in [Testing](#testing): one client on `2026-07-28` gets a `TransportError` while the server is down and succeeds, without being rebuilt, once the server is back on the same port.
+**Sessionless protocol.** Every client and server uses MCP protocol version `2026-07-28`, which has no session. Under the earlier, sessionful versions, a server restart makes the server answer the client's session ID with `404`, and Effect's client then fails permanently with `ClosedError({ sessionExpired: true })` (`effect/src/ai/McpClient.ts`, 4.1.2), so one restart of `sf-data` would cut it off until the backend restarted too. Checked on November 5, 2026 with a throwaway test against 4.1.2, and kept covered by the connection tests in [Testing](#testing): one client on `2026-07-28` gets a `TransportError` while the server is down and succeeds, without being rebuilt, once the server is back on the same port.
 
 **One client per server, never rebuilt.** A `TransportError` (the request could not be sent, or the server is down) does not close a sessionless client (`McpClient.http` sets its closed state only for session expiry or when its own scope closes, 4.1.2), so the same client is used again once the server is back, and nothing in the backend rebuilds clients.
 
@@ -126,10 +127,11 @@ sequenceDiagram
         L->>M: LanguageModel.streamText({ prompt, toolkit })
         M-->>L: text-delta parts (held until the turn ends)
         M-->>L: tool-call parts
-        L-->>B: ToolStart
+        L-->>B: LookupStarted
         L->>S: tools/call (via McpClient)
         S-->>L: structuredContent
-        L-->>B: ToolEnd (structuredContent)
+        L-->>B: LookupEnded (structuredContent)
+        L-->>B: Sources (the result's citations)
         M-->>L: finish (usage)
     end
     L-->>B: TextChunk (the answering turn's text)
@@ -176,9 +178,9 @@ One server being down does not stop questions that other servers can answer.
 
 ## Tool results
 
-The model, the browser app and the trace all receive each tool result in full, citations included. Results are not checked or changed on the way:
+The model and the trace receive each tool result in full, as the server sent it; the browser app receives it too, for display only. The backend reads only the result's citations (see [Citations in answers](#citations-in-answers)), and changes nothing:
 
-- **Size** is bounded by the servers, which cap list sizes (`sf-housing` returns at most 50 projects), and by the [context budget](#the-context-budget): a result too large for the next prompt ends the question as `context_limit`.
+- **Size** is bounded by the servers, which cap list sizes (`sf-data` returns at most 50 projects), and by the [context budget](#the-context-budget): a result too large for the next prompt ends the question as `context_limit`.
 - **A defect** in the backend's tool handling fails the step, and the question ends as `failed`.
 
 A guard that turns both into failed results the model can act on is in [Next steps](#next-steps).
@@ -249,14 +251,14 @@ Effect's `AiError` gives each model error a reason, and the loop handles each cl
 | The model wrote an invalid tool call | `ToolParameterValidationError` (arguments that are not valid JSON, raised by `@effect/ai-openai-compat`), and a `SchemaError` decoding a tool name no server declared | Retry at once with the same prompt plus a fixed user message naming the tool and the problem, so the model can correct its call |
 | Our request is wrong, or the provider refuses it | `InvalidRequestError`, `AuthenticationError`, `QuotaExhaustedError`, `ContentPolicyError`, `UnknownError` | Fail fast: `failed`, no retry |
 
-Both retried classes share `loop.modelRetries` per question, and retry only while nothing from the failed turn has reached the browser: no `ToolStart`, and no text, which a turn that may call tools holds until it ends. The failed turn's partial output never enters the prompt. Tool arguments that are valid JSON but fail the tool's parameter schema are not a model error: they come back as a failed tool result, which the model reads and corrects in its next step.
+Both retried classes share `loop.modelRetries` per question, and retry only while nothing from the failed turn has reached the browser: no `LookupStarted`, and no text, which a turn that may call tools holds until it ends. The failed turn's partial output never enters the prompt. Tool arguments that are valid JSON but fail the tool's parameter schema are not a model error: they come back as a failed tool result, which the model reads and corrects in its next step.
 
 ### The context budget
 
 The prompt grows with every tool result, and a local runtime given more than its context length may drop the start of the prompt without failing (Ollama does), so the model would answer without results it is citing. The loop never sends a prompt that does not fit:
 
 - **Before each step after the first**, `ContextBudget` estimates the next prompt's tokens as the previous step's reported input and output tokens plus the new tool results' bytes divided by the model's `bytesPerToken`. If that is more than `contextTokens − answerTokens`, the step does not run.
-- **The final turn then runs on the last prompt that fit**, the one before the step whose results pushed it over, with a fixed message to answer from the results so far. The outcome is `context_limit`, with its own message. The dropped step's `ToolEnd` events have already reached the browser; their citations stay linkable but the answer does not use them.
+- **The final turn then runs on the last prompt that fit**, the one before the step whose results pushed it over, with a fixed message to answer from the results so far. The outcome is `context_limit`, with its own message. The dropped step's `LookupEnded` and `Sources` events have already reached the browser; their citations stay linkable but the answer does not use them.
 - **The runtime is configured to the same context length** (`num_ctx` for Ollama, `--ctx-size` for llama.cpp), recorded with the S1 results. The first step's prompt is not checked; a startup check with the longest allowed question is in [Next steps](#next-steps).
 
 ## The request's prompt
@@ -270,15 +272,15 @@ The loop calls `LanguageModel.streamText` directly rather than through Effect's 
 | `Response` part | Event | Sent to the browser |
 |---|---|---|
 | `text-delta` | `TextChunk { text }` | Yes; held until the turn ends in a turn that may call tools, and dropped if it called one |
-| `tool-call` | `ToolStart { callId, tool, server, arguments }`, where `server` is the server the request's toolkit routes the tool to (its name, label and the tool's own name), or null if none offers it; and `ToolCallStarted { callId, providerCallId, tool, arguments, at }`. `callId` is a UUID the loop gives the call; `providerCallId` is the provider's own ID for it (see [Call IDs](#call-ids)) | `ToolStart` only |
-| `tool-result` (not `preliminary`) | On success, `ToolEnd { callId, tool, outcome, result, error: null }` with the full `structuredContent` as `result`. On failure, `ToolEnd` with `result: null` and `error` set to the failure's type only (the server's error type, such as `UnknownValue`, or the client error's reason, such as `TransportError`), plus `ToolFailed { callId, encodedError }` carrying the full encoded error for the trace. Either way, `ToolCallEnded { callId, at }`; a transport error also adds the server to the request's unavailable servers | `ToolEnd` only |
+| `tool-call` | `LookupStarted { lookupId, source, tool, title, arguments }`, where `source` is the server the request's toolkit routes the tool to (its name and label) or null if none offers it, and `title` is the tool's title as its server publishes it, or the name the model called when no server offers it; and `ToolCallStarted { callId, providerCallId, tool, arguments, at }`. The lookup ID is the call ID, a UUID the loop gives the call; `providerCallId` is the provider's own ID for it (see [Call IDs](#call-ids)) | `LookupStarted` only |
+| `tool-result` (not `preliminary`) | On success, `LookupEnded { lookupId, outcome: "succeeded", result, error: null }` with the full `structuredContent` as `result`; then `Sources { lookupId, citations }` with the result's citations that follow the convention, if any; and `CitationsRejected { callId, tool, rejected, missing }` when some broke it or the result had no `citations` list, which the agent logs. On failure, `LookupEnded` with `result: null`, `error` set to the failure's type only (the server's error type, such as `UnknownValue`, or the client error's reason, such as `TransportError`), and `outcome` `unavailable` for `TransportError`, `ClosedError` and `DatabaseUnavailable`, `failed` otherwise; plus `ToolFailed { callId, encodedError }` carrying the full encoded error for the trace. Either way, `ToolCallEnded { callId, at }`; an `unavailable` lookup also adds its server to the request's unavailable servers | `LookupEnded` and `Sources` only; the agent sends each `citationId` once per question |
 | `finish` | Kept with the turn's parts; `StepEnded { parts, usage, finishReason }` is emitted when the turn's stream ends | No |
 | `error` | Fails the step with the provider's error | No; the request ends with `Complete` |
 | `reasoning-*`, `text-start`/`text-end`, `tool-params-*`, `response-metadata`, sources, files | None | No |
 
 ## Loop events and the trace
 
-`LoopEvent` is the browser's `AgentStreamEvent` union plus internal events defined in the backend, never in `protocol/`: `StepStarted`, `StepEnded` (parts, finish reason and usage), `ToolCallStarted`, `ToolCallEnded`, `ToolFailed` (a failed call's full encoded error), `ModelRetried`, and `Finished` (outcome and, when failed, the raw error). The trace is a pure fold over these events (`trace/Trace.ts`: `(Trace, LoopEvent) => Trace`), so the events are the one record of what happened; there is no separate per-request state service.
+`LoopEvent` is the browser's `AgentStreamEvent` union plus internal events defined in the backend, never in `protocol/`: `StepStarted`, `StepEnded` (parts, finish reason and usage), `ToolCallStarted`, `ToolCallEnded`, `ToolFailed` (a failed call's full encoded error), `CitationsRejected`, `ModelRetried`, and `Finished` (outcome and, when failed, the raw error). The internal `StepStarted` and `StepEnded` are model turns; the browser's lookups are tool calls. The trace is a pure fold over these events (`trace/Trace.ts`: `(Trace, LoopEvent) => Trace`), so the events are the one record of what happened; there is no separate per-request state service.
 
 `Agent` applies the fold as events pass (`Stream.tap` into a `Ref` local to the request) and writes the result when the stream ends (see [Traces](#traces)). A trace with no `Finished` event is written with outcome `cancelled`. Tools run on forked fibers when the model calls several at once, but their results reach the loop as stream parts, so nothing outside the stream needs to record them.
 
@@ -346,8 +348,9 @@ Unavailable servers are not a `message`: the browser app shows them from `Comple
 | Event | Fields | The browser app uses it to |
 |---|---|---|
 | `TextChunk` | text | Append answer text |
-| `ToolStart` | call ID, tool name, the server it goes to (name, label, the tool's name on that server) or null, arguments | Show a status line for the call, labeled with the server's label and the tool's own name |
-| `ToolEnd` | call ID, tool name, outcome, the result's `structuredContent` on success, the error type on failure | Update the status, and keep the citations for linking |
+| `LookupStarted` | lookup ID, the server it goes to (name and label) or null, tool name, the tool's title, arguments | Show a row for the lookup, labeled with the server's label and the tool's title |
+| `LookupEnded` | lookup ID, outcome (`succeeded`, `failed` or `unavailable`), the result's `structuredContent` on success, the error type otherwise | Update the row's status; the result is shown, never read |
+| `Sources` | lookup ID, the citations read from its result, each sent once per question | Keep the citations for linking markers and listing sources |
 | `Keepalive` | none | Nothing; it keeps the connection open while the model works |
 | `Complete` | request ID, outcome, message (null when answered), unavailable servers | Show whether the answer is complete, the message when it is not, and which servers could not be reached |
 
@@ -355,19 +358,19 @@ The events are `Schema` classes in `protocol/` (see [API contract](#api-contract
 
 ## Citations in answers
 
-The backend does not read, check or rewrite citations. Citations are for the user: each claim points to the exact source, and the user checks it there.
+Citations are for the user: each claim points to the exact source, and the user checks it there. The backend reads them from tool results but never rewrites them, and the model sees each result as the server sent it.
 
-- **Servers** put the citations behind each result in the result's `structuredContent`, in the shape set by `protocol/`'s citation schema, and declare it in the tool's `outputSchema`.
-- **The model** marks each claim with the `citationId` it rests on, in square brackets (for example `[sf.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f]`, with an illustrative query key), as the system prompt tells it to.
-- **The backend** passes each tool result's `structuredContent` to the browser app in `ToolEnd`, unchanged, and stores it in the trace.
-- **The browser app** links each marker to the citation with that `citationId` among the results it received, groups citations by `sourceId`, and shows a marker that matches no citation as unlinked.
+- **Servers** put the citations behind each result in the result's `structuredContent`, by the [citation convention](../domain-driven-design.md#conventions-between-servers-and-the-backend), declare them in the tool's `outputSchema`, and namespace their IDs with their short name, so IDs stay unique across servers without coordination. Servers import nothing from `protocol/`.
+- **The model** marks each claim with the `citationId` it rests on, in square brackets (for example `[sf_data.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f]`, with an illustrative query key), as the system prompt tells it to.
+- **The backend** reads each successful result's citations through its own schema of the convention (`loop/ToolResults.ts`), drops and logs any that break it, and sends the rest to the browser app in `Sources`. A `citationId` already sent in the question is not sent again; one returned with different content is logged, and the first is kept. The result itself, unchanged, is stored in the trace.
+- **The browser app** links each marker to the citation with that `citationId` among the `Sources` it received, groups citations by `sourceId`, and shows a marker that matches no citation as unlinked. It never reads citations from a result.
 - **The evaluation** checks citations offline, from the traces: whether each claim cites the right source and whether any marker matched nothing.
 
-**Copying full IDs is tested, not assumed.** Spike S2 checks that the chosen local model copies `citationId`s exactly. Short aliases (`c1`, `c2`) are a fallback, added only if it does not; they would need the backend to map them, so they are avoided if possible.
+**Copying full IDs is tested, not assumed.** Spike S2 checks that the chosen local model copies `citationId`s exactly. Short aliases (`c1`, `c2`) are a fallback, added only if it does not; they would need the backend to rewrite results and map the aliases back, so they are avoided if possible. The same rewrite could prefix IDs per server if namespaced IDs ever collided; neither is built.
 
 ### Call IDs
 
-Every tool call gets a UUID from the loop, which is the `callId` the browser receives and the trace's key for the call. The provider's own ID for the call is not used for either: providers need not make it unique within a question (`@effect/ai-openai-compat` falls back to `<response id>_tool_<index>` when a server sends none, and some local servers number calls per response), and a repeated ID would merge two calls in the trace and break the `tool_calls` primary key. The provider's ID stays in the prompt, where the model needs it to match each result to its call, and is stored in the trace as `provider_call_id`.
+Every tool call gets a UUID from the loop, which is the lookup ID the browser receives and the trace's key for the call. The provider's own ID for the call is not used for either: providers need not make it unique within a question (`@effect/ai-openai-compat` falls back to `<response id>_tool_<index>` when a server sends none, and some local servers number calls per response), and a repeated ID would merge two calls in the trace and break the `tool_calls` primary key. The provider's ID stays in the prompt, where the model needs it to match each result to its call, and is stored in the trace as `provider_call_id`.
 
 The UUID is a version 5 UUID (the `uuid` package) of the provider's ID within a UUID drawn for each turn. A call and its result, which carry the same provider ID in the same turn, always get the same UUID, with no map to keep; calls in different turns never share one.
 
@@ -383,15 +386,15 @@ When the stream ends, `TraceStore` writes the `app.requests` row and its `app.to
 
 ## The system prompt
 
-A versioned Markdown file (`backend/prompts/system.v1.md`) whose version is recorded in every trace. The prompt names no city, dataset or tool, so the same prompt serves every deployment. It covers:
+A versioned Markdown file (`backend/prompts/system.v2.md`) whose version is recorded in every trace; an earlier version stays in `backend/prompts/` so old traces can be read against it. The prompt names no city, dataset or tool, so the same prompt serves every deployment. It covers:
 
 - **Role and audience**: answer housing policy questions for policy makers and residents, in plain language, using the connected tools.
-- **Answer only from tool results**, and say when the tools cannot answer a question, including a question about a place no tool covers.
+- **Answer only from tool results**, and say when the tools cannot answer a question, including a question about a place no tool covers. Before declining, check each tool's description and call any that covers the topic, even when the question names no law or dataset (added in v2, after the model declined rent control questions without searching the Rent Ordinance).
 - **Citing**: mark every claim with the `citationId` of the result it rests on, in square brackets, copied exactly.
 - **Reading results**: follow each tool's description on how to read its results; give the date or version of the data an answer uses; prefer a tool that returns totals over adding numbers up.
 - **Declines**: legal advice and causal claims, pointing to the right body.
 
-Rules about a city's data live in that server's tool descriptions. San Francisco's (name the pipeline snapshot, never call a project stalled, MOHCD dates are estimates, zones are never combined, quote the publisher's description when asked how current the data is) are in `sf-housing`'s descriptions (see [Data server tools](sf-plan.md#data-server-tools)), so adding a city adds no prompt text.
+Rules about a city's data live in that server's tool descriptions. San Francisco's (name the pipeline snapshot, never call a project stalled, MOHCD dates are estimates, zones are never combined, quote the publisher's description when asked how current the data is) are in `sf-data`'s descriptions (see [Data server tools](sf-plan.md#data-server-tools)), so adding a city adds no prompt text.
 
 The prompt's exact wording is drafted with the evaluation questions and tested in spike S2.
 
@@ -409,7 +412,7 @@ Every function is an `Effect.fn` with a name, so each request produces a span tr
 | Connections | Over HTTP: the test server restarted between two questions, checking the second question's calls succeed on the same client; a server down at startup, checking its tools are left out, the prompt names it and `Complete.unavailableServers` lists it; two directory entries with one prefix, failing startup |
 | Admission | A second question while one is streaming returns `503`; a disconnected question frees its permit; a question is admitted while the previous question's trace write still hangs |
 | API | `QuestionsApi` through `HttpApiClient` against the running handler, checking the server-sent events decode and that `Keepalive` arrives during a stalled step |
-| Configuration | Decoding `agent.yaml` and `servers.yaml`, including the checked-in files and the prompt file they name; in `shared/node-config`, `.env` variables read and a missing one reported as a `ConfigFileError` |
+| Configuration | Decoding `agent.yaml` and `servers.yaml`, including the checked-in files and the prompt file they name; in `shared/node-config`, a group of `.env` variables read and a missing one reported as a `ConfigFileError`; in `BackendConfig.test.ts`, each variable read by its name in `.env.example` |
 | Traces | Against a Postgres testcontainer: two calls whose provider reused one call ID are both written; a write to an unreachable database fails with `TraceWriteFailed`. Rows for each outcome, including `cancelled`, are still to add |
 
 ## API contract
@@ -429,13 +432,16 @@ One endpoint, in the `QuestionsApi` group defined in `protocol/` so the backend 
 
 ```
 event: message
-data: {"_tag":"ToolStart","callId":"0b6f5c1e-3c2a-4d8e-9f1a-2b3c4d5e6f70","tool":"sf_development_pipeline_summary","server":{"name":"sf-housing","label":"SF Housing","tool":"development_pipeline_summary"},"arguments":{"groupBy":"status"}}
+data: {"_tag":"LookupStarted","lookupId":"0b6f5c1e-3c2a-4d8e-9f1a-2b3c4d5e6f70","source":{"name":"sf-data","label":"SF Data"},"tool":"sf_data_development_pipeline_summary","title":"Planning pipeline totals","arguments":{"groupBy":"status"}}
 
 event: message
-data: {"_tag":"ToolEnd","callId":"0b6f5c1e-3c2a-4d8e-9f1a-2b3c4d5e6f70","tool":"sf_development_pipeline_summary","outcome":"success","error":null,"result":{"groups":[…],"snapshot":"2026 Q2","citations":[{"_tag":"DatasetCitation","sourceId":"sf.development_pipeline@2026-08-28","citationId":"sf.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f",…}]}}
+data: {"_tag":"LookupEnded","lookupId":"0b6f5c1e-3c2a-4d8e-9f1a-2b3c4d5e6f70","outcome":"succeeded","error":null,"result":{"groups":[…],"snapshot":"2026 Q2","citations":[…]}}
 
 event: message
-data: {"_tag":"TextChunk","text":"… [sf.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f]"}
+data: {"_tag":"Sources","lookupId":"0b6f5c1e-3c2a-4d8e-9f1a-2b3c4d5e6f70","citations":[{"citationId":"sf_data.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f","sourceId":"sf_data.development_pipeline@2026-08-28","title":"SF Development Pipeline","publisher":"San Francisco Planning","sourceUrl":"https://data.sf.gov/d/6jgi-cpb4","version":"2026-08-28","locator":"Planning pipeline projects and units by status","quote":null}]}
+
+event: message
+data: {"_tag":"TextChunk","text":"… [sf_data.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f]"}
 
 event: message
 data: {"_tag":"Complete","requestId":"…","outcome":"answered","message":null,"unavailableServers":[]}
@@ -448,6 +454,8 @@ The example's values are illustrative only, not data.
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api"
 
+import { Citation } from "./Citation.ts"
+
 export class QuestionRequest extends Schema.Class<QuestionRequest>("QuestionRequest")({
   question: Schema.String.pipe(
     Schema.check(
@@ -457,42 +465,56 @@ export class QuestionRequest extends Schema.Class<QuestionRequest>("QuestionRequ
   )
 }) {}
 
-/** The UUID the backend gives each tool call. */
-export const CallId = Schema.String.pipe(Schema.check(Schema.isUUID()))
+/** The UUID the backend gives each lookup. */
+export const LookupId = Schema.String.pipe(Schema.check(Schema.isUUID()))
 
 export class TextChunk extends Schema.TaggedClass<TextChunk>()("TextChunk", {
   text: Schema.String
 }) {}
 
-/** The data server a tool call goes to: its name, the label shown for it, and the tool's own name on that server. */
-export const ToolServer = Schema.Struct({
+/** The server a lookup goes to: its name in the backend's server directory, and the label shown for it. */
+export const LookupSource = Schema.Struct({
   name: Schema.String,
-  label: Schema.String,
-  tool: Schema.String
+  label: Schema.String
 })
+export type LookupSource = typeof LookupSource.Type
 
 /**
- * A tool call the model made. `tool` is the name the model called, with its server's prefix; `server` is null when no
- * connected server offers that name, and the call fails.
+ * The agent consulting a server: one tool call the model made. `tool` is the name the model called, with its server's
+ * prefix, and `title` the tool's title as its server publishes it. `source` is null when no connected server offers
+ * that name, and the lookup fails.
  */
-export class ToolStart extends Schema.TaggedClass<ToolStart>()("ToolStart", {
-  callId: CallId,
+export class LookupStarted extends Schema.TaggedClass<LookupStarted>()("LookupStarted", {
+  lookupId: LookupId,
+  source: Schema.NullOr(LookupSource),
   tool: Schema.String,
-  server: Schema.NullOr(ToolServer),
+  title: Schema.String,
   arguments: Schema.Unknown
 }) {}
 
 /**
- * A tool call's outcome. On success, `result` is the tool's `structuredContent`, passed through unchanged for the
- * browser to render, and `error` is null. On failure, `result` is null and `error` is the failure's type only, such as
- * `UnknownValue` or `TransportError`; its details stay in the trace.
+ * How a lookup ended. `unavailable` means its server, or the server's own database, could not be reached; `failed`
+ * means the call itself was wrong, such as an unknown value.
  */
-export class ToolEnd extends Schema.TaggedClass<ToolEnd>()("ToolEnd", {
-  callId: CallId,
-  tool: Schema.String,
-  outcome: Schema.Literals(["success", "failure"]),
+export const LookupOutcome = Schema.Literals(["succeeded", "failed", "unavailable"])
+export type LookupOutcome = typeof LookupOutcome.Type
+
+/**
+ * A lookup's end. On success, `result` is the tool's `structuredContent`, unchanged, for display only: the browser
+ * never reads citations from it, only from `Sources`. Otherwise `result` is null and `error` is the failure's type,
+ * such as `UnknownValue` or `TransportError`; its details stay in the trace.
+ */
+export class LookupEnded extends Schema.TaggedClass<LookupEnded>()("LookupEnded", {
+  lookupId: LookupId,
+  outcome: LookupOutcome,
   result: Schema.Unknown,
   error: Schema.NullOr(Schema.String)
+}) {}
+
+/** The citations the backend read from a lookup's result; each `citationId` is sent once per question. */
+export class Sources extends Schema.TaggedClass<Sources>()("Sources", {
+  lookupId: LookupId,
+  citations: Schema.Array(Citation)
 }) {}
 
 /** Sent when nothing else has been for `api.keepaliveInterval`, so the connection stays open; the browser app ignores it. */
@@ -509,7 +531,7 @@ export class Complete extends Schema.TaggedClass<Complete>()("Complete", {
   unavailableServers: Schema.Array(Schema.String)
 }) {}
 
-export const AgentStreamEvent = Schema.Union([TextChunk, ToolStart, ToolEnd, Keepalive, Complete])
+export const AgentStreamEvent = Schema.Union([TextChunk, LookupStarted, LookupEnded, Sources, Keepalive, Complete])
 export type AgentStreamEvent = typeof AgentStreamEvent.Type
 
 /** Returned as `503` before the stream starts, when the backend is already answering as many questions as it can. */

@@ -1,11 +1,11 @@
 # The MCP servers this backend answers from. A server's tools are offered to the model as <prefix><tool name>;
 # the browser app shows its label beside each of its tool calls.
 servers:
-  - name: sf-housing
-    label: SF Housing
+  - name: sf-data
+    label: SF Data
     url: http://localhost:8081/mcp
-    prefix: sf_
-  - name: sf-legal-text
-    label: SF Law
+    prefix: sf_data_
+  - name: sf-docs
+    label: SF Documents
     url: http://localhost:8082/mcp
-    prefix: sf_law_
+    prefix: sf_docs_

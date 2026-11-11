@@ -1,7 +1,0 @@
-# Corpus membership: each document in config/sources.yaml that the legal-text server (san-francisco/legal-text-server)
-# answers from, its type, and the rule in sf_legal_text that splits it into passages.
-# document_type: law, report or reference; answers label reports as analysis, not rules.
-
-rent_ordinance:
-  document_type: law
-  splitter: rent_ordinance

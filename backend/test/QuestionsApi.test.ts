@@ -122,7 +122,7 @@ const waitForTraces = (count: number) =>
 
 describe("POST /api/v1/questions", () => {
   it.live(
-    "streams tool calls, the answer and Complete, and writes the trace",
+    "streams lookups, their sources, the answer and Complete, and writes the trace",
     () =>
       Effect.gen(function* () {
         const server = yield* startTestServer(0)
@@ -133,14 +133,41 @@ describe("POST /api/v1/questions", () => {
         }).pipe(Effect.provide(apiLayer(answerScript, [{ name: "a-data", label: "A", prefix: "a_", url: server.url }])))
 
         const tags = events.result.filter((event) => event._tag !== "Keepalive").map((event) => event._tag)
-        expect(tags).toEqual(["ToolStart", "ToolEnd", "TextChunk", "Complete"])
-        const start = events.result.find((event) => event._tag === "ToolStart")
-        expect(start?._tag === "ToolStart" ? start.server : null).toEqual({ name: "a-data", label: "A", tool: "echo" })
+        expect(tags).toEqual(["LookupStarted", "LookupEnded", "Sources", "TextChunk", "Complete"])
+        const start = events.result.find((event) => event._tag === "LookupStarted")
+        expect(start?._tag === "LookupStarted" ? [start.source, start.title] : null).toEqual([
+          { name: "a-data", label: "A" },
+          "Echo a word"
+        ])
         const complete = events.result.at(-1)
         expect(complete?._tag === "Complete" ? [complete.outcome, complete.message] : null).toEqual(["answered", null])
         if (events.trace === undefined) return yield* Effect.die("expected a trace")
         expect(traceOutcome(events.trace.trace)).toBe("answered")
         expect(events.trace.trace.toolCalls.map((call) => [call.tool, call.outcome])).toEqual([["a_echo", "success"]])
+        yield* server.stop
+      }).pipe(Effect.scoped),
+    30_000
+  )
+
+  it.live(
+    "sends each citation once, however many lookups return it",
+    () =>
+      Effect.gen(function* () {
+        const server = yield* startTestServer(0)
+        const twice: ReadonlyArray<ScriptedTurn> = [
+          { parts: [toolCall("c1", "a_echo", { word: "hello" }), finish("tool-calls", 50, 5)] },
+          { parts: [toolCall("c2", "a_echo", { word: "hello" }), finish("tool-calls", 50, 5)] },
+          { parts: [...text("t", "The word is hello [test.echo@1#hello]."), finish("stop", 80, 10)] }
+        ]
+        const result = yield* Effect.gen(function* () {
+          const events = yield* collect(yield* ask("What is the word?"))
+          yield* waitForTraces(1)
+          return events
+        }).pipe(Effect.provide(apiLayer(twice, [{ name: "a-data", label: "A", prefix: "a_", url: server.url }])))
+
+        expect(result.filter((event) => event._tag === "LookupEnded")).toHaveLength(2)
+        const sources = result.filter((event) => event._tag === "Sources")
+        expect(sources.flatMap((event) => event.citations.map((c) => c.citationId))).toEqual(["test.echo@1#hello"])
         yield* server.stop
       }).pipe(Effect.scoped),
     30_000

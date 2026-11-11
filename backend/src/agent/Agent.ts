@@ -1,6 +1,9 @@
 import { Clock, Context, Data, Effect, Layer, Ref, Schema, Semaphore, Stream } from "effect"
 import { LanguageModel, Prompt } from "effect/ai"
 
+import type { Citation } from "@policyhuis/protocol/Citation"
+import { Sources } from "@policyhuis/protocol/QuestionsApi"
+
 import { activeModel, AgentConfig } from "../config/AgentConfig.ts"
 import type { LoopSettings } from "../loop/AgentLoop.ts"
 import { runAgentLoop } from "../loop/AgentLoop.ts"
@@ -31,9 +34,6 @@ export class QuestionEnded extends Data.TaggedClass("QuestionEnded")<{
 
 /** What a caller of the agent receives: the answer's events as they happen, then `QuestionEnded`. */
 export type AgentEvent = BrowserEvent | QuestionEnded
-
-/** Tool error types that mean the server itself could not be reached, not that the call was wrong. */
-const UNREACHABLE_ERRORS: ReadonlySet<string> = new Set(["TransportError", "ClosedError"])
 
 /** Appended to the system prompt when a server is unreachable, so the model can say what it could not check. */
 const unavailableNotice = (servers: ReadonlyArray<string>) =>
@@ -85,18 +85,61 @@ export class Agent extends Context.Service<
 
         const trace = yield* Ref.make<Trace>(emptyTrace)
         const unreachable = yield* Ref.make<ReadonlySet<string>>(new Set(tools.unavailable))
+        /** The server each lookup went to, by lookup ID. */
+        const lookupServers = yield* Ref.make<ReadonlyMap<string, string>>(new Map())
+        /** Every citation sent so far, by `citationId`. */
+        const sent = yield* Ref.make<ReadonlyMap<string, Citation>>(new Map())
 
-        /** Records each event in the trace, and the servers a failed call showed to be unreachable. */
+        /**
+         * Records each event in the trace, the servers an unavailable lookup showed to be unreachable, and logs
+         * citations a server returned that could not be read.
+         */
         const observe = (event: LoopEvent) =>
           Effect.gen(function* () {
             yield* Ref.update(trace, (current) => foldTrace(current, event))
-            if (event._tag !== "ToolEnd" || event.error === null || !UNREACHABLE_ERRORS.has(event.error)) return
-            const server = tools.serverOf(event.tool)
-            if (server === null) return
-            yield* Ref.update(unreachable, (servers) => new Set([...servers, server.name]))
+            if (event._tag === "LookupStarted" && event.source !== null) {
+              const server = event.source.name
+              yield* Ref.update(lookupServers, (servers) => new Map([...servers, [event.lookupId, server]]))
+            }
+            if (event._tag === "LookupEnded" && event.outcome === "unavailable") {
+              const server = (yield* Ref.get(lookupServers)).get(event.lookupId)
+              if (server !== undefined) yield* Ref.update(unreachable, (servers) => new Set([...servers, server]))
+            }
+            if (event._tag === "CitationsRejected") {
+              yield* Effect.logWarning(
+                event.missing
+                  ? `${event.tool} returned a result with no citations list`
+                  : `${event.tool} returned ${String(event.rejected)} citations that break the citation convention`
+              )
+            }
+          })
+
+        /**
+         * The citations not sent before in this question. A repeated `citationId` is dropped; one whose content
+         * differs from the citation first sent under it is logged, since a server should give one ID one meaning.
+         */
+        const unsent = (sources: Sources) =>
+          Effect.gen(function* () {
+            const before = yield* Ref.get(sent)
+            const fresh: Array<Citation> = []
+            for (const citation of sources.citations) {
+              const earlier = before.get(citation.citationId)
+              if (earlier === undefined) {
+                if (!fresh.some((c) => c.citationId === citation.citationId)) fresh.push(citation)
+              } else if (JSON.stringify(earlier) !== JSON.stringify(citation)) {
+                yield* Effect.logWarning(`Citation ${citation.citationId} was returned with different content`)
+              }
+            }
+            yield* Ref.set(sent, new Map([...before, ...fresh.map((c): [string, Citation] => [c.citationId, c])]))
+            return fresh
           })
 
         const toAgentEvents = (event: LoopEvent): Effect.Effect<ReadonlyArray<AgentEvent>> => {
+          if (event._tag === "Sources") {
+            return Effect.map(unsent(event), (citations) =>
+              citations.length === 0 ? [] : [Sources.make({ lookupId: event.lookupId, citations })]
+            )
+          }
           if (isBrowserEvent(event)) return Effect.succeed([event])
           if (event._tag !== "Finished") return Effect.succeed([])
           return Effect.map(Ref.get(unreachable), (servers) => [

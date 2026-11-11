@@ -4,7 +4,7 @@ import { join } from "node:path"
 
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Redacted, Schema } from "effect"
+import { Config, Effect, Layer, Redacted, Schema } from "effect"
 
 import { ConfigFileError, loadYaml } from "../src/ConfigFile.ts"
 import { dotEnv } from "../src/DotEnv.ts"
@@ -18,12 +18,13 @@ const tempFile = (name: string, contents: string) => {
 const withEnv = (env: ReturnType<typeof dotEnv>) => Effect.provide(env.layer.pipe(Layer.provide(NodeServices.layer)))
 
 describe("dotEnv", () => {
-  it.effect("reads a secret and a port from the .env file", () =>
+  it.effect("reads a group of variables, nested under a prefix, from the .env file", () =>
     Effect.gen(function* () {
       const env = dotEnv(tempFile(".env", "POLICYHUIS_TEST_URL=postgresql://x\nPOLICYHUIS_TEST_PORT=8081\n"))
-      const [url, port] = yield* Effect.all([env.secret("POLICYHUIS_TEST_URL"), env.port("POLICYHUIS_TEST_PORT")]).pipe(
-        withEnv(env)
+      const group = Config.all({ url: Config.Redacted("URL"), port: Config.Port("PORT") }).pipe(
+        Config.nested("POLICYHUIS_TEST")
       )
+      const { url, port } = yield* env.load(group).pipe(withEnv(env))
       expect(Redacted.value(url)).toBe("postgresql://x")
       expect(port).toBe(8081)
     })
@@ -33,7 +34,7 @@ describe("dotEnv", () => {
     Effect.gen(function* () {
       const path = tempFile(".env", "")
       const env = dotEnv(path)
-      const error = yield* Effect.flip(env.secret("POLICYHUIS_TEST_MISSING").pipe(withEnv(env)))
+      const error = yield* Effect.flip(env.load(Config.Redacted("POLICYHUIS_TEST_MISSING")).pipe(withEnv(env)))
       expect(error).toBeInstanceOf(ConfigFileError)
       expect(error.path).toBe(path)
       expect(error.message).toContain("POLICYHUIS_TEST_MISSING")

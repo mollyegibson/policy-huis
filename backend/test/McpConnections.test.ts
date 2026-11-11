@@ -10,7 +10,7 @@ import { makeConnections } from "../src/tools/McpConnections.ts"
 import type { TurnTools } from "../src/tools/TurnToolkit.ts"
 import { turnTools } from "../src/tools/TurnToolkit.ts"
 import { finish, scriptedModel, text, toolCall } from "./support/ScriptedModel.ts"
-import { startTestServer } from "./support/TestMcpServer.ts"
+import { echoCitation, startTestServer } from "./support/TestMcpServer.ts"
 
 /** Synthetic limits for these tests only; the backend's values are in config/agent.yaml. */
 const SETTINGS: LoopSettings = {
@@ -38,11 +38,11 @@ const entry = (name: string, prefix: string, url: string): ServerEntry => ({
   url
 })
 
-/** Asks the scripted model to call `tool` with `word`, then answer, and returns the loop's `ToolEnd`. */
-const callThroughLoop = (tools: TurnTools, tool: string, word: string) =>
+/** Asks the scripted model to call `tool` with `word`, then answer, and returns the loop's events. */
+const eventsThroughLoop = (tools: TurnTools, tool: string, word: string) =>
   runAgentLoop(Prompt.make("question"), tools.toolkit, tools.serverOf, SETTINGS).pipe(
     Stream.runCollect,
-    Effect.map((events) => Array.from(events).find((event) => event._tag === "ToolEnd")),
+    Effect.map((events) => Array.from(events)),
     Effect.provide(
       scriptedModel([
         { parts: [toolCall("c1", tool, { word }), finish("tool-calls")] },
@@ -50,6 +50,10 @@ const callThroughLoop = (tools: TurnTools, tool: string, word: string) =>
       ])
     )
   )
+
+/** The loop's `LookupEnded` for one call of `tool` with `word`. */
+const callThroughLoop = (tools: TurnTools, tool: string, word: string) =>
+  Effect.map(eventsThroughLoop(tools, tool, word), (events) => events.find((event) => event._tag === "LookupEnded"))
 
 /** Polls `check` every 50 ms, for up to 5 seconds, until `done` holds. */
 const waitUntil = <A>(check: Effect.Effect<A>, done: (a: A) => boolean) =>
@@ -72,11 +76,15 @@ describe("MCP connections", () => {
         const tools = turnTools(yield* connections.current)
         expect(Object.keys(tools.toolkit.tools).sort()).toEqual(["a_echo", "b_echo"])
         expect(tools.unavailable).toEqual([])
-        expect(tools.serverOf("b_echo")).toEqual({ name: "b-data", label: "B-DATA", tool: "echo" })
+        expect(tools.serverOf("b_echo")).toEqual({ name: "b-data", label: "B-DATA", title: "Echo a word" })
 
-        const end = yield* callThroughLoop(tools, "b_echo", "hello")
-        expect(end?.outcome).toBe("success")
-        expect(end?.result).toEqual({ word: "hello", citations: [{ citationId: "c#hello" }] })
+        const events = yield* eventsThroughLoop(tools, "b_echo", "hello")
+        const end = events.find((event) => event._tag === "LookupEnded")
+        expect(end?.outcome).toBe("succeeded")
+        expect(end?.result).toEqual({ word: "hello", citations: [echoCitation("hello")] })
+        const sources = events.find((event) => event._tag === "Sources")
+        expect(sources?.citations).toEqual([echoCitation("hello")])
+        expect(sources?.lookupId).toBe(end?.lookupId)
         yield* a.stop
         yield* b.stop
       }).pipe(Effect.scoped, Effect.provide(FetchHttpClient.layer)),
@@ -84,7 +92,7 @@ describe("MCP connections", () => {
   )
 
   it.live(
-    "passes on the server's own error type and a transport error's type, without details",
+    "passes on the server's own error type and a transport error's type, without details, as each lookup's outcome",
     () =>
       Effect.gen(function* () {
         const server = yield* startTestServer(0)
@@ -92,11 +100,14 @@ describe("MCP connections", () => {
         const tools = turnTools(yield* connections.current)
 
         const unknown = yield* callThroughLoop(tools, "a_echo", "unknown")
-        expect([unknown?.outcome, unknown?.error, unknown?.result]).toEqual(["failure", "UnknownWord", null])
+        expect([unknown?.outcome, unknown?.error, unknown?.result]).toEqual(["failed", "UnknownWord", null])
+
+        const offline = yield* callThroughLoop(tools, "a_echo", "offline")
+        expect([offline?.outcome, offline?.error]).toEqual(["unavailable", "DatabaseUnavailable"])
 
         yield* server.stop
         const down = yield* callThroughLoop(tools, "a_echo", "hello")
-        expect([down?.outcome, down?.error]).toEqual(["failure", "TransportError"])
+        expect([down?.outcome, down?.error]).toEqual(["unavailable", "TransportError"])
       }).pipe(Effect.scoped, Effect.provide(FetchHttpClient.layer)),
     30_000
   )
@@ -154,7 +165,7 @@ describe("MCP connections", () => {
         yield* first.stop
         const second = yield* startTestServer(first.port)
         const end = yield* callThroughLoop(tools, "a_echo", "again")
-        expect(end?.outcome).toBe("success")
+        expect(end?.outcome).toBe("succeeded")
         yield* second.stop
       }).pipe(Effect.scoped, Effect.provide(FetchHttpClient.layer)),
     30_000

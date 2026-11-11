@@ -7,25 +7,53 @@ import { HttpRouter, HttpServer } from "effect/http"
 
 class UnknownWord extends Schema.TaggedError<UnknownWord>()("UnknownWord", { word: Schema.String }) {}
 
+/** The tool error, by the convention every server follows, for a server that cannot reach its own database. */
+class DatabaseUnavailable extends Schema.TaggedError<DatabaseUnavailable>()("DatabaseUnavailable", {}) {}
+
+const TestCitation = Schema.Struct({
+  citationId: Schema.String,
+  sourceId: Schema.String,
+  title: Schema.String,
+  publisher: Schema.NullOr(Schema.String),
+  sourceUrl: Schema.String,
+  version: Schema.String,
+  locator: Schema.NullOr(Schema.String),
+  quote: Schema.NullOr(Schema.String)
+})
+
+/** A citation of `word` that follows the citation convention, under the namespace `test`. */
+export const echoCitation = (word: string) => ({
+  citationId: `test.echo@1#${word}`,
+  sourceId: "test.echo@1",
+  title: "Echo",
+  publisher: null,
+  sourceUrl: "https://example.org/echo",
+  version: "1",
+  locator: `The word ${word}`,
+  quote: null
+})
+
 const Echo = Tool.make("echo", {
   description: "Echo a word back, with a citation",
   parameters: Schema.Struct({ word: Schema.String }),
-  success: Schema.Struct({
-    word: Schema.String,
-    citations: Schema.Array(Schema.Struct({ citationId: Schema.String }))
-  }),
-  failure: UnknownWord,
+  success: Schema.Struct({ word: Schema.String, citations: Schema.Array(TestCitation) }),
+  failure: Schema.Union([UnknownWord, DatabaseUnavailable]),
   failureMode: "return"
-})
+}).annotate(Tool.Title, "Echo a word")
 
 const EchoTools = Toolkit.make(Echo)
 
-/** `echo` returns its word with one citation, and fails with `UnknownWord` for the word "unknown". */
+/**
+ * `echo` returns its word with one citation; it fails with `UnknownWord` for the word "unknown", and with
+ * `DatabaseUnavailable` for "offline".
+ */
 const EchoHandlers = EchoTools.toLayer({
   echo: ({ word }) =>
     word === "unknown"
       ? Effect.fail(new UnknownWord({ word }))
-      : Effect.succeed({ word, citations: [{ citationId: `c#${word}` }] })
+      : word === "offline"
+        ? Effect.fail(new DatabaseUnavailable())
+        : Effect.succeed({ word, citations: [echoCitation(word)] })
 })
 
 const serverOn = (port: number) =>

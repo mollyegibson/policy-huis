@@ -44,5 +44,5 @@ trace:
   writeTimeout: 10 seconds # provisional; longest a trace write may take, including waking the app database
 
 prompt:
-  file: prompts/system.v1.md
-  version: v1
+  file: prompts/system.v2.md
+  version: v2
