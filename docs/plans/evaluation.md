@@ -261,9 +261,11 @@ That is 75 questions: 9 on the report, 50 on the ordinance, 10 on the data tools
 
 ## Step 3: The model choice in the browser app
 
+Built: see [Browser App Plan § Model choice](browser-app.md#model-choice).
+
 - A model choice beside the question box, built from `GET /api/v1/models`, sent as `model` with each question and remembered per viewer in `localStorage`.
 - Each answer is labeled with the configuration's label and model ID from `Complete.model`.
-- **Compare**: one question sent to two configurations at once, the answers shown side by side, each with its lookups and sources. The local configuration's limit still applies: a second compare while one is answering gets the `busy` message on the local side.
+- **Compare** (not built yet): one question sent to two configurations at once, the answers shown side by side, each with its lookups and sources. The local configuration's limit still applies: a second compare while one is answering gets the `busy` message on the local side.
 
 The details go in the [Browser App Plan](browser-app.md).
 

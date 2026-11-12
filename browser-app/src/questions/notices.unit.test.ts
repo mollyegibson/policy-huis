@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Cause, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 
-import { AgentUnavailable } from "@policyhuis/protocol/QuestionsApi"
+import { AgentUnavailable, UnknownModel } from "@policyhuis/protocol/QuestionsApi"
 
 import { complete, events } from "./fixtures.ts"
 import { LOGGED_NOTICE, questionView } from "./notices.ts"
@@ -44,6 +44,15 @@ describe("questionView", () => {
       Cause.fail(new AgentUnavailable({ reason: "busy", message: "Another question is being answered." }))
     )
     expect(texts(busy)).toEqual(["Another question is being answered.", LOGGED_NOTICE.text])
+  })
+
+  it("shows the backend's message for a model it does not offer", () => {
+    const refused = AsyncResult.failure<QuestionState, UnknownModel>(
+      Cause.fail(
+        new UnknownModel({ model: "retired", offered: ["local"], message: "The model retired is not offered." })
+      )
+    )
+    expect(texts(refused)).toEqual(["The model retired is not offered.", LOGGED_NOTICE.text])
   })
 
   it("shows the offline notice for any other failure, keeping what arrived", () => {

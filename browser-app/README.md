@@ -5,9 +5,10 @@ The React app that sends a question to the backend and shows the answer as it st
 | Path | Contents |
 |---|---|
 | `src/main.tsx`, `src/App.tsx` | The page, inside MUI's theme and the atom registry |
-| `src/api/ApiClient.ts` | The typed client for `protocol/`'s `PolicyHuisApi` |
+| `src/api/ApiClient.ts`, `src/api/runtime.ts` | The typed client for `protocol/`'s `PolicyHuisApi`, and the atom runtime that provides it |
+| `src/models/` | The offered model configurations, the viewer's choice (remembered in `localStorage`) and the answer's model label |
 | `src/questions/` | The page state and its reducer, the ask atom and `useAsk`, citations, tool labels and notices; pure modules with `*.unit.test.ts` beside them |
-| `src/components/` | The question form, tool calls, answer, sources and notices |
+| `src/components/` | The question form, model choice, tool calls, answer, sources and notices |
 | `src/hooks/` | Small UI state hooks |
 | `vite.config.ts` | The build, and the dev server's `/api` proxy to `BACKEND_URL` |
 

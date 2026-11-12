@@ -12,8 +12,8 @@ The app is built as described here; the code below is excerpted from it or simpl
 
 A React app in `browser-app/`, following [Front-end Code Style](../front-end-code-style.md). It:
 
-- talks only to the backend's `POST /api/v1/questions`, through `HttpApiClient` and `protocol/`'s `PolicyHuisApi`, decoding every event with `AgentStreamEvent`;
-- holds one question and its answer in memory; nothing is stored in the browser, and asking again replaces the previous answer.
+- talks only to the backend's `POST /api/v1/questions` and `GET /api/v1/models`, through `HttpApiClient` and `protocol/`'s `PolicyHuisApi`, decoding every event with `AgentStreamEvent`;
+- holds one question and its answer in memory, and asking again replaces the previous answer; the only thing stored in the browser is the viewer's model choice (see [Model choice](#model-choice)).
 
 Not in Phase 1: accounts, history, follow-up questions in a thread, maps, and hosting beyond the local dev server.
 
@@ -54,7 +54,11 @@ The design follows the reference project's browser app (`browser-sdk-internal`) 
 | `src/App.tsx` | The page layout |
 | `src/api/ApiClient.ts` | The `ApiClient` service and its layer: the typed client for `PolicyHuisApi` |
 | `src/questions/QuestionState.ts` | `QuestionState`, `initialState` and the pure `reduce` |
-| `src/questions/askAtom.ts` | The atom runtime and `askAtom` |
+| `src/api/runtime.ts` | The atom runtime that provides `ApiClient` |
+| `src/questions/askAtom.ts` | `askAtom`: one question and the model configuration to answer it |
+| `src/models/modelsAtom.ts`, `src/models/useModelChoice.ts` | The offered model configurations, and the viewer's choice among them |
+| `src/models/models.ts` | Which configuration to ask with, and how an answer names its model |
+| `src/components/ModelChoice.tsx` | One toggle button for each offered configuration, beside Ask |
 | `src/questions/useAsk.ts` | The hook components use: the page's view of the result, `ask` and `stop` |
 | `src/questions/notices.ts` | `questionView`: the latest state, whether it is streaming, and the notices, from the atom's result |
 | `src/questions/useQuestionDraft.ts`, `src/hooks/useDisclosure.ts` | The draft question, and open or closed sections, as the style guide puts all state in hooks |
@@ -263,9 +267,21 @@ From top to bottom:
 | `complete.outcome` is not `answered` | `complete.message`, as it is; the backend writes every message (see [Messages for the user](agent-loop.md#messages-for-the-user)) |
 | A server in `complete.unavailableServers` | "The {server} server could not be reached, so this answer may be missing its data." |
 | The result failed with `AgentUnavailable` | Its `message` |
+| The result failed with `UnknownModel` | Its `message` |
 | The result was interrupted by Stop (`Cause.hasInterruptsOnly`) | "Stopped.", below the partial answer and lookups |
 | The result failed any other way | "The agent host could not be reached. It may be offline; try again shortly." |
 | Always | "Questions you ask are logged." |
+
+## Model choice
+
+The backend offers more than one model configuration (`backend/config/agent.yaml`); a question may name one, and a question that names none goes to the default.
+
+- **The list** comes from `GET /api/v1/models` once per page load (`modelsAtom`): each configuration's key, label and model ID, and the default.
+- **The toggle** (`ModelChoice`) shows one button per configuration, labeled with its label and titled with its model ID, to the left of Ask. It is disabled while an answer streams.
+- **The choice** is remembered in `localStorage` under `policyhuis.model`. A stored choice the backend no longer offers falls back to the default (`chosenModel`). When storage is blocked, the choice lasts until the page reloads.
+- **Asking** sends the choice as `model`. Until the list arrives, or when it cannot be fetched, the question names no model and goes to the backend's default; the page says so in place of the toggle.
+- **The answer** is labeled "Answered by {label} ({model ID})" from `Complete.model`, so the label names the model that actually answered.
+- **A model the backend refuses** (`400 UnknownModel`, for example after `agent.yaml` changed while the page was open) shows the backend's message.
 
 ## Lookups
 

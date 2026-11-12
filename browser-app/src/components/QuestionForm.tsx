@@ -1,5 +1,5 @@
 import { Button, Stack, TextField } from "@mui/material"
-import type { SubmitEvent } from "react"
+import type { ReactNode, SubmitEvent } from "react"
 
 import { MAX_QUESTION_LENGTH, useQuestionDraft } from "../questions/useQuestionDraft.ts"
 
@@ -7,10 +7,12 @@ interface QuestionFormProps {
   readonly streaming: boolean
   readonly onAsk: (question: string) => void
   readonly onStop: () => void
+  /** Shown beside the Ask button: the model choice. */
+  readonly beside?: ReactNode
 }
 
 /** The question box, with Ask, which becomes Stop while an answer streams. */
-export const QuestionForm = ({ streaming, onAsk, onStop }: QuestionFormProps) => {
+export const QuestionForm = ({ streaming, onAsk, onStop, beside }: QuestionFormProps) => {
   const { draft, question, valid, change } = useQuestionDraft()
 
   const submit = (event: SubmitEvent<HTMLFormElement>) => {
@@ -32,7 +34,8 @@ export const QuestionForm = ({ streaming, onAsk, onStop }: QuestionFormProps) =>
         error={question.length > MAX_QUESTION_LENGTH}
         helperText={`${String(question.length)} / ${String(MAX_QUESTION_LENGTH)}`}
       />
-      <Stack direction="row" sx={{ justifyContent: "flex-end" }}>
+      <Stack direction="row" spacing={2} sx={{ justifyContent: "space-between", alignItems: "center" }}>
+        <div>{beside}</div>
         <Button
           type="submit"
           variant="contained"

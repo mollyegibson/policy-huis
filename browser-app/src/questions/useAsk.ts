@@ -11,8 +11,8 @@ export const useAsk = () => {
   const write = useAtomSet(askAtom)
   const view = useMemo(() => questionView(result), [result])
   const ask = useCallback(
-    (question: string) => {
-      write(question)
+    (question: string, model: string | null) => {
+      write({ question, model })
     },
     [write]
   )

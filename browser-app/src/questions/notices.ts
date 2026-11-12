@@ -1,7 +1,7 @@
 import { Cause, Option, Result } from "effect"
 import type { AsyncResult } from "effect/reactivity"
 
-import { AgentUnavailable } from "@policyhuis/protocol/QuestionsApi"
+import { AgentUnavailable, UnknownModel } from "@policyhuis/protocol/QuestionsApi"
 
 import type { QuestionState } from "./QuestionState.ts"
 
@@ -37,12 +37,18 @@ const completeNotices = (state: QuestionState): ReadonlyArray<Notice> => {
   ]
 }
 
-/** The notice for a stream that failed: stopped by the user, turned away as busy, or cut off from the backend. */
+/**
+ * The notice for a stream that failed: stopped by the user, turned away as busy, refused for a model the backend no
+ * longer offers, or cut off from the backend.
+ */
 const failureNotice = <E>(cause: Cause.Cause<E>): Notice => {
   if (Cause.hasInterruptsOnly(cause)) return { severity: "info", text: "Stopped." }
   const error = Cause.findError(cause)
   if (Result.isSuccess(error) && error.success instanceof AgentUnavailable) {
     return { severity: "warning", text: error.success.message }
+  }
+  if (Result.isSuccess(error) && error.success instanceof UnknownModel) {
+    return { severity: "error", text: error.success.message }
   }
   return { severity: "error", text: OFFLINE_TEXT }
 }
