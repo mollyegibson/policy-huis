@@ -43,6 +43,7 @@ It does not:
 | `loop/LoopEvent.ts` | The loop's events: the browser's `AgentStreamEvent`s plus the internal events the trace is folded from |
 | `loop/Outcome.ts` | How the loop ends a question, and how a tool call ends: the domain's own lists, which the `app` schema's checks are built from |
 | `loop/ContextBudget.ts` | Estimates the next step's prompt size and decides whether it fits |
+| `loop/CitationKeys.ts` | The question's citation keys (`C1`, `C2`, …): replaces citation IDs with keys in the tool results the model reads, and expands the keys the model writes back into full citation IDs, holding back a citation split across streamed chunks |
 | `loop/ToolResults.ts` | Reads a tool result: its `structuredContent`, its citations under the citation convention, a failure's type, and whether a failure means the server was unavailable |
 | `loop/Failures.ts` | `Failure`, a `Data.taggedEnum` of why a question ended incomplete; classifies model errors as retryable or not; gives each failure its message for the user |
 | `loop/SystemPrompt.ts` | Loads the versioned system prompt file named in config |
@@ -81,7 +82,7 @@ Declared choices live in `backend/config/agent.yaml`, reviewed by pull request; 
 | `tools.reconnectBaseDelay`, `tools.reconnectMaxDelay` | The exponential backoff for reconnecting to a server that could not be reached: the first delay, and the longest | 1 second, 1 minute |
 | `api.keepaliveInterval` | Longest the event stream goes without an event; a `Keepalive` is sent when nothing else has been | Below the shortest idle timeout between the browser and the backend (Cloudflare's, see [Streaming to the browser](#streaming-to-the-browser)) |
 | `trace.writeTimeout` | Longest a trace write may take, including connecting to the `app` database; the pool's connection and query timeouts are set to the same value | 10 seconds, provisional |
-| `prompt.file`, `prompt.version` | The system prompt file and its version, recorded in every trace | `backend/prompts/system.v2.md`, `v2` |
+| `prompt.file`, `prompt.version` | The system prompt file and its version, recorded in every trace | `backend/prompts/system.v3.md`, `v3` |
 
 `backend/config/servers.yaml` is the server directory, and the only place a deployment names its cities: for each server, its `name` (for example `sf-data`), `label` (`SF Data`, shown in the browser app beside each of its lookups), `url` (`http://<host>:<port>/mcp`) and tool `prefix` (`sf_data_`). `backend/.env` holds the port to serve on (`BACKEND_PORT`), the `app` database URL (`APP_DATABASE_URL`) and each cloud model configuration's API key, named `<CONFIGURATION>_API_KEY` (`FRONTIER_API_KEY`, `SAME_MODEL_CLOUD_API_KEY`); `backend/.env.example` lists them.
 
@@ -360,15 +361,16 @@ The events are `Schema` classes in `protocol/` (see [API contract](#api-contract
 
 ## Citations in answers
 
-Citations are for the user: each claim points to the exact source, and the user checks it there. The backend reads them from tool results but never rewrites them, and the model sees each result as the server sent it.
+Citations are for the user: each claim points to the exact source, and the user checks it there. The backend reads them from tool results and never changes a citation; only the model's copy of each result uses short keys in place of citation IDs.
 
 - **Servers** put the citations behind each result in the result's `structuredContent`, by the [citation convention](../domain-driven-design.md#conventions-between-servers-and-the-backend), declare them in the tool's `outputSchema`, and namespace their IDs with their short name, so IDs stay unique across servers without coordination. Servers import nothing from `protocol/`.
-- **The model** marks each claim with the `citationId` it rests on, in square brackets (for example `[sf_data.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f]`, with an illustrative query key), as the system prompt tells it to.
+- **The model** reads and writes citation keys, never full IDs. The loop gives each citation ID a key, `C1`, `C2`, …, in the order it first appears in a successful result's `citations` during the question (`loop/CitationKeys.ts`). The prompt for the next turn has every keyed ID replaced by its key, in the encoded result and in the text the provider sends in its place; an ID is replaced only whole, so `…#37.9(a)` never matches inside `…#37.9(a)(8)`. The model marks each claim with a key in square brackets (`[C3]`), as the system prompt tells it to.
+- **The loop expands keys** in the model's text before any `TextChunk` leaves it: `[C3]` becomes `[sf_data.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f]` (an illustrative query key), a list (`[C1, C3]`) becomes one marker per ID, and lenticular brackets (`【C3】`, which `gpt-oss` writes) become square ones. A key no result gave stays as written (`[C9]`), so the browser shows it as text and the evaluation reports it. A tail that may be a citation the next chunk completes (`… [C`) is held back, up to 64 characters, and sent before the turn ends. The browser, the trace's answer text and the evaluation see only full IDs.
 - **The backend** reads each successful result's citations through its own schema of the convention (`loop/ToolResults.ts`), drops and logs any that break it, and sends the rest to the browser app in `Sources`. A `citationId` already sent in the question is not sent again; one returned with different content is logged, and the first is kept. The result itself, unchanged, is stored in the trace.
 - **The browser app** links each marker to the citation with that `citationId` among the `Sources` it received, groups citations by `sourceId`, and shows a marker that matches no citation as unlinked. It never reads citations from a result.
 - **The evaluation** checks citations offline, from the traces: whether each claim cites the right source and whether any marker matched nothing.
 
-**Copying full IDs is tested, not assumed.** Spike S2 checks that the chosen local model copies `citationId`s exactly. Short aliases (`c1`, `c2`) are a fallback, added only if it does not; they would need the backend to rewrite results and map the aliases back, so they are avoided if possible. The same rewrite could prefix IDs per server if namespaced IDs ever collided; neither is built.
+**Why keys.** In the first evaluation runs, `gpt-oss:20b` often failed the check that every citation marker is an ID the backend sent: it wrote part-only IDs, IDs in lenticular brackets and IDs no result returned. So the model no longer copies full IDs. The tool results in the trace, and those the browser shows, are unchanged. The same rewrite could prefix IDs per server if namespaced IDs ever collided; that is not built.
 
 ### Call IDs
 
@@ -388,11 +390,11 @@ When the stream ends, `TraceStore` writes the `app.requests` row and its `app.to
 
 ## The system prompt
 
-A versioned Markdown file (`backend/prompts/system.v2.md`) whose version is recorded in every trace; an earlier version stays in `backend/prompts/` so old traces can be read against it. The prompt names no city, dataset or tool, so the same prompt serves every deployment. It covers:
+A versioned Markdown file (`backend/prompts/system.v3.md`) whose version is recorded in every trace; an earlier version stays in `backend/prompts/` so old traces can be read against it. The prompt names no city, dataset or tool, so the same prompt serves every deployment. It covers:
 
 - **Role and audience**: answer housing policy questions for policy makers and residents, in plain language, using the connected tools.
 - **Answer only from tool results**, and say when the tools cannot answer a question, including a question about a place no tool covers. Before declining, check each tool's description and call any that covers the topic, even when the question names no law or dataset (added in v2, after the model declined rent control questions without searching the Rent Ordinance).
-- **Citing**: mark every claim with the `citationId` of the result it rests on, in square brackets, copied exactly.
+- **Citing**: mark every claim with the `citationId` of the result it rests on, in square brackets (`[C3]`); the model sees each citation's key as its `citationId` (see [Citations in answers](#citations-in-answers)). Changed in v3, from copying full IDs, which `gpt-oss:20b` mangled.
 - **Reading results**: follow each tool's description on how to read its results; give the date or version of the data an answer uses; prefer a tool that returns totals over adding numbers up.
 - **Declines**: legal advice and causal claims, pointing to the right body.
 

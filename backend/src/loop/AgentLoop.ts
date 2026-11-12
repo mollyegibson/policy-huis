@@ -5,6 +5,8 @@ import { v5 as uuidV5 } from "uuid"
 
 import { LookupEnded, LookupStarted, Sources, TextChunk } from "@policyhuis/protocol/QuestionsApi"
 
+import type { CitationKeys } from "./CitationKeys.ts"
+import { expandKeys, keyResultParts, NO_KEYS, splitOpenMarker, withResultKeys } from "./CitationKeys.ts"
 import { estimateNextPromptTokens, fits } from "./ContextBudget.ts"
 import { Failure, LoopFailure, modelFailure, retryClass } from "./Failures.ts"
 import type { LoopEvent } from "./LoopEvent.ts"
@@ -160,6 +162,22 @@ const advanceTurn =
     return [{ parts, heldText, calledTool }, events.filter((event) => event._tag !== "TextChunk")]
   }
 
+/**
+ * Writes the model's citation keys as full citation IDs in each `TextChunk`, holding back a tail that may be a
+ * citation the next chunk completes; the held text is sent before the turn's `StepEnded`.
+ */
+const expandTurnText =
+  (keys: CitationKeys) =>
+  (held: string, event: LoopEvent): readonly [string, ReadonlyArray<LoopEvent>] => {
+    const chunk = (text: string) => (text === "" ? [] : [TextChunk.make({ text: expandKeys(text, keys) })])
+    if (event._tag === "TextChunk") {
+      const [ready, rest] = splitOpenMarker(held + event.text)
+      return [rest, chunk(ready)]
+    }
+    if (event._tag === "StepEnded") return ["", [...chunk(held), event]]
+    return [held, [event]]
+  }
+
 /** Fails the stream with `failure` once `duration` has passed. */
 const failAfter = (duration: Duration.Duration, failure: Failure) =>
   Effect.sleep(duration).pipe(Effect.andThen(Effect.fail(new LoopFailure({ failure }))))
@@ -233,7 +251,12 @@ export const runAgentLoop = <Tools extends Record<string, Tool.Any>>(
       >
 
       /** Retries a turn that failed before any of it reached the browser, by its error's class, or fails it. */
-      const retryOrFail = (cause: Cause.Cause<unknown>, prompt: Prompt.Prompt, final: boolean): LoopStream =>
+      const retryOrFail = (
+        cause: Cause.Cause<unknown>,
+        prompt: Prompt.Prompt,
+        final: boolean,
+        keys: CitationKeys
+      ): LoopStream =>
         Stream.unwrap(
           Effect.gen(function* () {
             const error = Cause.squash(cause)
@@ -246,15 +269,18 @@ export const runAgentLoop = <Tools extends Record<string, Tool.Any>>(
             yield* Ref.set(retriesLeft, left - 1)
             const retried = Stream.make(new ModelRetried({ reason: detail }))
             if (retry._tag === "correct") {
-              return Stream.concat(retried, turn(Prompt.concat(prompt, Prompt.make(retry.message)), final))
+              return Stream.concat(retried, turn(Prompt.concat(prompt, Prompt.make(retry.message)), final, keys))
             }
             yield* Effect.sleep(Duration.times(settings.modelRetryBaseDelay, 2 ** (settings.modelRetries - left)))
-            return Stream.concat(retried, turn(prompt, final))
+            return Stream.concat(retried, turn(prompt, final, keys))
           })
         )
 
-      /** One model turn, ending with its `StepEnded`. The final turn is called without tools. */
-      const turn = (prompt: Prompt.Prompt, final: boolean): LoopStream =>
+      /**
+       * One model turn, ending with its `StepEnded`. The final turn is called without tools. `keys` are the citation
+       * keys the prompt's tool results use, which the turn's text is expanded from.
+       */
+      const turn = (prompt: Prompt.Prompt, final: boolean, keys: CitationKeys): LoopStream =>
         Stream.unwrap(
           Effect.gen(function* () {
             const turnId = crypto.randomUUID()
@@ -268,6 +294,7 @@ export const runAgentLoop = <Tools extends Record<string, Tool.Any>>(
               ),
               Stream.concat(Stream.succeed<TurnInput<Tools>>({ _tag: "End" })),
               Stream.mapAccum(() => EMPTY_TURN, advanceTurn(turnId, serverOf, final)),
+              Stream.mapAccum(() => "", expandTurnText(keys)),
               Stream.tap((event) => (isBrowserEvent(event) ? Ref.set(reachedBrowser, true) : Effect.void)),
               Stream.catchCause((cause) =>
                 Stream.unwrap(
@@ -277,7 +304,7 @@ export const runAgentLoop = <Tools extends Record<string, Tool.Any>>(
                       const detail = Cause.pretty(cause)
                       return Stream.fail(new LoopFailure({ failure: Failure.ModelStopped({ detail }) }))
                     }
-                    return retryOrFail(cause, prompt, final)
+                    return retryOrFail(cause, prompt, final, keys)
                   })
                 )
               )
@@ -294,6 +321,7 @@ export const runAgentLoop = <Tools extends Record<string, Tool.Any>>(
        */
       const timedTurn = (
         prompt: Prompt.Prompt,
+        keys: CitationKeys,
         step: number,
         final: boolean,
         answered: Outcome,
@@ -304,7 +332,7 @@ export const runAgentLoop = <Tools extends Record<string, Tool.Any>>(
           Effect.gen(function* () {
             const ended = yield* Ref.make<StepEnded | null>(null)
             const timeout = failAfter(settings.stepTimeout, Failure.StepTimedOut({ timeout: settings.stepTimeout }))
-            const events = turn(prompt, final).pipe(
+            const events = turn(prompt, final, keys).pipe(
               Stream.tap((event) => (event._tag === "StepEnded" ? Ref.set(ended, event) : Effect.void)),
               Stream.interruptWhen(timeout)
             )
@@ -320,30 +348,42 @@ export const runAgentLoop = <Tools extends Record<string, Tool.Any>>(
         )
 
       /** The turn without tools that answers from what was gathered when a limit is reached. */
-      const finalTurn = (prompt: Prompt.Prompt, notice: string, step: number, outcome: Outcome, failure: Failure) =>
-        timedTurn(Prompt.concat(prompt, Prompt.make(notice)), step, true, outcome, failure, () =>
+      const finalTurn = (
+        prompt: Prompt.Prompt,
+        keys: CitationKeys,
+        notice: string,
+        step: number,
+        outcome: Outcome,
+        failure: Failure
+      ) =>
+        timedTurn(Prompt.concat(prompt, Prompt.make(notice)), keys, step, true, outcome, failure, () =>
           Stream.die("the final turn has no tools to continue with")
         )
 
-      const steps = (prompt: Prompt.Prompt, step: number): LoopStream => {
+      /**
+       * The turn at `step` and those after it. Each turn's tool results join the next prompt with their citation IDs
+       * replaced by keys (see `CitationKeys`); the trace and the browser keep the results as the servers sent them.
+       */
+      const steps = (prompt: Prompt.Prompt, keys: CitationKeys, step: number): LoopStream => {
         if (step >= settings.maxSteps) {
           const limit = Failure.StepLimit({ maxSteps: settings.maxSteps })
-          return finalTurn(prompt, STEP_LIMIT_NOTICE, step, "step_limit", limit)
+          return finalTurn(prompt, keys, STEP_LIMIT_NOTICE, step, "step_limit", limit)
         }
-        return timedTurn(prompt, step, false, "answered", null, (ended) => {
-          const next = Prompt.concat(prompt, Prompt.fromResponseParts(ended.parts))
+        return timedTurn(prompt, keys, step, false, "answered", null, (ended) => {
+          const nextKeys = withResultKeys(keys, ended.parts)
+          const next = Prompt.concat(prompt, Prompt.fromResponseParts(keyResultParts(ended.parts, nextKeys)))
           const estimatedTokens = estimateNextPromptTokens(ended, next, settings)
-          if (fits(estimatedTokens, settings)) return steps(next, step + 1)
+          if (fits(estimatedTokens, settings)) return steps(next, nextKeys, step + 1)
           const limit = Failure.ContextLimit({
             estimatedTokens: Math.ceil(estimatedTokens),
             availableTokens: settings.contextTokens - settings.answerTokens
           })
-          return finalTurn(prompt, CONTEXT_LIMIT_NOTICE, step + 1, "context_limit", limit)
+          return finalTurn(prompt, keys, CONTEXT_LIMIT_NOTICE, step + 1, "context_limit", limit)
         })
       }
 
       const requestTimeout = Failure.RequestTimedOut({ timeout: settings.requestTimeout })
-      return steps(initialPrompt, 0).pipe(
+      return steps(initialPrompt, NO_KEYS, 0).pipe(
         Stream.interruptWhen(failAfter(settings.requestTimeout, requestTimeout)),
         Stream.catchCause((cause) => {
           if (Cause.hasInterruptsOnly(cause)) return Stream.fromEffect(Effect.interrupt)

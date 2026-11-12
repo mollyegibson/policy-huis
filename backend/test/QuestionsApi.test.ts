@@ -217,6 +217,34 @@ describe("POST /api/v1/questions", () => {
   )
 
   it.live(
+    "gives the model short citation keys and sends the browser and the trace the full citation IDs",
+    () =>
+      Effect.gen(function* () {
+        const server = yield* startTestServer(0)
+        const keyed: ReadonlyArray<ScriptedTurn> = [
+          { parts: [toolCall("c1", "a_echo", { word: "hello" }), finish("tool-calls", 50, 5)] },
+          { parts: [...text("t", "The word is hello [C1], or 【C1】."), finish("stop", 80, 10)] }
+        ]
+        const { result, trace, calls } = yield* Effect.gen(function* () {
+          const events = yield* collect(yield* ask("What is the word?"))
+          const [written] = yield* waitForTraces(1)
+          return { result: events, trace: written, calls: yield* Ref.get(yield* ModelCalls) }
+        }).pipe(Effect.provide(apiLayer(keyed, [{ name: "a-data", label: "A", prefix: "a_", url: server.url }])))
+
+        const seen = JSON.stringify(calls[1]?.prompt.content)
+        expect(seen).toContain("C1")
+        expect(seen).not.toContain("test.echo@1#hello")
+        const answer = result.flatMap((event) => (event._tag === "TextChunk" ? [event.text] : [])).join("")
+        expect(answer).toBe("The word is hello [test.echo@1#hello], or [test.echo@1#hello].")
+        expect(trace?.trace.answerText).toBe(answer)
+        const ended = result.find((event) => event._tag === "LookupEnded")
+        expect(JSON.stringify(ended)).toContain("test.echo@1#hello")
+        yield* server.stop
+      }).pipe(Effect.scoped),
+    30_000
+  )
+
+  it.live(
     "turns away a second question with 503 while one is streaming, and frees the slot when the browser disconnects",
     () =>
       Effect.gen(function* () {

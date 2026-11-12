@@ -15,7 +15,7 @@ model:
       bytesPerToken: 3 # provisional, to be measured on real tool results
       maxConcurrentQuestions: 1 # matches Ollama's default OLLAMA_NUM_PARALLEL of 1
       requestOptions:
-        reasoning_effort: low # provisional; gpt-oss generated about 7x fewer tokens than at high in a test on November 6, 2026
+        reasoning_effort: medium # provisional; gpt-oss generated about 7x fewer tokens than at high in a test on November 6, 2026
     frontier:
       provider: anthropic
       label: Frontier model in the cloud
@@ -46,5 +46,5 @@ trace:
   writeTimeout: 10 seconds # provisional; longest a trace write may take, including waking the app database
 
 prompt:
-  file: prompts/system.v2.md
-  version: v2
+  file: prompts/system.v3.md
+  version: v3
