@@ -11,7 +11,7 @@ import { SfDocsHandlers } from "./Handlers.ts"
 import { PassageRepo } from "./PassageRepo.ts"
 import { QueryEmbedder } from "./QueryEmbedder.ts"
 import { SearchConfig } from "./SearchConfig.ts"
-import { DatabaseConfig, HttpConfig, OllamaConfig, SfDocsEnv } from "./SfDocsServerConfig.ts"
+import { DatabaseConfig, HttpConfig, OpenRouterConfig, SfDocsEnv } from "./SfDocsServerConfig.ts"
 import { makeSfDocsToolkit } from "./Tools.ts"
 
 /** The stored search entries were embedded with another model than the configured one, so queries would not match. */
@@ -21,7 +21,7 @@ export class EmbeddingModelMismatch extends Schema.TaggedError<EmbeddingModelMis
 }) {}
 
 /**
- * Stops the server at startup unless every stored search entry was embedded with the configured model build. A
+ * Stops the server at startup unless every stored search entry was embedded with the configured model and host. A
  * corpus with no entries yet passes; its searches find nothing.
  */
 export const EmbeddingModelCheck = Layer.effectDiscard(
@@ -60,7 +60,7 @@ export const McpLive = McpServer.layerHttp({
   path: "/mcp",
   protocols: [McpProtocol.v2026_07_28],
   registrations: RegistrationsLive.pipe(
-    Layer.provide(QueryEmbedder.ollama),
+    Layer.provide(QueryEmbedder.openRouter),
     Layer.provide(SearchConfig.layer()),
     Layer.provide(DatabaseLive),
     Layer.provide(FetchHttpClient.layer)
@@ -76,7 +76,7 @@ const HttpServerLive = Layer.unwrap(
 )
 
 /** Every environment variable the server reads, from `.env` first, read once at startup. */
-const ConfigLive = Layer.mergeAll(DatabaseConfig.layer, HttpConfig.layer, OllamaConfig.layer).pipe(
+const ConfigLive = Layer.mergeAll(DatabaseConfig.layer, HttpConfig.layer, OpenRouterConfig.layer).pipe(
   Layer.provide(SfDocsEnv.layer)
 )
 

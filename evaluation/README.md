@@ -14,7 +14,7 @@ Asks the running backend every question in the question set, through its API, an
 
 ## Run
 
-Start the backend and the servers (`yarn dev --include san-francisco` from the repo root, with Ollama running), then:
+Start the backend and the servers (`yarn dev --include san-francisco` from the repo root, with Ollama running for the `local` configuration), then:
 
 ```sh
 yarn workspace @policyhuis/evaluation eval                      # every question once, with the backend's default model

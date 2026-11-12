@@ -1,7 +1,6 @@
 import { Effect } from "effect"
 
 import { provisionCitation } from "./Citations.ts"
-import { SearchConfig } from "./SearchConfig.ts"
 import { DataUnavailable, UnknownValue, withDataErrors } from "./ToolErrors.ts"
 import type { DocumentRow, PassageRow } from "./PassageRepo.ts"
 import { PassageRepo } from "./PassageRepo.ts"
@@ -35,7 +34,6 @@ export const SfDocsHandlers = (toolkit: SfDocsToolkit) =>
     Effect.gen(function* () {
       const repo = yield* PassageRepo
       const embedder = yield* QueryEmbedder
-      const { subtreeChars } = yield* SearchConfig
 
       /** The loaded document `documentId`, or `UnknownValue` listing the loaded documents. */
       const document = Effect.fn("SfDocs.document")(function* (documentId: string) {
@@ -67,6 +65,21 @@ export const SfDocsHandlers = (toolkit: SfDocsToolkit) =>
         return pairs
       })
 
+      /**
+       * A provision's own text and an outline of its children, each child cited by its summary, so the model can cite
+       * a child it read only in the outline.
+       */
+      const withChildren = Effect.fn("SfDocs.withChildren")(function* (doc: DocumentRow, parent: PassageRow) {
+        const listed = yield* repo.children(doc.documentId, parent.provision)
+        return {
+          outline: listed.map(toOutlineEntry),
+          citations: [
+            provisionCitation(doc, parent, parent.text),
+            ...listed.map((row) => provisionCitation(doc, row, row.summary))
+          ]
+        }
+      })
+
       return {
         search_policy: Effect.fn("SfDocs.search_policy")(
           function* (params) {
@@ -89,19 +102,11 @@ export const SfDocsHandlers = (toolkit: SfDocsToolkit) =>
         get_provision: Effect.fn("SfDocs.get_provision")(
           function* (params) {
             const doc = yield* document(params.documentId)
-            const tree = yield* repo.subtree(params.documentId, params.provision)
-            const root = tree[0]
-            if (root === undefined) {
+            const found = yield* repo.provision(params.documentId, params.provision)
+            if (found === null) {
               return yield* new ProvisionNotFound({ documentId: params.documentId, provision: params.provision })
             }
-            const size = tree.reduce((total, row) => total + row.text.length, 0)
-            const whole = size <= subtreeChars
-            const returned = whole ? tree : [root]
-            return {
-              passages: returned.map((row) => toPassage(doc, row)),
-              outline: whole ? null : tree.filter((row) => row.parentProvision === root.provision).map(toOutlineEntry),
-              citations: returned.map((row) => provisionCitation(doc, row, row.text))
-            }
+            return { passages: [toPassage(doc, found)], ...(yield* withChildren(doc, found)) }
           },
           withDataErrors((params) => [params.documentId])
         ),

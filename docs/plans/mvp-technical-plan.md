@@ -231,7 +231,7 @@ Embeddings are stored as `halfvec` from the start. That halves vector storage, a
 
 The passage pipeline (Python) and the docs server (TypeScript) must embed text with exactly the same model, or search quality degrades silently.
 
-- **Each docs node serves the chosen embedding model itself** (for example a local Ollama instance on the same machine), so search does not depend on any other node being up. The passage pipeline runs the same model wherever it runs.
+- **Each docs node calls the chosen embedding model itself**, through OpenRouter from one pinned host, so search depends on that service but on no other node. The passage pipeline embeds through the same model and host.
 - Every embedding row stores its model identifier.
 - The docs server checks on startup that its configured model matches the stored identifier, and refuses to start if it does not. **(verify)** in S4 that the same model identifier gives the same embeddings across the runtimes and quantizations the nodes use; if not, the identifier includes the quantization.
 

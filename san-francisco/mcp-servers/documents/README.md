@@ -5,22 +5,22 @@ The San Francisco docs server: three tools over the `sf_docs` schema that [`san-
 | Tool | Returns |
 |---|---|
 | `search_policy` | The provisions nearest a query, best first, each ranked by its nearest search entry (its own text, or its text with its descendants or an outline of its children), with its parent and number of children |
-| `get_provision` | A provision with all its descendants in document order, or, over `subtree_chars`, the provision with an outline of its children |
+| `get_provision` | A provision's own text and an outline of its children |
 | `list_provisions` | A document's sections, or one provision's children, as an outline: number, one-line summary, number of children |
 
 | File | Contents |
 |---|---|
 | `src/Tools.ts` | Tool names, parameters, results and descriptions |
-| `src/SearchConfig.ts` | `config/search.yaml`: the embedding model and build, its context, the query instruction and `get_provision`'s size limit |
+| `src/SearchConfig.ts` | `config/search.yaml`: the embedding model and build, its context, and the query instruction |
 | `src/PassageRepo.ts` | Read-only SQL over the `sf_docs` schema; every row is decoded with a schema |
-| `src/QueryEmbedder.ts` | Embeds a search query with the configured Ollama model build |
-| `src/Handlers.ts` | Input checks, the size limit and results |
+| `src/QueryEmbedder.ts` | Embeds a search query with the configured model and host, through OpenRouter |
+| `src/Handlers.ts` | Input checks and results |
 | `src/Citations.ts` | The citation schema, by the citation convention, and each provision's citation |
 | `src/ToolErrors.ts` | The tool errors (`UnknownValue`, `DatabaseUnavailable`, `DataUnavailable`) and `withDataErrors`, which maps database failures to them |
 | `src/Params.ts`, `src/Formats.ts` | `OptionalParam` for optional tool inputs, which accepts `null`; dates and counts |
 | `src/SfDocsServerConfig.ts` | Every environment variable the server reads, as config services read once at startup |
 | `src/Server.ts`, `src/main.ts` | The startup check of the stored embedding model, the database connection and the HTTP server |
-| `test/` | Tests through Effect's in-memory MCP client against a throwaway PostGIS-with-pgvector database holding a synthetic `sf_docs` schema, and of the query embedder against a fake Ollama |
+| `test/` | Tests through Effect's in-memory MCP client against a throwaway PostGIS-with-pgvector database holding a synthetic `sf_docs` schema, and of the query embedder against a fake OpenRouter |
 
 ## Run
 
@@ -29,7 +29,7 @@ cp .env.example .env   # the read-only sf_docs_reader connection string and a po
 yarn start
 ```
 
-The server connects as `sf_docs_reader`, which can read only the `sf_docs` schema. Ollama must serve the build in `config/search.yaml` (`ollama pull qwen3-embedding:4b`); `OLLAMA_URL` in `.env` overrides its default address.
+The server connects as `sf_docs_reader`, which can read only the `sf_docs` schema. Search queries are embedded through OpenRouter, with the API key in `.env` as `OPENROUTER_API_KEY`.
 
 ## What the model sees
 
@@ -37,9 +37,9 @@ At startup the server reads `sf_docs.documents` and writes the corpus into its t
 
 ## Embedding model
 
-The database is the only link to the passage pipeline. The pipeline stores the model and build it embedded each search entry with (`qwen3-embedding:4b@df5bd2e3c74c`); this server embeds queries with the build in its own `config/search.yaml` and stops at startup if any stored entry carries another. A change of model is made in both projects' `config/search.yaml`, then the pipeline is rerun (`sf-docs-ingest passages`), then this server restarted.
+The database is the only link to the passage pipeline. The pipeline stores the model and host it embedded each search entry with (`qwen/qwen3-embedding-4b@deepinfra`); this server embeds queries with the model and host in its own `config/search.yaml` and stops at startup if any stored entry carries another. Every request pins the host with fallbacks off, since OpenRouter's hosts may serve different quantizations of one model. A change of model or host is made in both projects' `config/search.yaml`, then the pipeline is rerun (`sf-docs-ingest passages`), then this server restarted.
 
-A search fails with `EmbeddingModelUnavailable` when the model cannot be reached, serves another build, or returns an unusable vector; `get_provision` and `list_provisions` do not need it.
+A search fails with `EmbeddingModelUnavailable` when the model cannot be reached, is served by another host, or returns an unusable vector; `get_provision` and `list_provisions` do not need it.
 
 ## Check
 

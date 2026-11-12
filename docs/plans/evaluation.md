@@ -36,7 +36,7 @@ model:
       label: Frontier model in the cloud
       modelId: claude-opus-5-5
       effort: low
-      contextTokens: 32000 # provisional: the local configuration's budget, so both answer under the same limit
+      contextTokens: 250000 # within Claude's 1M-token context; the same budget as the open_cloud configuration
       answerTokens: 4000 # provisional; includes thinking tokens
       bytesPerToken: 3 # provisional
       maxConcurrentQuestions: 4 # provisional, within the account's rate limits
@@ -145,13 +145,12 @@ A **citation marker** is anything in square brackets, as one token with a digit,
 | `notCitedDocuments` | `not-contains`, one per document | The answer does not contain `[sf_docs.<documentId>@` |
 | `citedExpectedProvisions` | `javascript` | The answer cites one of `expect.provisions`, or a subsection of one (`37.9(a)(8)(ii)` also matches `37.9(a)(8)(ii)(A)`, but `37.9` does not match `37.9A`) |
 | `citationIdsExact` | `javascript` | Every citation marker in the answer is an ID the backend sent in `Sources` for this question, character for character, and no ID is written in other brackets (`gpt-oss:20b` writes `【…】`, which the browser app shows as text, not as a source) |
-| `citesFigures` | `javascript` | An answer that states a figure, other than one the question states or a list's numbering, contains at least one citation marker. Where the citation sits (after each figure, at a table's caption, once for a paragraph) is the answer's presentation and is not checked; whether each figure came from the data is `figuresFromTools`'s |
-| `figuresFromTools` | `javascript` | Every number in the answer, outside its citation markers and list numbering, appears in a tool call or result, a citation, or the question, compared as numbers (`10,100` matches `10100`), and read from number words in the results too, since the ordinance writes amounts in words ("one thousand dollars") |
+| `citesFigures` | `javascript` | An answer that states a figure contains at least one citation marker. Numbers the question states, list and heading numbering, references to laws (`Section 415`, `§37.3(a)(1)`, `Chapter 37`) and decades (`1990s`) are not figures. Where the citation sits (after each figure, at a table's caption, once for a paragraph) is the answer's presentation and is not checked |
 | `expectedFacts` | `javascript` | Each fact appears in one of its forms, after `normalizeText` |
 | `mentions` | `javascript` | One of the words appears, after `normalizeText` |
 | `citesNothing` | `javascript` | No citation marker appears |
 
-Every question gets `completed`, `citationIdsExact`, `citesFigures` and `figuresFromTools`; the others come from its `expect`. `figuresFromTools` runs on every question, not only data questions, because passages of the ordinance and the report come back in tool results too, so a figure the model invented in any answer is caught. The checks are tested on answers shaped like the ones the backend returned.
+Every question gets `completed`, `citationIdsExact` and `citesFigures`; the others come from its `expect`. Whether each figure came from a tool result is not checked: an answer may round a figure or compute one from the data (a total, a count), saying so with "about" or "roughly", and matching each such number to the data would take logic for rounding and arithmetic that could fail correct answers. The expected facts check the figures that matter most; other figures are read by hand. The checks are tested on answers shaped like the ones the backend returned.
 
 ### The question set
 
@@ -176,14 +175,14 @@ All nine expect a docs tool, a citation of `bla_affordable_housing`, and a menti
 | ID | Question | Expected provisions |
 |---|---|---|
 | sf-rent-01 | Can my landlord kick me out so his daughter can move into my apartment? | `37.9(a)(8)(ii)` |
-| sf-rent-02 | How much is my landlord allowed to raise the rent each year? | `37.3(a)(1)` |
+| sf-rent-02 | How much is my landlord allowed to raise the rent each year? | None: a docs tool or `sf_data_allowable_rent_increase`, since the ordinance's rule (`37.3(a)(1)`) and the current allowable increase both answer it |
 | sf-rent-03 | My landlord is evicting me so he can move in himself. How much moving money do I get? | `37.9C(e)(1)` |
 | sf-rent-04 | Can my landlord refuse to give me an extra key for my dog walker? | `37.13(b)(2)` |
 | sf-rent-05 | What is a buyout agreement? | `37.9E(c)` |
 | sf-rent-06 | What are the just causes for eviction under the Rent Ordinance? | `37.9(a)` |
 | sf-rent-07 | What does the Rent Ordinance say about landlords using algorithmic rent-setting software? | `37.10C(b)` |
 | sf-rent-08 | What information do property owners have to report to the Rent Board about their units? | `37.15(b)`, `37.15(b)(2)` |
-| sf-rent-09 | How do capital improvement passthroughs work? | `37.7(a)` |
+| sf-rent-09 | How do capital improvement passthroughs work? | `37.7` or any of its subsections |
 | sf-rent-10 | I signed a deal to take money and move out. Can I back out? | `37.9E(g)` |
 | sf-rent-11 | My landlord stopped doing repairs and keeps coming into my place to pressure me to leave. Is that allowed? | `37.10B(a)(2)`, `37.10B(a)(4)` |
 | sf-rent-12 | We just had a baby. Can our landlord charge more rent because there's another person living here now? | `37.3(a)(11)(A)` |
@@ -246,7 +245,7 @@ All nine expect a docs tool, a citation of `bla_affordable_housing`, and a menti
 | ID | Type | Question | Expected |
 |---|---|---|---|
 | sf-mix-01 | rule + data | Can my landlord raise my rent by 10%? | `sf_data_allowable_rent_increase` and a docs tool; citations of `rent_ordinance`; fact "1.6%" or "1.6 percent", as in sf-data-10; no citation of `bla_affordable_housing` |
-| sf-mix-02 | rule + data | Which grounds for eviction in the rent ordinance account for the most notices, and which are rising? (SF-06) | `sf_data_eviction_notice_counts` and a docs tool; a citation of `rent_ordinance` |
+| sf-mix-02 | rule + data | Which grounds for eviction in the rent ordinance account for the most notices, and which are rising? (SF-06) | `sf_data_eviction_notice_counts`; the eviction data names each ground's section of the ordinance, so a citation of `rent_ordinance` is not required |
 | sf-mix-03 | rule | Which units are covered by rent control under Chapter 37 of the Administrative Code? (SF-01) | A docs tool; a citation of `rent_ordinance` |
 
 **Declines.**
@@ -254,7 +253,7 @@ All nine expect a docs tool, a citation of `bla_affordable_housing`, and a menti
 | ID | Type | Question | Expected |
 |---|---|---|---|
 | sf-decline-01 | decline | My landlord gave me a notice to pay rent or quit. Should I stop paying and fight it in court? | `mentions` "Rent Board"; it may explain the ordinance, with citations |
-| sf-decline-02 | decline | Did rent control cause evictions in San Francisco to fall? | No figure without a citation (`citesFigures`) or from outside the tools (`figuresFromTools`); whether it avoids a causal claim is read by hand |
+| sf-decline-02 | decline | Did rent control cause evictions in San Francisco to fall? | No figure without a citation (`citesFigures`); whether it avoids a causal claim is read by hand |
 | sf-decline-03 | decline | How many eviction notices were filed in Oakland last year? | `citesNothing`; `mentions` "Oakland" |
 
 That is 75 questions: 9 on the report, 50 on the ordinance, 10 on the data tools, 3 combining them and 3 declines.
@@ -279,7 +278,7 @@ The details go in the [Browser App Plan](browser-app.md).
 
 ## Energy and the dashboard: open questions
 
-Energy is not in Steps 1 to 4, but these decide how it fits:
+Energy is not in Steps 1 to 4, but these decide how it fits. The [Energy Estimates Plan](energy.md) settles 2 to 4 for the cloud configurations:
 
 1. **Local measurement.** The MVP plan samples `powermetrics`, which needs sudo, net of an idle baseline. The backend should not run as root, so a separate privileged sampler would record samples that the backend or the evaluation joins to a request by time. Which one joins them, and where samples are stored, is open.
 2. **Cloud estimates.** EcoLogits is Python and estimates from token counts and latency after the fact. Its coverage of Claude Opus 5.5, and its uncertainty for a closed model, are unchecked.
@@ -288,6 +287,7 @@ Energy is not in Steps 1 to 4, but these decide how it fits:
 
 ## Open questions
 
-1. **The context budget.** Holding Claude to the local configuration's 32,000 tokens keeps both under the same limit; Claude's own window is far larger. Kept equal until a question fails on it.
+1. **The context budget.** The cloud configurations (open_cloud and frontier) share a budget of 250,000 tokens, within Qwen3.5's 262,144 and Claude's 1M; the local configuration keeps 32,000, what Ollama can hold on a laptop. At 32,000 the cloud models stopped early on questions whose search results filled the budget, so the cloud runs are no longer compared with the local run under one limit. A prompt near the budget costs far more per step on Claude than on Qwen.
 2. **Pass thresholds.** None for now: runs report pass rates; the evaluation is not a gate.
-3. **Same model in the cloud** stays unconfigured until its provider is chosen (MVP plan, open question 3).
+3. **Same model in the cloud** stays unconfigured until its provider is chosen (MVP plan, open question 3). OpenRouter, which the open_cloud configuration uses, serves `openai/gpt-oss-20b` and is a candidate.
+4. **Open model in the cloud** (`open_cloud`) asks a larger open-weight model through OpenRouter, to test whether the local model's failures come from its size. OpenRouter routes each request to one of several hosts, which may serve different quantizations, so its answers can vary by host; pinning a host (OpenRouter's `provider` request option) is open.

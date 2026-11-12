@@ -73,14 +73,14 @@ const searchPolicy = (corpus: string) =>
 const getProvision = (documentIds: string) =>
   Tool.make("get_provision", {
     description:
-      "Return one section or subsection with all its subsections, in document order. A provision too long to return " +
-      "whole comes back with an outline of its subsections instead; ask for the one you need. " +
+      "Return one section or subsection: its own text, and an outline of its subsections, each with its first " +
+      "sentence and how many subsections it has. Ask for each subsection whose full text you need. " +
       `Documents: ${documentIds}.`,
     parameters: Schema.Struct({ documentId: DocumentId, provision: ProvisionNumber }),
     success: Schema.Struct({
       passages: Schema.Array(Passage),
-      outline: Schema.NullOr(Schema.Array(OutlineEntry)).annotate({
-        description: "The provision's subsections, when it is too long to return with them; otherwise null"
+      outline: Schema.Array(OutlineEntry).annotate({
+        description: "The provision's subsections, in document order; empty when it has none"
       }),
       citations: Citations
     }),

@@ -43,7 +43,7 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | **Narration** | Text a model writes in a turn that also calls a tool ("Let me look that up"). It stays in the prompt but is never sent to the browser. |
 | **Context budget** | The tokens a prompt may use: the model's context length less the tokens reserved for its answer. The loop never sends a prompt estimated to exceed it. |
 | **Outcome** | How a question ended: `answered`, `step_limit`, `context_limit`, `truncated` or `failed`, and in the trace also `cancelled` when the browser disconnected first. Every outcome but `answered` carries a message for the user. |
-| **Model configuration** | Which model provides `LanguageModel` for a question: Local (the open-weight model on the agent host), Same model in the cloud (the same open-weight model at a cloud provider) or Frontier (a closed cloud model, Claude, as the accuracy ceiling). A question names one of the configurations the backend offers, or gets the default. |
+| **Model configuration** | Which model provides `LanguageModel` for a question: Local (the open-weight model on the agent host), Same model in the cloud (the same open-weight model at a cloud provider), Open model in the cloud (a larger open-weight model at a cloud provider, too large for the agent host) or Frontier (a closed cloud model, Claude, as the accuracy ceiling). A question names one of the configurations the backend offers, or gets the default. |
 | **Agent host** | The machine running the backend and the local model runtime. |
 | **Trace** | The record of one request in the `app` schema: model configuration, tool calls, token counts, latency and energy sample. |
 
@@ -58,7 +58,7 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | **Provision** | An addressable unit of a document as the document itself numbers it: an article, section or paragraph (e.g. Section 37.9, artikel 7:248). |
 | **Passage** | The unit of retrieval: a span of a document split along its own structure, with its version and effective date. Stored with its text, embedding and, for Dutch sources, its translation. |
 | **Lead-in** | A provision's own text when it only introduces its children, e.g. 37.9(a): "A landlord shall not endeavor to recover possession of a rental unit unless:". A passage carries its ancestors' lead-ins as its context. |
-| **Outline** | A list of a document's sections or of one provision's children, each with its number, a one-line summary (a section's heading, or a provision's first sentence) and its number of children. Returned by `list_provisions`, and by `get_provision` for a provision too long to return whole. For navigation, never quoted. |
+| **Outline** | A list of a document's sections or of one provision's children, each with its number, a one-line summary (a section's heading, or a provision's first sentence) and its number of children. Returned by `list_provisions`, and by `get_provision` with the provision's own text. For navigation, never quoted. |
 | **Original text** | A passage's text in its source language (`text_nl` for Amsterdam). Citations quote it. |
 | **Machine translation** | The stored English translation of a Dutch passage (`text_en`), with the translation model's identifier. Always labeled as machine translation when shown. |
 | **Hybrid search** | Vector search and keyword search run over the same passages, with their rankings combined by RRF. Spike S4 found it added nothing over vector search on Chapter 37, so `sf-docs` uses vector search. |

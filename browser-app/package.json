@@ -11,7 +11,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@effect/vitest": "4.1.2",
+    "@effect/vitest": "4.1.4",
     "@types/node": "26.6.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
@@ -21,12 +21,12 @@
     "vitest": "5.1.0"
   },
   "dependencies": {
-    "@effect/atom-react": "4.1.2",
+    "@effect/atom-react": "4.1.4",
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
     "@mui/material": "9.5.0",
     "@policyhuis/protocol": "workspace:*",
-    "effect": "4.1.2",
+    "effect": "4.1.4",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-markdown": "10.1.0",

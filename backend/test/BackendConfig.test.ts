@@ -18,12 +18,14 @@ describe("backend configuration", () => {
       const keys = yield* ModelApiKeysConfig
       expect(Option.map(keys.frontier, Redacted.value)).toEqual(Option.some("sk-frontier"))
       expect(Option.map(keys.same_model_cloud, Redacted.value)).toEqual(Option.some("sk-same"))
+      expect(Option.map(keys.open_cloud, Redacted.value)).toEqual(Option.some("sk-open"))
     }).pipe(
       withEnv({
         APP_DATABASE_URL: "postgresql://owner@db/app",
         BACKEND_PORT: "8080",
         FRONTIER_API_KEY: "sk-frontier",
-        SAME_MODEL_CLOUD_API_KEY: "sk-same"
+        SAME_MODEL_CLOUD_API_KEY: "sk-same",
+        OPEN_CLOUD_API_KEY: "sk-open"
       })
     )
   )
@@ -31,7 +33,7 @@ describe("backend configuration", () => {
   it.effect("leaves an unset API key empty, for the local configuration", () =>
     Effect.gen(function* () {
       const keys = yield* ModelApiKeysConfig
-      expect([Option.isNone(keys.frontier), Option.isNone(keys.same_model_cloud)]).toEqual([true, true])
+      expect([keys.frontier, keys.same_model_cloud, keys.open_cloud].every(Option.isNone)).toBe(true)
     }).pipe(withEnv({ APP_DATABASE_URL: "postgresql://owner@db/app", BACKEND_PORT: "8080" }))
   )
 })

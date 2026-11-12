@@ -93,23 +93,6 @@ export class PassageRepo extends Context.Service<PassageRepo>()("PassageRepo", {
       )
     })
 
-    /** The provision and all its descendants, in document order; empty when the provision is not in the document. */
-    const subtree = Effect.fn("PassageRepo.subtree")(function* (documentId: string, provision: string) {
-      return yield* rows(PassageRow)(
-        yield* sql`
-          WITH RECURSIVE tree AS (
-            SELECT provision FROM sf_docs.passages WHERE document_id = ${documentId} AND provision = ${provision}
-            UNION ALL
-            SELECT c.provision FROM sf_docs.passages c JOIN tree t ON c.parent_provision = t.provision
-            WHERE c.document_id = ${documentId}
-          )
-          SELECT ${passageColumns}
-          FROM sf_docs.passages p JOIN tree USING (provision)
-          WHERE p.document_id = ${documentId}
-          ORDER BY p.ordinal`
-      )
-    })
-
     /** One provision, or null when it is not in the document. */
     const provision = Effect.fn("PassageRepo.provision")(function* (documentId: string, provision: string) {
       const found = yield* rows(PassageRow)(
@@ -131,7 +114,7 @@ export class PassageRepo extends Context.Service<PassageRepo>()("PassageRepo", {
       )
     })
 
-    return { documents, storedEmbeddingModels, search, subtree, provision, children } as const
+    return { documents, storedEmbeddingModels, search, provision, children } as const
   })
 }) {
   static readonly layer = Layer.effect(this, this.make)

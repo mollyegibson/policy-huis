@@ -11,7 +11,6 @@ import {
   completed,
   documentCitationPrefix,
   expectedFacts,
-  figuresFromTools,
   mentions,
   citesFigures
 } from "./checks.ts"
@@ -28,7 +27,6 @@ export const CHECKS = [
   "citedExpectedProvisions",
   "citationIdsExact",
   "citesFigures",
-  "figuresFromTools",
   "expectedFacts",
   "mentions",
   "citesNothing"
@@ -51,7 +49,7 @@ const answerCheck = (metric: Check, check: (answer: Answer) => Verdict): Asserti
   return { type: "javascript", value, metric }
 }
 
-/** The promptfoo assertions for one question: four for every question, and the rest from its `expect`. */
+/** The promptfoo assertions for one question: three for every question, and the rest from its `expect`. */
 export const assertionsFor = (question: Question): ReadonlyArray<Assertion> => {
   const { expect } = question
   const tools = expect.tools ?? []
@@ -61,7 +59,6 @@ export const assertionsFor = (question: Question): ReadonlyArray<Assertion> => {
     answerCheck("completed", completed),
     answerCheck("citationIdsExact", citationIdsExact),
     answerCheck("citesFigures", (answer) => citesFigures(answer, question.question)),
-    answerCheck("figuresFromTools", (answer) => figuresFromTools(answer, question.question)),
     ...(tools.length > 0 ? [answerCheck("calledExpectedTool", (answer) => calledExpectedTool(answer, tools))] : []),
     ...(expectedArguments === undefined
       ? []

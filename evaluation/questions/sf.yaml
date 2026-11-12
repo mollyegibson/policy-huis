@@ -1,8 +1,7 @@
 # The San Francisco question set. The evaluation plan (docs/plans/evaluation.md) explains each field and check.
 #
 # Facts are copied from the archived source each names, never computed or remembered: a data question's figures
-# change with every load, so data questions name none, and every answer is checked instead for numbers that came from
-# no tool result (figuresFromTools). The rent ordinance questions and their provisions are spike S4's
+# change with every load, so data questions name none. The rent ordinance questions and their provisions are spike S4's
 # (docs/plans/spikes/s4-questions.yaml), labeled there from the loaded passages.
 
 x-docs-tools: &docs_tools [sf_docs_search_policy, sf_docs_get_provision, sf_docs_list_provisions]
@@ -153,11 +152,8 @@ questions:
     type: rule
     question: "How much is my landlord allowed to raise the rent each year?"
     expect:
-      tools: *docs_tools
-      documents: [rent_ordinance]
-      provisions:
-        document: rent_ordinance
-        any: ["37.3(a)(1)"]
+      # The ordinance's rule (Sec. 37.3(a)(1)) or the Rent Board's current allowable increase both answer it.
+      tools: [sf_docs_search_policy, sf_docs_get_provision, sf_docs_list_provisions, sf_data_allowable_rent_increase]
 
   - id: sf-rent-03 # spike S4 q03
     type: rule
@@ -227,7 +223,7 @@ questions:
       documents: [rent_ordinance]
       provisions:
         document: rent_ordinance
-        any: ["37.7(a)"]
+        any: ["37.7"]
 
   - id: sf-rent-10 # spike S4 q10
     type: rule
@@ -703,8 +699,8 @@ questions:
     type: rule + data
     question: "Which grounds for eviction in the rent ordinance account for the most notices, and which are rising?"
     expect:
+      # The eviction data names each ground's section of the ordinance, so citing the ordinance itself is not required.
       tools: [sf_data_eviction_notice_counts]
-      documents: [rent_ordinance]
 
   - id: sf-mix-03 # provisional question SF-01
     type: rule

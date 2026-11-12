@@ -40,18 +40,17 @@ export class HttpConfig extends Context.Service<
 }
 
 /**
- * The Ollama that embeds search queries. Environment: `OLLAMA_URL`, not namespaced, since the documents ingestion reads
- * the same variable for the same Ollama.
+ * OpenRouter, which embeds search queries with the model and host in `config/search.yaml`. Environment:
+ * `OPENROUTER_API_KEY`, not namespaced, since the documents ingestion reads the same variable for the same API.
  */
-export class OllamaConfig extends Context.Service<
-  OllamaConfig,
+export class OpenRouterConfig extends Context.Service<
+  OpenRouterConfig,
   {
-    /** Ollama's HTTP API, which must serve the build in `config/search.yaml`. Default `http://localhost:11434`. */
-    readonly url: string
+    readonly apiKey: Redacted.Redacted
   }
->()("sf-docs/OllamaConfig") {
+>()("sf-docs/OpenRouterConfig") {
   static readonly layer = Layer.effect(
     this,
-    SfDocsEnv.load(Config.all({ url: Config.String("OLLAMA_URL").pipe(Config.withDefault("http://localhost:11434")) }))
+    SfDocsEnv.load(Config.all({ apiKey: Config.Redacted("OPENROUTER_API_KEY") }))
   )
 }

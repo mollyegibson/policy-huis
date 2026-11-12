@@ -1011,76 +1011,76 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@effect/ai-anthropic@npm:4.1.2":
-  version: 4.1.2
-  resolution: "@effect/ai-anthropic@npm:4.1.2"
+"@effect/ai-anthropic@npm:4.1.4":
+  version: 4.1.4
+  resolution: "@effect/ai-anthropic@npm:4.1.4"
   peerDependencies:
-    effect: ^4.1.2
-  checksum: 10c0/90f7f3a71d0f8cda15005c36c6c5f832137257865a20cb31f9e164e4f394177a7929f7ffbfc5e3c73e9c9aee7e1e2340f3fa7954f5ad19822757427749389ee7
+    effect: ^4.1.4
+  checksum: 10c0/3089789aebdcc27220c2636e605525850e4c8efd14cdb7c5957fda3a01788d8cc88b48c8fc9bccb72f2f9929e1d50636f67265caefd3394dbf0d0a298450bbec
   languageName: node
   linkType: hard
 
-"@effect/ai-openai-compat@npm:4.1.2":
-  version: 4.1.2
-  resolution: "@effect/ai-openai-compat@npm:4.1.2"
+"@effect/ai-openai-compat@npm:4.1.4":
+  version: 4.1.4
+  resolution: "@effect/ai-openai-compat@npm:4.1.4"
   peerDependencies:
-    effect: ^4.1.2
-  checksum: 10c0/70554cbc17a0a9f1aefcd8f80ae5fe3add455b7a94bea6e97ba134efdc578f80327b61af97c1027d65906fab8e46aef4693674adef7527ba81754ae48e11ccc3
+    effect: ^4.1.4
+  checksum: 10c0/9b95b15550313172a56d951f583d9358e3ff8649d0cbc0bb520ee16f00b0c52806bc88d9f62897291e0a1823f54d0510584b465320d7f7f2436d0ea81da0ba06
   languageName: node
   linkType: hard
 
-"@effect/atom-react@npm:4.1.2":
-  version: 4.1.2
-  resolution: "@effect/atom-react@npm:4.1.2"
+"@effect/atom-react@npm:4.1.4":
+  version: 4.1.4
+  resolution: "@effect/atom-react@npm:4.1.4"
   peerDependencies:
-    effect: ^4.1.2
+    effect: ^4.1.4
     react: ">=19.0.0 <20.0.0"
     scheduler: ">=0.25.0 <0.29.0"
-  checksum: 10c0/9cbe4f05b92dcf3977d6cd9ede257282bbadd785dc7de109a6b9c75ac177c6b20ed4f134516c23b9673171dde8c11bf22c2ba9b93a96fa75719fd401ad1cb196
+  checksum: 10c0/e8df10ce3d0132719e38d2d4c4adf9a8b0a8d3c72add386ac0c48448903c54fbb94f35de7ceeffeb20987fc461ef500abad4981ab1eae1e210408fd64a773e4a
   languageName: node
   linkType: hard
 
-"@effect/platform-node-shared@npm:4.1.2":
-  version: 4.1.2
-  resolution: "@effect/platform-node-shared@npm:4.1.2"
+"@effect/platform-node-shared@npm:4.1.4":
+  version: 4.1.4
+  resolution: "@effect/platform-node-shared@npm:4.1.4"
   dependencies:
     "@types/ws": "npm:^8.18.2"
     ws: "npm:^8.22.1"
   peerDependencies:
-    effect: ^4.1.2
-  checksum: 10c0/5e67c14d7539526fc28ee35dd3a318f844e2265dc4012e234d4132918cdc407497354dcb1dbf8812e4c5831e0b68f3628d1792749b076efa6ef50e22f02e4d85
+    effect: ^4.1.4
+  checksum: 10c0/a79953c3d7f971cd60930daa45a6e21d4d7441d12aac11d817a57eb536dc9bc7cf52d476b406714260c8b20289da78f48adebd15705b70fb6af4559aeab70309
   languageName: node
   linkType: hard
 
-"@effect/platform-node@npm:4.1.2":
-  version: 4.1.2
-  resolution: "@effect/platform-node@npm:4.1.2"
+"@effect/platform-node@npm:4.1.4":
+  version: 4.1.4
+  resolution: "@effect/platform-node@npm:4.1.4"
   dependencies:
-    "@effect/platform-node-shared": "npm:4.1.2"
-    undici: "npm:^8.12.3"
+    "@effect/platform-node-shared": "npm:4.1.4"
+    undici: "npm:^8.12.4"
   peerDependencies:
-    effect: ^4.1.2
+    effect: ^4.1.4
     redis: ">=5.1.0 <7.0.0"
-  checksum: 10c0/1a495f9881cea6306c1e80549c5a065a5c28d7208356e8a3edceb31f63fd1345e2484434c4437b2eeb37ea059d9a51d430ef1bb4962bbc1cf98b22e9502ab722
+  checksum: 10c0/a2cd224ed12c98227db3a97b0771e1c74ebd2fb3ddd555c0f95a0c9e867bbe77d4f47f139c14abb7a819ba420990644904d1f0d5b0763fbd362f7b1a31672d26
   languageName: node
   linkType: hard
 
-"@effect/sql-pg@npm:4.1.2":
-  version: 4.1.2
-  resolution: "@effect/sql-pg@npm:4.1.2"
+"@effect/sql-pg@npm:4.1.4":
+  version: 4.1.4
+  resolution: "@effect/sql-pg@npm:4.1.4"
   peerDependencies:
-    effect: ^4.1.2
-  checksum: 10c0/4c41602d487ecb4527c3cf64fa2606c4dcb6a68a2d08b2a4b157e07f41e182606588243a98d58ee8dfa60ce60d8945325b46365efb2f100276c644818e34df25
+    effect: ^4.1.4
+  checksum: 10c0/1eac0ced3fa40ec684bd04f65ff6aa56e4283e5cd7362508a3e89d8f8bd966815a428e71a056830d435c46caf6977ee76b291c9b0bf0bbc9723f8b800224ecf1
   languageName: node
   linkType: hard
 
-"@effect/vitest@npm:4.1.2":
-  version: 4.1.2
-  resolution: "@effect/vitest@npm:4.1.2"
+"@effect/vitest@npm:4.1.4":
+  version: 4.1.4
+  resolution: "@effect/vitest@npm:4.1.4"
   peerDependencies:
-    effect: ^4.1.2
+    effect: ^4.1.4
     vitest: ">=5.0.0 <6.0.0"
-  checksum: 10c0/2433e09babcbe194a65ff5a5574dc3d2fc1615daeb2224330e5a63f9c7799ed597ff5ac68b94096502a1594abf643dc15c09096d453dfc5c427975e37f18d59a
+  checksum: 10c0/c161341e3be686fed0cd070b7484e64f6dc6248616be9057e053014e99663f92c685af489844db620a6fc26e7ad9eb76a9f0086cfc5399e3e5de4bd12c180bf1
   languageName: node
   linkType: hard
 
@@ -3240,10 +3240,10 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@policyhuis/backend@workspace:backend"
   dependencies:
-    "@effect/ai-anthropic": "npm:4.1.2"
-    "@effect/ai-openai-compat": "npm:4.1.2"
-    "@effect/platform-node": "npm:4.1.2"
-    "@effect/vitest": "npm:4.1.2"
+    "@effect/ai-anthropic": "npm:4.1.4"
+    "@effect/ai-openai-compat": "npm:4.1.4"
+    "@effect/platform-node": "npm:4.1.4"
+    "@effect/vitest": "npm:4.1.4"
     "@policyhuis/node-config": "workspace:*"
     "@policyhuis/protocol": "workspace:*"
     "@testcontainers/postgresql": "npm:12.2.1"
@@ -3251,7 +3251,7 @@ __metadata:
     "@types/pg": "npm:8.23.1"
     drizzle-kit: "npm:0.31.11"
     drizzle-orm: "npm:0.45.4"
-    effect: "npm:4.1.2"
+    effect: "npm:4.1.4"
     pg: "npm:8.23.1"
     typescript: "npm:5.9.3"
     uuid: "npm:11.1.0"
@@ -3264,8 +3264,8 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@policyhuis/browser-app@workspace:browser-app"
   dependencies:
-    "@effect/atom-react": "npm:4.1.2"
-    "@effect/vitest": "npm:4.1.2"
+    "@effect/atom-react": "npm:4.1.4"
+    "@effect/vitest": "npm:4.1.4"
     "@emotion/react": "npm:11.14.0"
     "@emotion/styled": "npm:11.14.1"
     "@mui/material": "npm:9.5.0"
@@ -3274,7 +3274,7 @@ __metadata:
     "@types/react": "npm:19.3.0"
     "@types/react-dom": "npm:19.3.0"
     "@vitejs/plugin-react": "npm:6.2.1"
-    effect: "npm:4.1.2"
+    effect: "npm:4.1.4"
     react: "npm:19.3.1"
     react-dom: "npm:19.3.1"
     react-markdown: "npm:10.1.0"
@@ -3290,12 +3290,12 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@policyhuis/evaluation@workspace:evaluation"
   dependencies:
-    "@effect/platform-node": "npm:4.1.2"
-    "@effect/vitest": "npm:4.1.2"
+    "@effect/platform-node": "npm:4.1.4"
+    "@effect/vitest": "npm:4.1.4"
     "@policyhuis/node-config": "workspace:*"
     "@policyhuis/protocol": "workspace:*"
     "@types/node": "npm:26.6.6"
-    effect: "npm:4.1.2"
+    effect: "npm:4.1.4"
     promptfoo: "npm:0.125.1"
     typescript: "npm:5.9.3"
     vitest: "npm:5.1.0"
@@ -3306,10 +3306,10 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@policyhuis/node-config@workspace:shared/node-config"
   dependencies:
-    "@effect/platform-node": "npm:4.1.2"
-    "@effect/vitest": "npm:4.1.2"
+    "@effect/platform-node": "npm:4.1.4"
+    "@effect/vitest": "npm:4.1.4"
     "@types/node": "npm:26.6.6"
-    effect: "npm:4.1.2"
+    effect: "npm:4.1.4"
     typescript: "npm:5.9.3"
     vitest: "npm:5.1.0"
     yaml: "npm:2.9.1"
@@ -3320,9 +3320,9 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@policyhuis/protocol@workspace:protocol"
   dependencies:
-    "@effect/vitest": "npm:4.1.2"
+    "@effect/vitest": "npm:4.1.4"
     "@types/node": "npm:26.6.6"
-    effect: "npm:4.1.2"
+    effect: "npm:4.1.4"
     typescript: "npm:5.9.3"
     vitest: "npm:5.1.0"
   languageName: unknown
@@ -3333,7 +3333,7 @@ __metadata:
   resolution: "@policyhuis/scripts@workspace:scripts"
   dependencies:
     "@types/node": "npm:26.6.6"
-    effect: "npm:4.1.2"
+    effect: "npm:4.1.4"
     typescript: "npm:5.9.3"
     vitest: "npm:5.1.0"
   languageName: unknown
@@ -3343,13 +3343,13 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@policyhuis/sf-data-server@workspace:san-francisco/mcp-servers/data"
   dependencies:
-    "@effect/platform-node": "npm:4.1.2"
-    "@effect/sql-pg": "npm:4.1.2"
-    "@effect/vitest": "npm:4.1.2"
+    "@effect/platform-node": "npm:4.1.4"
+    "@effect/sql-pg": "npm:4.1.4"
+    "@effect/vitest": "npm:4.1.4"
     "@policyhuis/node-config": "workspace:*"
     "@testcontainers/postgresql": "npm:12.2.1"
     "@types/node": "npm:26.6.6"
-    effect: "npm:4.1.2"
+    effect: "npm:4.1.4"
     typescript: "npm:5.9.3"
     vitest: "npm:5.1.0"
   languageName: unknown
@@ -3359,13 +3359,13 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@policyhuis/sf-docs-server@workspace:san-francisco/mcp-servers/documents"
   dependencies:
-    "@effect/platform-node": "npm:4.1.2"
-    "@effect/sql-pg": "npm:4.1.2"
-    "@effect/vitest": "npm:4.1.2"
+    "@effect/platform-node": "npm:4.1.4"
+    "@effect/sql-pg": "npm:4.1.4"
+    "@effect/vitest": "npm:4.1.4"
     "@policyhuis/node-config": "workspace:*"
     "@testcontainers/postgresql": "npm:12.2.1"
     "@types/node": "npm:26.6.6"
-    effect: "npm:4.1.2"
+    effect: "npm:4.1.4"
     typescript: "npm:5.9.3"
     vitest: "npm:5.1.0"
   languageName: unknown
@@ -5748,10 +5748,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"effect@npm:4.1.2":
-  version: 4.1.2
-  resolution: "effect@npm:4.1.2"
-  checksum: 10c0/9e043ced01a0c889699086be0c70fb85df7431b6da267d7ff09e8058843c8d13f2333766d112740e2e4d540d2517fc79101ce46f20e322f086a57aa1cbc1a3d5
+"effect@npm:4.1.4":
+  version: 4.1.4
+  resolution: "effect@npm:4.1.4"
+  checksum: 10c0/9c4bccc29274428209f630ea2393f0d60104a2a54a4d6ba638b4277550c6e698c6e1a87072b6c977ab8b55addaf68ef016d3ec7a7fd525ea8919ae3c23178bae
   languageName: node
   linkType: hard
 
@@ -11294,10 +11294,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"undici@npm:^8.11.2, undici@npm:^8.12.3, undici@npm:^8.4.1":
+"undici@npm:^8.11.2, undici@npm:^8.4.1":
   version: 8.12.3
   resolution: "undici@npm:8.12.3"
   checksum: 10c0/714919e62b4160eea195fb35c7f5c4907235741e47bfde8a014ac58f6d24df13434e23400d7f48e2c455fd2b259d27f07fce514f04a5b4e99936ba62cbc4bb71
+  languageName: node
+  linkType: hard
+
+"undici@npm:^8.12.4":
+  version: 8.12.4
+  resolution: "undici@npm:8.12.4"
+  checksum: 10c0/2a83590ce3347ca4e8fb83917bd7ad1d0bcb72ecb6d1a5066f01a89b4941becac569412aa27d7318119ea1a20d217018cce535f8eeed3c1b307d87426f96cfe3
   languageName: node
   linkType: hard
 

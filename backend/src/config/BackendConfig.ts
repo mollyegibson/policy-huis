@@ -43,8 +43,8 @@ export class HttpConfig extends Context.Service<
 }
 
 /**
- * The API key of each cloud model configuration, by its key in `config/agent.yaml`. Environment: `FRONTIER_API_KEY`
- * and `SAME_MODEL_CLOUD_API_KEY`, each optional here: only the configurations `agent.yaml` offers need their keys, and
+ * The API key of each cloud model configuration, by its key in `config/agent.yaml`. Environment: `FRONTIER_API_KEY`,
+ * `SAME_MODEL_CLOUD_API_KEY` and `OPEN_CLOUD_API_KEY`, each optional here: only the configurations `agent.yaml` offers need their keys, and
  * the model layer fails at startup when one is missing. The `local` configuration needs none.
  */
 export class ModelApiKeysConfig extends Context.Service<
@@ -52,6 +52,7 @@ export class ModelApiKeysConfig extends Context.Service<
   {
     readonly frontier: Option.Option<Redacted.Redacted>
     readonly same_model_cloud: Option.Option<Redacted.Redacted>
+    readonly open_cloud: Option.Option<Redacted.Redacted>
   }
 >()("backend/ModelApiKeysConfig") {
   static readonly layer = Layer.effect(
@@ -59,7 +60,8 @@ export class ModelApiKeysConfig extends Context.Service<
     BackendEnv.load(
       Config.all({
         frontier: Config.option(Config.Redacted("FRONTIER_API_KEY")),
-        same_model_cloud: Config.option(Config.Redacted("SAME_MODEL_CLOUD_API_KEY"))
+        same_model_cloud: Config.option(Config.Redacted("SAME_MODEL_CLOUD_API_KEY")),
+        open_cloud: Config.option(Config.Redacted("OPEN_CLOUD_API_KEY"))
       })
     )
   )

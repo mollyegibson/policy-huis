@@ -45,14 +45,14 @@ class _CorpusFile(BaseModel):
 
 
 class SearchConfig(BaseModel):
-    """How search entries are built: the embedding model build, its context, and the size limit for a provision's
-    entry with its descendants."""
+    """How search entries are built: the embedding API, model and host, and the size limit for a provision's entry
+    with its descendants."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    embedding_api: str
     embedding_model: str
-    embedding_build: str
-    num_ctx: int
+    embedding_host: str
     subtree_chars: int
 
 

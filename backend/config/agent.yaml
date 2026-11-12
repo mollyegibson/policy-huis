@@ -3,8 +3,20 @@
 
 model:
   default: local # answers a question that names no configuration
-  offered: [local, frontier] # a question may name any of these; each needs its API key in backend/.env, except local
+  offered: [local, open_cloud, frontier] # a question may name any of these; each needs its API key in backend/.env, except local
   configurations:
+    open_cloud:
+      provider: openai-compat
+      label: Larger open model in the cloud
+      baseUrl: https://openrouter.ai/api/v1 # OpenRouter's OpenAI-compatible API
+      modelId: qwen/qwen3.5-397b-a17b # open weights: Qwen/Qwen3.5-397B-A17B on Hugging Face
+      contextTokens: 250000 # within the model's 262,144-token context; the same budget as the frontier configuration
+      answerTokens: 4000 # provisional; includes reasoning tokens
+      bytesPerToken: 3 # provisional, to be measured on real tool results
+      maxConcurrentQuestions: 4 # provisional, within the account's rate limits
+      requestOptions:
+        reasoning:
+          effort: none # at low, Qwen spent 847 reasoning tokens and 15 s on a one-sentence answer in a test on November 12, 2026; none took 1 s
     local:
       provider: openai-compat
       label: Open model on this computer
@@ -15,13 +27,13 @@ model:
       bytesPerToken: 3 # provisional, to be measured on real tool results
       maxConcurrentQuestions: 1 # matches Ollama's default OLLAMA_NUM_PARALLEL of 1
       requestOptions:
-        reasoning_effort: medium # provisional; gpt-oss generated about 7x fewer tokens than at high in a test on November 6, 2026
+        reasoning_effort: low # provisional; gpt-oss generated about 7x fewer tokens than at high in a test on November 6, 2026
     frontier:
       provider: anthropic
       label: Frontier model in the cloud
       modelId: claude-opus-5-5
       effort: low # matches the local configuration's reasoning_effort
-      contextTokens: 32000 # provisional: the local configuration's budget, so both answer under the same limit
+      contextTokens: 250000 # within Claude's 1M-token context; the same budget as the open_cloud configuration
       answerTokens: 4000 # provisional; includes thinking tokens
       bytesPerToken: 3 # provisional, to be measured on real tool results
       maxConcurrentQuestions: 4 # provisional, within the account's rate limits

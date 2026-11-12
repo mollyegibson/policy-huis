@@ -97,7 +97,7 @@ San Francisco's two MCP servers (`sf-data` and `sf-docs`), the backend and the b
 1. **Install** from the repo root: `corepack enable && yarn install`.
 2. **Configure the MCP servers:**
    - `cp san-francisco/mcp-servers/data/.env.example san-francisco/mcp-servers/data/.env`, then set `SF_DATA_READER_DATABASE_URL` (the read-only `sf_data_reader` connection string) and `SF_DATA_PORT` (for example `8081`);
-   - `cp san-francisco/mcp-servers/documents/.env.example san-francisco/mcp-servers/documents/.env`, then set `SF_DOCS_READER_DATABASE_URL` (the read-only `sf_docs_reader` connection string) and `SF_DOCS_PORT` (for example `8082`).
+   - `cp san-francisco/mcp-servers/documents/.env.example san-francisco/mcp-servers/documents/.env`, then set `SF_DOCS_READER_DATABASE_URL` (the read-only `sf_docs_reader` connection string), `SF_DOCS_PORT` (for example `8082`) and `OPENROUTER_API_KEY`, with which search queries are embedded (see [`san-francisco/ingest/documents/`](./san-francisco/ingest/documents/README.md#embedding-model)).
 3. **Configure the backend:** `cp backend/.env.example backend/.env`, then set:
    - `APP_DATABASE_URL`: the owner connection string of the `app` Neon project; the backend creates the `app` schema on first start;
    - `BACKEND_PORT`: the port for the question API (for example `8080`);
@@ -108,7 +108,6 @@ San Francisco's two MCP servers (`sf-data` and `sf-docs`), the backend and the b
    1. Download the model named by the `local` configuration's `modelId`: `ollama pull gpt-oss:20b`.
    2. Set Ollama's context length to the configuration's `contextTokens`. Ollama defaults to 4,096 tokens and drops the start of a longer prompt without failing ([FAQ](https://docs.ollama.com/faq)), so this is required. The Mac app reads it from `launchctl`, so run `launchctl setenv OLLAMA_CONTEXT_LENGTH 32000`, then quit and reopen Ollama. The setting is lost on restart, so set it again after rebooting.
    3. Check it answers: `ollama run gpt-oss:20b "hello"`. The backend calls it at `http://localhost:11434/v1`.
-   4. Download the embedding model that document search uses: `ollama pull qwen3-embedding:4b`, and check with `ollama list` that its ID is `df5bd2e3c74c`, the build [spike S4](./docs/plans/spikes/s4-embeddings.md#decision) chose and `san-francisco/ingest/documents/config/search.yaml` pins. The same Ollama serves it alongside the chat model, loading each on its first request; see [`san-francisco/ingest/documents/`](./san-francisco/ingest/documents/README.md#embedding-model).
 
    Ollama answers one request at a time by default (`OLLAMA_NUM_PARALLEL`), which is why the `local` configuration's `maxConcurrentQuestions` is 1; raise both together.
 5. **Configure the browser app:** `cp browser-app/.env.example browser-app/.env`, then set `BACKEND_URL` to the backend's address (for example `http://localhost:8080`). The app's dev server proxies `/api` to it.

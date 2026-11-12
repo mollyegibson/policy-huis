@@ -83,6 +83,18 @@ describe("agent.yaml", () => {
     })
   )
 
+  it.effect("decodes request options nested as objects, as OpenRouter's reasoning setting is", () =>
+    Effect.gen(function* () {
+      const config = yield* agent(
+        AGENT_YAML.replace("        reasoning_effort: none", "        reasoning:\n          effort: low")
+      )
+      const { local } = config.model.configurations
+      expect(local?.provider === "openai-compat" ? local.requestOptions : null).toEqual({
+        reasoning: { effort: "low" }
+      })
+    })
+  )
+
   it.effect("rejects an offered configuration with no entry, and a default that is not offered", () =>
     Effect.gen(function* () {
       expect(

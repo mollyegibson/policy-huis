@@ -16,9 +16,9 @@ from tests.fixtures import pages
 
 
 class FakeEmbedder:
-    """Deterministic 2,560-dimension vectors from each text's hash, so tests need no Ollama."""
+    """Deterministic 2,560-dimension vectors from each text's hash, so tests need no embedding API."""
 
-    model_id = "fake@000000000000"
+    model_id = "fake/model@host"
 
     def __init__(self) -> None:
         self.calls = 0
@@ -86,7 +86,7 @@ def test_every_passage_has_a_summary_and_an_own_search_entry(migrated_url: str, 
     assert summaries["37.9"] == "Sec. 37.9 Evictions"
     assert all(summaries.values())
     assert {p for p, kind, _, _ in entries if kind == "own"} == set(summaries)
-    assert ("37.9(a)", "subtree", "fake@000000000000", 2560) in entries
+    assert ("37.9(a)", "subtree", "fake/model@host", 2560) in entries
 
 
 def test_a_failed_embedding_leaves_the_stored_document_as_it_was(migrated_url: str, tmp_path: Path) -> None:

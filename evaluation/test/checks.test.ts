@@ -9,10 +9,8 @@ import {
   citesNothing,
   completed,
   expectedFacts,
-  figuresFromTools,
   mentions,
   normalizeText,
-  numberWordsIn,
   numbersIn
 } from "../src/checks.ts"
 import { answer, lookup, ordinance } from "./fixtures.ts"
@@ -132,43 +130,17 @@ describe("citesFigures", () => {
     expect(citesFigures(answer("I have no data on rent burden in 2024."), "Burden in 2024?").pass).toBe(true)
   })
 
+  it("does not count numbered headings, references to laws or decades as figures", () => {
+    const answered = answer(
+      "## 7. Paperwork\nSee Planning Code (Section 415), Sec. 37.9(a), §37.3(a)(1) and Chapter 37, as in the late 1990s."
+    )
+    expect(citesFigures(answered, "Q?")).toMatchObject({ pass: true, reason: "States no figures" })
+  })
+
   it("fails an answer that states figures and cites nothing", () => {
-    expect(citesFigures(answer("Chapter 37 allows a 1.6% increase."), "Q?")).toMatchObject({
+    expect(citesFigures(answer("Chapter 37 allows a 1.6% increase from 2026."), "Q?")).toMatchObject({
       pass: false,
-      reason: "States figures with no citation at all: 37, 1.6"
-    })
-  })
-})
-
-describe("numberWordsIn", () => {
-  it("reads runs of number words as numbers", () => {
-    expect(numberWordsIn("a fine of not greater than one thousand dollars, sixty days, thirty-six months")).toEqual([
-      "1000",
-      "60",
-      "36"
-    ])
-    expect(numberWordsIn("two hundred and fifty units")).toEqual(["250"])
-  })
-})
-
-describe("figuresFromTools", () => {
-  const rate = lookup("sf_data_allowable_rent_increase", { on: "2026-03-01" }, { percent: 1.6, from: "2026-03-01" })
-
-  it("passes when every figure is in a tool call or result, or in the question", () => {
-    const answered = answer(`The increase from March 1, 2026 is 1.6% ${cite}.`, { lookups: [rate] })
-    expect(figuresFromTools(answered, "What is the increase?").pass).toBe(true)
-  })
-
-  it("accepts a figure the tool result writes in words, as the ordinance does", () => {
-    const penalty = lookup("sf_docs_get_provision", {}, { text: "a fine of not greater than one thousand dollars" })
-    expect(figuresFromTools(answer(`The fine is up to $1,000 ${cite}.`, { lookups: [penalty] }), "Q?").pass).toBe(true)
-  })
-
-  it("names a figure no tool returned", () => {
-    const invented = answer(`The increase is 2.4% ${cite}.`, { lookups: [rate] })
-    expect(figuresFromTools(invented, "What is the increase?")).toMatchObject({
-      pass: false,
-      reason: "Numbers in no tool result: 2.4"
+      reason: "States figures with no citation at all: 1.6, 2026"
     })
   })
 })

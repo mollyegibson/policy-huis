@@ -25,8 +25,11 @@ const PositiveDuration = Schema.DurationFromString.pipe(
   )
 )
 
-/** The model configurations named in the Ubiquitous Language: Local, Same model in the cloud, Frontier. */
-export const ModelConfigurationKey = Schema.Literals(["local", "same_model_cloud", "frontier"])
+/**
+ * The model configurations named in the Ubiquitous Language: Local, Same model in the cloud, Open model in the cloud,
+ * Frontier.
+ */
+export const ModelConfigurationKey = Schema.Literals(["local", "same_model_cloud", "open_cloud", "frontier"])
 export type ModelConfigurationKey = typeof ModelConfigurationKey.Type
 
 /** The limits every model configuration declares, which depend on the model. */
@@ -52,7 +55,7 @@ const answerTokensBelowContext = Schema.makeFilter((endpoint: { answerTokens: nu
  * `@effect/ai-openai-compat`. `outputTokensParameter` names the request field that carries `answerTokens`: `max_tokens`
  * when omitted, which local runtimes accept, or `max_completion_tokens` for OpenAI models that reject `max_tokens`.
  * `requestOptions` are extra fields sent unchanged in every request body, for settings the server needs, such as
- * `reasoning_effort`.
+ * Ollama's `reasoning_effort` or OpenRouter's `reasoning: { effort }`.
  */
 export const OpenAiCompatEndpoint = Schema.Struct({
   provider: Schema.Literal("openai-compat"),
@@ -61,9 +64,7 @@ export const OpenAiCompatEndpoint = Schema.Struct({
   modelId: Schema.NonEmptyString,
   ...ModelLimits,
   outputTokensParameter: Schema.optionalKey(Schema.Literals(["max_tokens", "max_completion_tokens"])),
-  requestOptions: Schema.optionalKey(
-    Schema.Record(Schema.NonEmptyString, Schema.Union([Schema.String, Schema.Finite, Schema.Boolean]))
-  )
+  requestOptions: Schema.optionalKey(Schema.Record(Schema.NonEmptyString, Schema.Json))
 }).pipe(Schema.check(answerTokensBelowContext))
 
 /**
@@ -94,6 +95,7 @@ const ModelSection = Schema.Struct({
   configurations: Schema.Struct({
     local: Schema.optionalKey(ModelEndpoint),
     same_model_cloud: Schema.optionalKey(ModelEndpoint),
+    open_cloud: Schema.optionalKey(ModelEndpoint),
     frontier: Schema.optionalKey(ModelEndpoint)
   })
 }).pipe(

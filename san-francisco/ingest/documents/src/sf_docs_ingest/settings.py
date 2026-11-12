@@ -19,7 +19,7 @@ class Settings(DotenvFirstSettings):
 
     sf_docs_database_url: SecretStr
     sf_docs_reader_password: SecretStr
-    ollama_url: str = "http://localhost:11434"
+    openrouter_api_key: SecretStr | None = None
     neon_s3_endpoint: str | None = None
     neon_s3_region: str | None = None
     neon_s3_bucket: str | None = None

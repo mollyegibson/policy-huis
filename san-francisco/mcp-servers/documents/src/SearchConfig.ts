@@ -6,41 +6,42 @@ import { loadYaml } from "@policyhuis/node-config"
 
 export const SEARCH_CONFIG_FILE = fileURLToPath(new URL("../config/search.yaml", import.meta.url))
 
-const PositiveInt = Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0, { message: "must be a positive integer" })))
-
 /** `san-francisco/mcp-servers/documents/config/search.yaml`. */
 const SearchFile = Schema.Struct({
-  embedding_model: Schema.NonEmptyString,
-  embedding_build: Schema.String.pipe(
-    Schema.check(Schema.isPattern(/^[0-9a-f]{12}$/, { message: "the first 12 hex characters of the model digest" }))
+  embedding_api: Schema.String.pipe(
+    Schema.check(Schema.isPattern(/^https:\/\/\S+[^/]$/, { message: "an https URL without a trailing slash" }))
   ),
-  num_ctx: PositiveInt,
-  query_instruction: Schema.NonEmptyString,
-  subtree_chars: PositiveInt
+  embedding_model: Schema.NonEmptyString,
+  embedding_host: Schema.String.pipe(
+    Schema.check(
+      Schema.isPattern(/^[a-z0-9][a-z0-9-]*$/, { message: "an OpenRouter provider slug, such as deepinfra" })
+    )
+  ),
+  query_instruction: Schema.NonEmptyString
 })
 
 export interface Search {
+  /** OpenRouter's OpenAI-compatible API, such as `https://openrouter.ai/api/v1`. */
+  readonly embeddingApi: string
   readonly embeddingModel: string
-  readonly embeddingBuild: string
-  /** The model and build as the passage pipeline stores them with every vector, such as `qwen3-embedding:4b@df5bd2e3c74c`. */
+  /** The one OpenRouter host allowed to serve the model, as its provider slug. */
+  readonly embeddingHost: string
+  /** The model and host as the passage pipeline stores them with every vector, such as `qwen/qwen3-embedding-4b@deepinfra`. */
   readonly embeddingModelId: string
-  readonly numCtx: number
   readonly queryInstruction: string
-  readonly subtreeChars: number
 }
 
-/** How this server embeds queries, and the size above which `get_provision` returns an outline. */
+/** How this server embeds queries. */
 export class SearchConfig extends Context.Service<SearchConfig, Search>()("SearchConfig") {
   static readonly layer = (path: string = SEARCH_CONFIG_FILE) =>
     Layer.effect(
       this,
       Effect.map(loadYaml(SearchFile)(path), (file) => ({
+        embeddingApi: file.embedding_api,
         embeddingModel: file.embedding_model,
-        embeddingBuild: file.embedding_build,
-        embeddingModelId: `${file.embedding_model}@${file.embedding_build}`,
-        numCtx: file.num_ctx,
-        queryInstruction: file.query_instruction,
-        subtreeChars: file.subtree_chars
+        embeddingHost: file.embedding_host,
+        embeddingModelId: `${file.embedding_model}@${file.embedding_host}`,
+        queryInstruction: file.query_instruction
       }))
     )
 }

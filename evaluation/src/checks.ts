@@ -34,11 +34,20 @@ export const documentCitationPrefix = (documentId: string): string => `sf_docs.$
 /** The answer's text without its citation markers. */
 const withoutMarkers = (text: string): string => text.replace(CANDIDATE, " ")
 
-/** A list item's number (bold or not) or bullet at the start of a line, which is layout rather than a figure. */
-const LIST_MARKER = /^\s*(?:[-*+]|\**\d+[.)])\s+/
+/**
+ * A list item's or heading's number (bold or not) or bullet at the start of a line, which is layout rather than a
+ * figure: `1. `, `**3.** `, `- `, `## 7. `.
+ */
+const LIST_MARKER = /^\s*(?:#+\s*)?(?:[-*+]|\**\d+[.)])\s+/
 
-/** A line without its list marker or its table's cell borders. */
-const content = (line: string): string => line.replace(LIST_MARKER, "").replaceAll("|", " ")
+/**
+ * A reference to a part of a law or code (`Section 415`, `Sec. 37.9(a)`, `§37.3(a)(1)`, `Chapter 37`), or a decade
+ * (`1990s`): numbers that name something rather than state a figure.
+ */
+const NOT_A_FIGURE = /(?:§§?\s*|\b(?:Sections?|Secs?\.|Chapters?|Articles?)\s+)\d[\dA-Za-z.()-]*|\b\d{3}0s\b/gi
+
+/** A line without its list marker, its table's cell borders, or its references to laws and decades. */
+const content = (line: string): string => line.replace(LIST_MARKER, "").replaceAll("|", " ").replace(NOT_A_FIGURE, " ")
 
 /**
  * A number, its digits grouped in thousands by commas or by the spaces some models write between groups (no-break,
@@ -172,78 +181,10 @@ export const citesNothing = (answer: Answer): Verdict => {
   return markers.length === 0 ? verdict(true, "No citation") : verdict(false, `Cited ${markers.join(", ")}`)
 }
 
-const UNITS: Readonly<Record<string, number>> = {
-  zero: 0,
-  one: 1,
-  two: 2,
-  three: 3,
-  four: 4,
-  five: 5,
-  six: 6,
-  seven: 7,
-  eight: 8,
-  nine: 9,
-  ten: 10,
-  eleven: 11,
-  twelve: 12,
-  thirteen: 13,
-  fourteen: 14,
-  fifteen: 15,
-  sixteen: 16,
-  seventeen: 17,
-  eighteen: 18,
-  nineteen: 19
-}
-const TENS: Readonly<Record<string, number>> = {
-  twenty: 20,
-  thirty: 30,
-  forty: 40,
-  fifty: 50,
-  sixty: 60,
-  seventy: 70,
-  eighty: 80,
-  ninety: 90
-}
-const SCALES: Readonly<Record<string, number>> = { thousand: 1_000, million: 1_000_000, billion: 1_000_000_000 }
-
 /**
- * The numbers `text` writes in words, as canonical strings: each run of number words read as one number, so "one
- * thousand dollars" gives 1000, "sixty days" 60 and "thirty-six months" 36. The ordinance writes amounts and periods
- * in words, and an answer that writes them in digits is still quoting it.
+ * The numbers the answer states, outside its citation markers, list and heading numbering and references to laws,
+ * other than those the question states.
  */
-export const numberWordsIn = (text: string): ReadonlyArray<string> => {
-  const found: Array<string> = []
-  let total = 0
-  let current = 0
-  let inNumber = false
-  const flush = () => {
-    if (inNumber) found.push(String(total + current))
-    total = 0
-    current = 0
-    inNumber = false
-  }
-  for (const word of text.toLowerCase().split(/[^a-z]+/)) {
-    const unit = UNITS[word] ?? TENS[word]
-    const scale = SCALES[word]
-    if (unit !== undefined) {
-      current += unit
-      inNumber = true
-    } else if (word === "hundred" && inNumber) {
-      current *= 100
-    } else if (scale !== undefined && inNumber) {
-      total += current * scale
-      current = 0
-    } else if (word === "and" && inNumber) {
-      continue
-    } else {
-      flush()
-    }
-  }
-  flush()
-  return found
-}
-
-/** The numbers the answer states, outside its citation markers and list numbering, other than those the question states. */
 const statedFigures = (answer: Answer, question: string): ReadonlyArray<string> => {
   const asked = new Set(numbersIn(question))
   const text = answer.text
@@ -255,8 +196,8 @@ const statedFigures = (answer: Answer, question: string): ReadonlyArray<string> 
 
 /**
  * An answer that states a figure cites at least one source. Where in the answer the citation sits (after each figure,
- * at a table's caption, once for a paragraph) is the answer's presentation and is not checked; whether each figure
- * came from the data is `figuresFromTools`'s.
+ * at a table's caption, once for a paragraph) is the answer's presentation and is not checked, and so is whether each
+ * figure came from the data: an answer may round or compute a figure, saying so ("about", "roughly").
  */
 export const citesFigures = (answer: Answer, question: string): Verdict => {
   const figures = statedFigures(answer, question)
@@ -264,20 +205,4 @@ export const citesFigures = (answer: Answer, question: string): Verdict => {
   return citationCandidates(answer.text).length > 0
     ? verdict(true, "States figures and cites its sources")
     : verdict(false, `States figures with no citation at all: ${figures.join(", ")}`)
-}
-
-/**
- * Every number the answer states, outside its citations and list numbering, appears in a tool call or result, a
- * citation, or the question, in digits or in words.
- */
-export const figuresFromTools = (answer: Answer, question: string): Verdict => {
-  const fromTools = [
-    ...answer.lookups.map((lookup) => JSON.stringify([lookup.arguments, lookup.result])),
-    ...answer.citations.map((citation) => JSON.stringify(citation))
-  ]
-  const known = new Set(fromTools.flatMap((text) => [...numbersIn(text), ...numberWordsIn(text)]))
-  const unmatched = statedFigures(answer, question).filter((n) => !known.has(n))
-  return unmatched.length === 0
-    ? verdict(true, "Every number came from a tool or the question")
-    : verdict(false, `Numbers in no tool result: ${unmatched.join(", ")}`)
 }

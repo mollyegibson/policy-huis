@@ -7,13 +7,14 @@ import { PostgreSqlContainer } from "@testcontainers/postgresql"
 import { Context, Effect, Layer, Redacted, Schema } from "effect"
 import { McpProtocol, McpTest } from "effect/ai"
 import { HttpClient, HttpClientResponse } from "effect/http"
+import type { HttpClientRequest } from "effect/http"
 
 import { Citation, NAMESPACE } from "../src/Citations.ts"
 import { PassageRepo } from "../src/PassageRepo.ts"
 import { QueryEmbedder } from "../src/QueryEmbedder.ts"
 import type { Search } from "../src/SearchConfig.ts"
 import { SearchConfig } from "../src/SearchConfig.ts"
-import { OllamaConfig } from "../src/SfDocsServerConfig.ts"
+import { OpenRouterConfig } from "../src/SfDocsServerConfig.ts"
 import { EmbeddingModelCheck, RegistrationsLive } from "../src/Server.ts"
 import { EmbeddingModelUnavailable } from "../src/Tools.ts"
 
@@ -23,11 +24,10 @@ const FIXTURE = fileURLToPath(new URL("./fixtures/sf_docs.sql", import.meta.url)
 const DIMENSIONS = 2560
 
 const SEARCH: Search = {
-  embeddingModel: "qwen3-embedding:4b",
-  embeddingBuild: "df5bd2e3c74c",
-  embeddingModelId: "qwen3-embedding:4b@df5bd2e3c74c",
-  numCtx: 4096,
-  subtreeChars: 300,
+  embeddingApi: "https://router.test/api/v1",
+  embeddingModel: "qwen/qwen3-embedding-4b",
+  embeddingHost: "deepinfra",
+  embeddingModelId: "qwen/qwen3-embedding-4b@deepinfra",
   queryInstruction: "Instruct: find the provisions\nQuery:"
 }
 
@@ -194,19 +194,27 @@ layer(Layer.merge(TestServer.layer, PgLive), { timeout: 180_000 })("sf-docs serv
   })
 
   describe("get_provision", () => {
-    it.effect("returns a provision with its descendants in document order", () =>
+    it.effect("returns a provision with no subsections, and an empty outline", () =>
       Effect.gen(function* () {
-        const content = yield* structured("get_provision", { documentId: "rent_ordinance", provision: "37.9(a)(8)" })
-        expect(provisionsOf(content["passages"])).toEqual(["37.9(a)(8)", "37.9(a)(8)(ii)"])
-        expect(content["outline"]).toBeNull()
-        expect(citationsOf(content).map((c) => c.locator)).toEqual(["Sec. 37.9(a)(8)", "Sec. 37.9(a)(8)(ii)"])
+        const content = yield* structured("get_provision", { documentId: "rent_ordinance", provision: "37.9(a)(1)" })
+        expect(provisionsOf(content["passages"])).toEqual(["37.9(a)(1)"])
+        expect(content["outline"]).toEqual([])
+        expect(citationsOf(content).map((c) => c.locator)).toEqual(["Sec. 37.9(a)(1)"])
       })
     )
 
-    it.effect("returns an outline of the children of a provision over the size limit", () =>
+    it.effect("returns a provision's own text and an outline of its children, citing each child by its summary", () =>
       Effect.gen(function* () {
         const content = yield* structured("get_provision", { documentId: "rent_ordinance", provision: "37.9(a)" })
         expect(provisionsOf(content["passages"])).toEqual(["37.9(a)"])
+        expect(citationsOf(content).map((c) => [c.locator, c.quote])).toEqual([
+          ["Sec. 37.9(a)", expect.any(String)],
+          ["Sec. 37.9(a)(1)", "(1) The tenant has failed to pay the rent to which the landlord is lawfully entitled;"],
+          [
+            "Sec. 37.9(a)(8)",
+            "(8) The landlord seeks to recover possession in good faith, without ulterior reasons and with honest intent;"
+          ]
+        ])
         expect(Schema.decodeUnknownSync(Outline)(content["outline"])).toEqual([
           {
             provision: "37.9(a)(1)",
@@ -264,78 +272,88 @@ layer(Layer.merge(TestServer.layer, PgLive), { timeout: 180_000 })("sf-docs serv
     Effect.gen(function* () {
       const error = yield* Layer.build(EmbeddingModelCheck).pipe(
         Effect.provide(PassageRepo.layer),
-        Effect.provide(Layer.succeed(SearchConfig, { ...SEARCH, embeddingModelId: "qwen3-embedding:0.6b@x" })),
+        Effect.provide(Layer.succeed(SearchConfig, { ...SEARCH, embeddingModelId: "qwen/qwen3-embedding-0.6b@x" })),
         Effect.scoped,
         Effect.flip
       )
       expect(error).toMatchObject({
         _tag: "EmbeddingModelMismatch",
-        configured: "qwen3-embedding:0.6b@x",
-        stored: ["qwen3-embedding:4b@df5bd2e3c74c"]
+        configured: "qwen/qwen3-embedding-0.6b@x",
+        stored: ["qwen/qwen3-embedding-4b@deepinfra"]
       })
     })
   )
 })
 
-/** An Ollama that serves `digest` for the model and answers every embed request with `embedding`. */
-const fakeOllama = (digest: string, embedding: ReadonlyArray<number>, requests: Array<unknown>) =>
+/** OpenRouter, answering every embed request from `provider` with `embedding`, and recording each request. */
+const fakeOpenRouter = (
+  provider: string,
+  embedding: ReadonlyArray<number>,
+  requests: Array<HttpClientRequest.HttpClientRequest>
+) =>
   Layer.succeed(
     HttpClient.HttpClient,
     HttpClient.make((request) => {
-      if (request.url.endsWith("/api/tags")) {
-        const body = { models: [{ name: "qwen3-embedding:4b", digest: `${digest}${"0".repeat(52)}` }] }
-        return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(body)))
-      }
-      if (request.body._tag === "Uint8Array") requests.push(JSON.parse(new TextDecoder().decode(request.body.body)))
-      return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({ embeddings: [embedding] })))
+      requests.push(request)
+      const body = { object: "list", provider, data: [{ object: "embedding", index: 0, embedding }] }
+      return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(body)))
     })
   )
 
-const embedWith = (digest: string, embedding: ReadonlyArray<number>, requests: Array<unknown> = []) =>
+const embedWith = (
+  provider: string,
+  embedding: ReadonlyArray<number>,
+  requests: Array<HttpClientRequest.HttpClientRequest> = []
+) =>
   Effect.gen(function* () {
     return yield* (yield* QueryEmbedder).embed("Can my landlord evict me?")
   }).pipe(
-    Effect.provide(QueryEmbedder.ollama),
-    Effect.provide(fakeOllama(digest, embedding, requests)),
+    Effect.provide(QueryEmbedder.openRouter),
+    Effect.provide(fakeOpenRouter(provider, embedding, requests)),
     Effect.provide(Layer.succeed(SearchConfig, SEARCH)),
-    Effect.provide(Layer.succeed(OllamaConfig, { url: "http://ollama.test" }))
+    Effect.provide(Layer.succeed(OpenRouterConfig, { apiKey: Redacted.make("test-key") }))
   )
+
+const bodyOf = (request: HttpClientRequest.HttpClientRequest): unknown =>
+  request.body._tag === "Uint8Array" ? JSON.parse(new TextDecoder().decode(request.body.body)) : null
 
 describe("config/search.yaml", () => {
   it.effect("decodes", () =>
     Effect.gen(function* () {
       const search = yield* SearchConfig
-      expect(search.embeddingModelId).toBe("qwen3-embedding:4b@df5bd2e3c74c")
+      expect(search.embeddingModelId).toBe("qwen/qwen3-embedding-4b@deepinfra")
     }).pipe(Effect.provide(SearchConfig.layer()), Effect.provide(NodeServices.layer))
   )
 })
 
-describe("QueryEmbedder.ollama", () => {
-  it.effect("prepends the instruction, never truncates and caps the context", () =>
+describe("QueryEmbedder.openRouter", () => {
+  it.effect("prepends the instruction and pins the host without fallbacks", () =>
     Effect.gen(function* () {
-      const requests: Array<unknown> = []
-      expect(yield* embedWith("df5bd2e3c74c", [0.5, 0.5], requests)).toEqual([0.5, 0.5])
-      expect(requests).toEqual([
+      const requests: Array<HttpClientRequest.HttpClientRequest> = []
+      expect(yield* embedWith("DeepInfra", [0.5, 0.5], requests)).toEqual([0.5, 0.5])
+      expect(requests.map((r) => [r.url, r.headers["authorization"]])).toEqual([
+        ["https://router.test/api/v1/embeddings", "Bearer test-key"]
+      ])
+      expect(requests.map(bodyOf)).toEqual([
         {
-          model: "qwen3-embedding:4b",
+          model: "qwen/qwen3-embedding-4b",
           input: ["Instruct: find the provisions\nQuery:Can my landlord evict me?"],
-          truncate: false,
-          options: { num_ctx: 4096 }
+          provider: { order: ["deepinfra"], allow_fallbacks: false }
         }
       ])
     })
   )
 
-  it.effect("refuses another build of the model", () =>
+  it.effect("refuses a vector from another host", () =>
     Effect.gen(function* () {
-      const error = yield* Effect.flip(embedWith("ac6da0dfba84", [0.5]))
+      const error = yield* Effect.flip(embedWith("Nebius", [0.5]))
       expect(error._tag).toBe("EmbeddingModelUnavailable")
     })
   )
 
   it.effect("refuses an all-zero vector", () =>
     Effect.gen(function* () {
-      const error = yield* Effect.flip(embedWith("df5bd2e3c74c", [0, 0]))
+      const error = yield* Effect.flip(embedWith("DeepInfra", [0, 0]))
       expect(error._tag).toBe("EmbeddingModelUnavailable")
     })
   )

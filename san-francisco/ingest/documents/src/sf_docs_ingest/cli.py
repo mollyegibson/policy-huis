@@ -9,7 +9,7 @@ from policyhuis_ingest.load import ingest, loader_version
 from policyhuis_ingest.source_types import load_sources
 
 from sf_docs_ingest.corpus import build_passages, load_corpus, load_search_config
-from sf_docs_ingest.passages.embed import OllamaEmbedder
+from sf_docs_ingest.passages.embed import OpenRouterEmbedder
 from sf_docs_ingest.settings import (
     CORPUS_FILE,
     CORPUS_SCHEMA,
@@ -78,9 +78,15 @@ def main() -> None:
     if unknown:
         parser.error(f"unknown documents: {', '.join(unknown)}")
     search = load_search_config(SEARCH_FILE)
+    if settings.openrouter_api_key is None:
+        raise SystemExit("Set OPENROUTER_API_KEY in .env to embed the search entries")
     with httpx.Client(timeout=600) as client:
-        embedder = OllamaEmbedder(
-            client, settings.ollama_url, search.embedding_model, search.embedding_build, search.num_ctx
+        embedder = OpenRouterEmbedder(
+            client,
+            search.embedding_api,
+            settings.openrouter_api_key.get_secret_value(),
+            search.embedding_model,
+            search.embedding_host,
         )
         for key in keys:
             count = build_passages(

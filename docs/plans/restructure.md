@@ -127,7 +127,7 @@ Research notes are left as written, as a record of their time.
 
 Not part of this restructure:
 
-1. **Search settings in the database.** The documents pipeline writes the embedding model, build and `subtree_chars` to a one-row table in `sf_docs`, which the server reads at startup instead of its own `search.yaml` copy.
+1. **Search settings in the database.** The documents pipeline writes the embedding model and build to a one-row table in `sf_docs`, which the server reads at startup instead of its own `search.yaml` copy.
 2. **Schema snapshots as the contract.** Each ingest project generates its schema's DDL, a test fails when it is stale, and its server's tests load it in place of hand-written fixtures.
 3. **Backend citation prefixing**, only if citation IDs collide across servers.
 4. **Deployment:** Dockerfiles for each server, and the ingest projects as Kubernetes cron jobs.

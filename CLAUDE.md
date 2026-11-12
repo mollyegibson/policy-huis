@@ -147,6 +147,7 @@ When guidance conflicts, higher sources win:
 - [Provisional Questions](./docs/plans/provisional-questions.md): the draft question set, pending confirmation from the research team
 - [Restructuring Plan](./docs/plans/restructure.md): the layout by deployable unit, the `sf-data` and `sf-docs` names, and the citation and lookup contracts
 - [Evaluation and Model Comparison Plan](./docs/plans/evaluation.md): choosing the model per question, Claude as the frontier model, the promptfoo evaluation and its checks, and the browser app's model choice
+- [Energy Estimates Plan](./docs/plans/energy.md): per-answer energy estimates for the cloud configurations from CLEER's per-token factors, shown under each answer and compared on a dashboard tab; on hold until CLEER provides the factors
 
 # Contributing
 

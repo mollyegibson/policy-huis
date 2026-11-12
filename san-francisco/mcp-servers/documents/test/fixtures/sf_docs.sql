@@ -59,7 +59,7 @@ CREATE TABLE sf_docs.search_entries (
 );
 CREATE INDEX search_entries_embedding ON sf_docs.search_entries USING hnsw (embedding halfvec_cosine_ops);
 INSERT INTO sf_docs.search_entries (document_id, provision, kind, text, embedding, embedding_model)
-SELECT 'rent_ordinance', provision, kind, provision, one_hot(k), 'qwen3-embedding:4b@df5bd2e3c74c'
+SELECT 'rent_ordinance', provision, kind, provision, one_hot(k), 'qwen/qwen3-embedding-4b@deepinfra'
 FROM (VALUES
     ('37.2', 'own', 10), ('37.2', 'subtree', 11), ('37.2(r)', 'own', 12),
     ('37.9', 'own', 20), ('37.9', 'outline', 21), ('37.9(a)', 'own', 22), ('37.9(a)', 'subtree', 2),

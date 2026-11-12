@@ -30,7 +30,7 @@ describe("the question file", () => {
 })
 
 describe("assertionsFor", () => {
-  it("gives every question the four answer checks, and the rest from its expectations", () => {
+  it("gives every question the three answer checks, and the rest from its expectations", () => {
     const metrics = assertionsFor({
       id: "sf-mix-01",
       type: "rule + data",
@@ -46,7 +46,6 @@ describe("assertionsFor", () => {
       ["javascript", "completed", expect.any(Function)],
       ["javascript", "citationIdsExact", expect.any(Function)],
       ["javascript", "citesFigures", expect.any(Function)],
-      ["javascript", "figuresFromTools", expect.any(Function)],
       ["javascript", "calledExpectedTool", expect.any(Function)],
       ["contains", "citedExpectedDocuments", "[sf_docs.rent_ordinance@"],
       ["not-contains", "notCitedDocuments", "[sf_docs.bla_affordable_housing@"],
