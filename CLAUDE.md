@@ -83,7 +83,7 @@ PolicyHuis is a monorepo: a single agent that answers housing-policy questions f
 |---|---|---|
 | `backend/` | TypeScript | The backend: the question API and the agent loop |
 | `browser-app/` | TypeScript, React | Web app: asks questions and shows streamed, cited answers |
-| `protocol/` | TypeScript | The API between the backend and the browser app: the question endpoint, its streamed events and the citation schema the browser renders |
+| `protocol/` | TypeScript | The backend's API, for its clients (the browser app and the evaluation): the question endpoint, its streamed events and the citation schema the browser renders |
 | `shared/node-config/` | TypeScript | Library every TypeScript node uses to read its configuration: YAML files decoded with a `Schema`, the `.env`-first provider and its `load`, and `ConfigFileError` for anything missing |
 | `shared/ingest/` | Python (uv), dbt | Library: fetch, archive and load public sources into a raw schema; shared dbt macros; run dbt |
 | `san-francisco/ingest/data/` | Python (uv), dbt | San Francisco's data sources, the `raw_sf_data` migrations, the `sf_data` dbt models and the `sf-data-ingest` command |
@@ -91,7 +91,7 @@ PolicyHuis is a monorepo: a single agent that answers housing-policy questions f
 | `san-francisco/mcp-servers/data/` | TypeScript | The `sf-data` MCP server: San Francisco's housing pipeline, climate-zone and eviction tools over `sf_data` |
 | `san-francisco/mcp-servers/documents/` | TypeScript | The `sf-docs` MCP server: search, provisions and outlines over `sf_docs` |
 | `netherlands/` | | The Dutch nodes, in the same shape |
-| `evaluation/` | YAML / Markdown | Question set and expected answers |
+| `evaluation/` | TypeScript, YAML | The question set, its expected answers and checks, and the promptfoo evaluation that asks the running backend |
 | `scripts/` | TypeScript | Repo tooling: `yarn dev` and its `--include <group>` selection of each city's servers |
 | `docs/plans/` | Markdown | Technical designs. Read the relevant plan before changing a component. |
 
@@ -99,7 +99,7 @@ PolicyHuis is a monorepo: a single agent that answers housing-policy questions f
 
 **Shared code is plumbing, never a contract.** A library under `shared/` does work several nodes need done the same way (reading configuration, fetching and loading sources), installed as a uv path dependency or a yarn workspace package, never a service a node calls. It never defines what one context publishes to another: tool errors, citation shapes and tool results are conventions, documented in the plans, that each node implements in its own code and tests against. A city project depends on `shared/`; `shared/` never depends on a city, and no city depends on another.
 
-Contexts communicate through published contracts (database schemas, MCP tools and their results, the backend API), never by importing each other's code. MCP servers share nothing with the backend but MCP itself and the conventions their results follow; `protocol/` is shared only by the backend and the browser app, and holds only schemas. No MCP server reads another server's schema. See [Domain-Driven Design](./docs/domain-driven-design.md).
+Contexts communicate through published contracts (database schemas, MCP tools and their results, the backend API), never by importing each other's code. MCP servers share nothing with the backend but MCP itself and the conventions their results follow; `protocol/` is shared only by the backend and its API clients, the browser app and the evaluation, and holds only schemas. No MCP server reads another server's schema. See [Domain-Driven Design](./docs/domain-driven-design.md).
 
 ## Python (`shared/ingest/`, `*/ingest/*/`)
 
@@ -146,6 +146,7 @@ When guidance conflicts, higher sources win:
 - [Netherlands Ingestion and Tools Plan](./docs/plans/netherlands-ingestion.md): loading the Dutch sources and designing the Dutch data server's tools
 - [Provisional Questions](./docs/plans/provisional-questions.md): the draft question set, pending confirmation from the research team
 - [Restructuring Plan](./docs/plans/restructure.md): the layout by deployable unit, the `sf-data` and `sf-docs` names, and the citation and lookup contracts
+- [Evaluation and Model Comparison Plan](./docs/plans/evaluation.md): choosing the model per question, Claude as the frontier model, the promptfoo evaluation and its checks, and the browser app's model choice
 
 # Contributing
 

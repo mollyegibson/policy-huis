@@ -11,9 +11,12 @@ import { SystemPrompt } from "../src/loop/SystemPrompt.ts"
 /** Synthetic values for decoding tests only; they are not the backend's configuration. */
 const AGENT_YAML = `
 model:
-  configuration: frontier
+  default: local
+  offered: [local, frontier]
   configurations:
-    frontier:
+    local:
+      provider: openai-compat
+      label: Test local model
       baseUrl: https://models.example.test/v1
       modelId: test-model
       contextTokens: 1000
@@ -23,6 +26,15 @@ model:
       outputTokensParameter: max_completion_tokens
       requestOptions:
         reasoning_effort: none
+    frontier:
+      provider: anthropic
+      label: Test frontier model
+      modelId: test-claude
+      effort: low
+      contextTokens: 1000
+      answerTokens: 100
+      bytesPerToken: 3
+      maxConcurrentQuestions: 4
 loop:
   maxSteps: 4
   stepTimeout: 30 seconds
@@ -59,17 +71,35 @@ describe("agent.yaml", () => {
       const config = yield* agent(AGENT_YAML)
       expect(Duration.toMillis(config.loop.stepTimeout)).toBe(30_000)
       expect(Duration.toMillis(config.loop.modelRetryBaseDelay)).toBe(500)
-      expect(config.model.configurations.frontier?.modelId).toBe("test-model")
-      expect(config.model.configurations.frontier?.requestOptions).toEqual({ reasoning_effort: "none" })
+      const { local, frontier } = config.model.configurations
+      expect(local?.provider === "openai-compat" ? [local.modelId, local.requestOptions] : null).toEqual([
+        "test-model",
+        { reasoning_effort: "none" }
+      ])
+      expect(frontier?.provider === "anthropic" ? [frontier.modelId, frontier.effort] : null).toEqual([
+        "test-claude",
+        "low"
+      ])
     })
   )
 
-  it.effect("rejects a selected configuration with no entry", () =>
+  it.effect("rejects an offered configuration with no entry, and a default that is not offered", () =>
     Effect.gen(function* () {
-      const message = yield* failureMessage(
-        agent(AGENT_YAML.replace("configuration: frontier", "configuration: local"))
-      )
-      expect(message).toContain(`No entry under configurations for "local"`)
+      expect(
+        yield* failureMessage(
+          agent(AGENT_YAML.replace("offered: [local, frontier]", "offered: [local, same_model_cloud]"))
+        )
+      ).toContain(`No entry under configurations for "same_model_cloud"`)
+      expect(
+        yield* failureMessage(agent(AGENT_YAML.replace("offered: [local, frontier]", "offered: [frontier]")))
+      ).toContain(`The default "local" is not offered`)
+    })
+  )
+
+  it.effect("rejects an Anthropic configuration without an effort, or with one Claude does not take here", () =>
+    Effect.gen(function* () {
+      expect(yield* failureMessage(agent(AGENT_YAML.replace("      effort: low\n", "")))).toContain("effort")
+      expect(yield* failureMessage(agent(AGENT_YAML.replace("effort: low", "effort: extreme")))).toContain("effort")
     })
   )
 
@@ -103,7 +133,7 @@ describe("checked-in agent.yaml", () => {
   it.effect("decodes", () =>
     Effect.gen(function* () {
       const config = yield* loadAgentConfig(AGENT_CONFIG_FILE)
-      expect(config.model.configurations[config.model.configuration]).toBeDefined()
+      for (const key of config.model.offered) expect(config.model.configurations[key]).toBeDefined()
     }).pipe(Effect.provide(NodeServices.layer))
   )
 

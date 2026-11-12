@@ -139,11 +139,10 @@ layer(Layer.merge(TestServer.layer, PgLive), { timeout: 180_000 })("sf-docs serv
       const { tools } = yield* (yield* TestServer).listTools()
       const description = (name: string) => tools.find((t) => t.name === name)?.description ?? ""
       expect(description("search_policy")).toContain(
-        "- rent_ordinance: Residential Rent Stabilization and Arbitration Ordinance (law, as of 2026-06-29). " +
-          "A synthetic description: rent control and evictions."
+        "- rent_ordinance (law): A synthetic description: rent control and evictions."
       )
       for (const name of ["get_provision", "list_provisions"]) {
-        expect(description(name)).toContain("rent_ordinance (Residential Rent Stabilization and Arbitration Ordinance)")
+        expect(description(name)).toContain("Documents: rent_ordinance.")
       }
     })
   )

@@ -71,5 +71,7 @@ export const complete = (
   requestId: "00000000-0000-4000-8000-000000000001",
   outcome,
   message,
-  unavailableServers
+  unavailableServers,
+  model: { configuration: "local", modelId: "test-model" },
+  usage: { inputTokens: 100, outputTokens: 10 }
 })

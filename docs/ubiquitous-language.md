@@ -42,7 +42,7 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | **Narration** | Text a model writes in a turn that also calls a tool ("Let me look that up"). It stays in the prompt but is never sent to the browser. |
 | **Context budget** | The tokens a prompt may use: the model's context length less the tokens reserved for its answer. The loop never sends a prompt estimated to exceed it. |
 | **Outcome** | How a question ended: `answered`, `step_limit`, `context_limit`, `truncated` or `failed`, and in the trace also `cancelled` when the browser disconnected first. Every outcome but `answered` carries a message for the user. |
-| **Model configuration** | Which model provides `LanguageModel` for a run: Local (the open-weight model on the agent host), Same model in the cloud (the same open-weight model at a cloud provider) or Frontier (a closed cloud model, as the accuracy ceiling). |
+| **Model configuration** | Which model provides `LanguageModel` for a question: Local (the open-weight model on the agent host), Same model in the cloud (the same open-weight model at a cloud provider) or Frontier (a closed cloud model, Claude, as the accuracy ceiling). A question names one of the configurations the backend offers, or gets the default. |
 | **Agent host** | The machine running the backend and the local model runtime. |
 | **Trace** | The record of one request in the `app` schema: model configuration, tool calls, token counts, latency and energy sample. |
 

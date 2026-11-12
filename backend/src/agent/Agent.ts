@@ -1,15 +1,17 @@
-import { Clock, Context, Data, Effect, Layer, Ref, Schema, Semaphore, Stream } from "effect"
+import { Clock, Context, Data, Effect, Layer, Option, Ref, Schema, Semaphore, Stream } from "effect"
 import { LanguageModel, Prompt } from "effect/ai"
 
 import type { Citation } from "@policyhuis/protocol/Citation"
 import { Sources } from "@policyhuis/protocol/QuestionsApi"
 
-import { activeModel, AgentConfig } from "../config/AgentConfig.ts"
+import { AgentConfig, modelSettings } from "../config/AgentConfig.ts"
 import type { LoopSettings } from "../loop/AgentLoop.ts"
 import { runAgentLoop } from "../loop/AgentLoop.ts"
 import { messageFor } from "../loop/Failures.ts"
 import type { BrowserEvent, LoopEvent } from "../loop/LoopEvent.ts"
 import { isBrowserEvent } from "../loop/LoopEvent.ts"
+import type { AvailableModel } from "../model/ModelLayer.ts"
+import { Models } from "../model/ModelLayer.ts"
 import type { Outcome } from "../loop/Outcome.ts"
 import { SystemPrompt } from "../loop/SystemPrompt.ts"
 import { McpConnections } from "../tools/McpConnections.ts"
@@ -18,8 +20,20 @@ import type { Trace } from "../trace/Trace.ts"
 import { emptyTrace, foldTrace } from "../trace/Trace.ts"
 import { TraceStore } from "../trace/TraceStore.ts"
 
-/** The agent is already answering as many questions as its model configuration allows. */
+/** The agent is already answering as many questions as the question's model configuration allows. */
 export class AgentBusy extends Schema.TaggedError<AgentBusy>()("AgentBusy", {}) {}
+
+/** The question named a model configuration the backend does not offer. */
+export class ModelNotOffered extends Schema.TaggedError<ModelNotOffered>()("ModelNotOffered", {
+  model: Schema.String,
+  offered: Schema.Array(Schema.String)
+}) {}
+
+/** How to answer one question: the model configuration to answer with, the default when absent, and its evaluation run. */
+export interface AskOptions {
+  readonly model?: string | undefined
+  readonly evaluationRunId?: string | undefined
+}
 
 /**
  * A question's last event: how it ended, the message for the user when the answer is incomplete, and the data
@@ -30,6 +44,8 @@ export class QuestionEnded extends Data.TaggedClass("QuestionEnded")<{
   readonly outcome: Outcome
   readonly message: string | null
   readonly unavailableServers: ReadonlyArray<string>
+  readonly model: { readonly configuration: string; readonly modelId: string }
+  readonly usage: { readonly inputTokens: number; readonly outputTokens: number }
 }> {}
 
 /** What a caller of the agent receives: the answer's events as they happen, then `QuestionEnded`. */
@@ -40,34 +56,41 @@ const unavailableNotice = (servers: ReadonlyArray<string>) =>
   `These data servers are unreachable for this question: ${servers.join(", ")}. Say that your answer may be missing their data.`
 
 /**
- * Answers questions: admits each one within the model configuration's limit, builds its tools and prompt, runs the
- * loop, notes the servers a call showed to be unreachable, and writes the trace after the answer has ended.
+ * Answers questions: admits each one within its model configuration's limit, builds its tools and prompt, runs the
+ * loop with that configuration's model, notes the servers a call showed to be unreachable, and writes the trace after
+ * the answer has ended.
  */
 export class Agent extends Context.Service<
   Agent,
-  { readonly ask: (question: string) => Effect.Effect<Stream.Stream<AgentEvent>, AgentBusy> }
+  {
+    readonly ask: (
+      question: string,
+      options?: AskOptions
+    ) => Effect.Effect<Stream.Stream<AgentEvent>, AgentBusy | ModelNotOffered>
+  }
 >()("backend/Agent") {
   static readonly layer = Layer.effect(
     this,
     Effect.gen(function* () {
       const config = yield* AgentConfig
-      const { key, endpoint } = yield* activeModel(config)
+      const models = yield* Models
       const connections = yield* McpConnections
       const traces = yield* TraceStore
       const systemPrompt = yield* SystemPrompt
-      const model = yield* LanguageModel.LanguageModel
-      const permits = yield* Semaphore.make(endpoint.maxConcurrentQuestions)
       /** Owns the trace writes, which run after each answer has ended; closed when the agent stops. */
       const background = yield* Effect.scope
 
-      const settings: LoopSettings = {
-        ...config.loop,
-        contextTokens: endpoint.contextTokens,
-        answerTokens: endpoint.answerTokens,
-        bytesPerToken: endpoint.bytesPerToken
-      }
-
-      const answer = Effect.fn("Agent.answer")(function* (question: string) {
+      const answer = Effect.fn("Agent.answer")(function* (
+        question: string,
+        { key, endpoint, model }: AvailableModel,
+        evaluationRunId: string | null
+      ) {
+        const settings: LoopSettings = {
+          ...config.loop,
+          contextTokens: endpoint.contextTokens,
+          answerTokens: endpoint.answerTokens,
+          bytesPerToken: endpoint.bytesPerToken
+        }
         const requestId = crypto.randomUUID()
         const receivedAt = yield* Clock.currentTimeMillis
         const tools = turnTools(yield* connections.current)
@@ -142,14 +165,20 @@ export class Agent extends Context.Service<
           }
           if (isBrowserEvent(event)) return Effect.succeed([event])
           if (event._tag !== "Finished") return Effect.succeed([])
-          return Effect.map(Ref.get(unreachable), (servers) => [
-            new QuestionEnded({
-              requestId,
-              outcome: event.outcome,
-              message: event.failure === null ? null : messageFor(event.failure, requestId),
-              unavailableServers: [...servers]
-            })
-          ])
+          return Effect.gen(function* () {
+            const servers = yield* Ref.get(unreachable)
+            const { inputTokens, outputTokens } = yield* Ref.get(trace)
+            return [
+              new QuestionEnded({
+                requestId,
+                outcome: event.outcome,
+                message: event.failure === null ? null : messageFor(event.failure, requestId),
+                unavailableServers: [...servers],
+                model: { configuration: key, modelId: endpoint.modelId },
+                usage: { inputTokens, outputTokens }
+              })
+            ]
+          })
         }
 
         const writeTrace = Effect.gen(function* () {
@@ -161,6 +190,8 @@ export class Agent extends Context.Service<
               question,
               modelConfig: key,
               modelId: endpoint.modelId,
+              modelSettings: modelSettings(endpoint),
+              evaluationRunId,
               promptVersion: systemPrompt.version,
               unavailableServers: [...(yield* Ref.get(unreachable))],
               latencyMs: endedAt - receivedAt,
@@ -179,14 +210,28 @@ export class Agent extends Context.Service<
       })
 
       /**
-       * Takes a permit and returns the answer's events; the permit is released when the stream ends, however it
-       * ends, before the trace is written. The take and the stream's construction run uninterruptibly, so an
-       * interruption between them cannot leak a permit.
+       * Finds the question's model configuration, takes one of its permits and returns the answer's events; the
+       * permit is released when the stream ends, however it ends, before the trace is written. The take and the
+       * stream's construction run uninterruptibly, so an interruption between them cannot leak a permit.
        */
-      const ask = Effect.fn("Agent.ask")(function* (question: string) {
+      const ask = Effect.fn("Agent.ask")(function* (question: string, options: AskOptions = {}) {
+        const requested = options.model
+        const available =
+          requested === undefined
+            ? models.default
+            : yield* Option.match(models.find(requested), {
+                onNone: () =>
+                  Effect.fail(
+                    new ModelNotOffered({ model: requested, offered: models.offered.map((offered) => offered.key) })
+                  ),
+                onSome: Effect.succeed
+              })
+        const { permits } = available
         const admitted = yield* Semaphore.takeIfAvailable(permits, 1)
         if (!admitted) return yield* new AgentBusy()
-        const events = yield* answer(question).pipe(Effect.onError(() => Semaphore.release(permits, 1)))
+        const events = yield* answer(question, available, options.evaluationRunId ?? null).pipe(
+          Effect.onError(() => Semaphore.release(permits, 1))
+        )
         return events.pipe(Stream.ensuring(Semaphore.release(permits, 1)))
       }, Effect.uninterruptible)
 

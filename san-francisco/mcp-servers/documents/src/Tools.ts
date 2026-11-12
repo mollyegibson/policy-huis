@@ -24,7 +24,7 @@ const Citations = Schema.Array(Citation)
 
 const DocumentId = Schema.NonEmptyString.annotate({ description: "A document ID, as the tool description lists them" })
 const ProvisionNumber = Schema.NonEmptyString.annotate({
-  description: "A section or subsection number, such as appears in tool results, e.g. 37.9(a)(8)"
+  description: "A section or subsection number, written exactly as tool results write it"
 })
 
 export const Passage = Schema.Struct({
@@ -109,22 +109,22 @@ const listProvisions = (documentIds: string) =>
 /** A loaded document, as the tool descriptions list it. */
 export interface CorpusDocument {
   readonly documentId: string
-  readonly title: string
   readonly documentType: string
-  readonly versionDate: string
   readonly description: string
 }
 
-/** One line per document: its ID, title, type and version, and what it covers, in the corpus file's words. */
+/**
+ * One line per document: its ID, its type, and what it covers, in the corpus file's words. Titles and versions are
+ * left out: they hold numbers (a code chapter, a date) that the model would repeat without a citation, and every
+ * result carries its document's version and every citation its title.
+ */
 export const corpusListing = (documents: ReadonlyArray<CorpusDocument>): string =>
   documents.length === 0
     ? "None are loaded yet."
-    : documents
-        .map((d) => `- ${d.documentId}: ${d.title} (${d.documentType}, as of ${d.versionDate}). ${d.description}`)
-        .join("\n")
+    : documents.map((d) => `- ${d.documentId} (${d.documentType}): ${d.description}`).join("\n")
 
 const documentIdList = (documents: ReadonlyArray<CorpusDocument>): string =>
-  documents.length === 0 ? "none loaded yet" : documents.map((d) => `${d.documentId} (${d.title})`).join(", ")
+  documents.length === 0 ? "none loaded yet" : documents.map((d) => d.documentId).join(", ")
 
 /**
  * The server's tools, with the loaded documents written into their descriptions, so the model knows from the tool

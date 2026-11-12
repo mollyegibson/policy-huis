@@ -35,7 +35,7 @@ It does not:
 | `config/ServerDirectory.ts` | Decodes `backend/config/servers.yaml`: each server's name, label, URL and tool prefix (words of lowercase letters and digits, each followed by one underscore, such as `sf_docs_`); fails at startup if two servers share a name or a prefix |
 | `config/BackendConfig.ts` | Every environment variable the backend reads, from `backend/.env` first: `AppDatabaseConfig` (`APP_DATABASE_URL`), `HttpConfig` (`BACKEND_PORT`) and `ModelApiKeysConfig` (`FRONTIER_API_KEY`, `SAME_MODEL_CLOUD_API_KEY`), each a service read once at startup through `@policyhuis/node-config` |
 | `config/HttpUrl.ts` | The schema for an absolute http or https URL in the config files |
-| `model/ModelLayer.ts` | Builds the `LanguageModel` layer for the configured model configuration (Local, Same model in the cloud, Frontier) through `@effect/ai-openai-compat`; the only module that imports a provider package |
+| `model/ModelLayer.ts` | `Models`: a `LanguageModel` and an admission semaphore for each offered model configuration (Local, Same model in the cloud, Frontier), through `@effect/ai-openai-compat` or `@effect/ai-anthropic` by the configuration's `provider`; the only module that imports a provider package |
 | `tools/McpConnections.ts` | One `McpClient` per server on the sessionless MCP protocol, and the toolkit of the tools it listed, built once when it connects with `trustAnnotations: true`, so each tool's published `annotations.title` becomes its `Tool.Title`; the read-only and destructive hints copied with it are not used |
 | `tools/TurnToolkit.ts` | `turnTools`: merges the connected servers' toolkits into one request's toolkit, with the map from each tool to its server and title (the tool's own name in words, for a server that publishes no title) |
 | `agent/Agent.ts` | The `Agent` service: admits a question, builds its prompt and toolkit, runs the loop, notes unreachable servers, sends each citation once, and writes the trace |
@@ -61,14 +61,16 @@ Declared choices live in `backend/config/agent.yaml`, reviewed by pull request; 
 
 | Field | Meaning | Value |
 |---|---|---|
-| `model.configuration` | Which configuration provides `LanguageModel`: `local`, `same_model_cloud` or `frontier` | Set per run |
-| `model.configurations.<key>` | For each configuration: base URL and model ID (no keys), and the limits below, which depend on the model | From S1 |
+| `model.default` | The configuration that answers a question that names none: `local`, `same_model_cloud` or `frontier` | `local` |
+| `model.offered` | The configurations a question may name, in the order the browser app lists them; each needs its API key in `backend/.env`, except `local` | `[local, frontier]` |
+| `model.configurations.<key>` | For each configuration: its `provider` (`openai-compat` or `anthropic`), the `label` the browser app shows for it, its model ID (and base URL, for `openai-compat`), no keys, and the limits below, which depend on the model | From S1 |
+| `model.configurations.<key>.effort` | For an `anthropic` configuration: `low`, `medium` or `high`, sent as `output_config.effort`. Claude thinks on every turn; effort is how much | frontier: `low`, matching the local configuration's `reasoning_effort` |
 | `model.configurations.<key>.contextTokens` | The model's context length; a local runtime is configured with the same value (Ollama's `num_ctx`, llama.cpp's `--ctx-size`) | From S1; for a cloud model, its published context length or less |
 | `model.configurations.<key>.answerTokens` | Maximum output tokens per model turn, sent with every request and reserved from `contextTokens`. The provider stops generating at this cap and reports finish reason `length`; for a reasoning model, the cap includes its reasoning tokens | From S2 |
 | `model.configurations.<key>.bytesPerToken` | Conservative bytes-per-token ratio for estimating tool results' tokens before a step | From S1, measured on real tool results with the model's tokenizer |
 | `model.configurations.<key>.maxConcurrentQuestions` | Questions answered at once with this model | For a local runtime, from S1: no more than the requests it serves in parallel (see [Admission](#admission)); for a cloud provider, within its rate limits |
-| `model.configurations.<key>.outputTokensParameter` | The request field that carries `answerTokens`: `max_tokens` (the default, which Ollama documents) or `max_completion_tokens`. `@effect/ai-openai-compat` sends the cap as `max_tokens`, which OpenAI rejects for `gpt-6-luna` ("Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.", a test call on November 5, 2026), so the model layer sends the cap itself under the configured name | Per configuration; frontier: `max_completion_tokens` |
-| `model.configurations.<key>.requestOptions` | Optional extra fields sent unchanged in every request body to that model, for settings its server needs. `@effect/ai-openai-compat` passes unknown `Config` fields through. The frontier configuration (`gpt-6-luna` on Chat Completions) sets `reasoning_effort: none`, because OpenAI supports function calling there only with reasoning off ([model page](https://developers.openai.com/api/docs/models/gpt-6-luna), checked November 5, 2026) | Per configuration |
+| `model.configurations.<key>.outputTokensParameter` | The request field that carries `answerTokens`: `max_tokens` (the default, which Ollama documents) or `max_completion_tokens`. `@effect/ai-openai-compat` sends the cap as `max_tokens`, which OpenAI rejects for `gpt-6-luna` ("Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.", a test call on November 5, 2026), so the model layer sends the cap itself under the configured name | Per `openai-compat` configuration; `max_tokens` when omitted |
+| `model.configurations.<key>.requestOptions` | Optional extra fields sent unchanged in every request body to that model, for settings its server needs. `@effect/ai-openai-compat` passes unknown `Config` fields through. The local configuration sets `reasoning_effort: low` | Per `openai-compat` configuration |
 | `loop.maxSteps` | Model turns with tools per question; one final turn without tools follows when the limit is reached | From S2 |
 | `loop.stepTimeout` | Longest one model turn may take, including its tool calls | From S1 (local generation takes 10–30 seconds per answer) |
 | `loop.requestTimeout` | Longest a whole question may take, across all steps and the final turn | From S1 |
@@ -83,13 +85,13 @@ Declared choices live in `backend/config/agent.yaml`, reviewed by pull request; 
 
 `backend/config/servers.yaml` is the server directory, and the only place a deployment names its cities: for each server, its `name` (for example `sf-data`), `label` (`SF Data`, shown in the browser app beside each of its lookups), `url` (`http://<host>:<port>/mcp`) and tool `prefix` (`sf_data_`). `backend/.env` holds the port to serve on (`BACKEND_PORT`), the `app` database URL (`APP_DATABASE_URL`) and each cloud model configuration's API key, named `<CONFIGURATION>_API_KEY` (`FRONTIER_API_KEY`, `SAME_MODEL_CLOUD_API_KEY`); `backend/.env.example` lists them.
 
-**Missing configuration is a `ConfigFileError`.** The shared library `@policyhuis/node-config` (`shared/node-config/`) reads every node's configuration the same way: YAML files decoded with a `Schema`, and a `.env` file that takes priority over the shell, so another project's variables cannot leak in. The backend reads its `.env` variables only through `config/BackendConfig.ts` (see [Effect Style § 13](../effect-style.md#13-read-the-environment-through-one-configuration-module)). Anything missing or invalid (a field in `agent.yaml`, the prompt file it names, a selected model configuration with no entry, a variable missing from `.env`) fails startup with a `ConfigFileError` naming the file to fix and the field or variable, never a defect.
+**Missing configuration is a `ConfigFileError`.** The shared library `@policyhuis/node-config` (`shared/node-config/`) reads every node's configuration the same way: YAML files decoded with a `Schema`, and a `.env` file that takes priority over the shell, so another project's variables cannot leak in. The backend reads its `.env` variables only through `config/BackendConfig.ts` (see [Effect Style § 13](../effect-style.md#13-read-the-environment-through-one-configuration-module)). Anything missing or invalid (a field in `agent.yaml`, the prompt file it names, an offered model configuration with no entry or no API key, a variable missing from `.env`) fails startup with a `ConfigFileError` naming the file to fix and the field or variable, never a defect.
 
 ## Startup
 
 1. Decode `agent.yaml` and `servers.yaml`, and read the system prompt file; any error stops the process with a `ConfigFileError` naming the file and field. Two servers with the same name or tool prefix are an error. Unique prefixes do not guarantee unique tool names when one prefix starts another (`sf_` and `sf_docs_`), so each request's toolkit offers a tool name that two connected servers share by neither, and logs an error naming both.
 2. Apply the `app` schema's pending Drizzle migrations from `backend/drizzle/`.
-3. Build the `LanguageModel` layer for `model.configuration`.
+3. Build a `LanguageModel` and an admission semaphore for each configuration in `model.offered`.
 4. For each server in the directory, open an `McpClient` with the Streamable HTTP transport (`McpClient.make` with `McpClient.http`), initialize it, list its tools and build their toolkit with `McpClient.toolkit`, within `tools.callTimeout`. A server that cannot be reached is retried in the background with exponential backoff; startup continues.
 5. Serve `QuestionsApi` over HTTP.
 
@@ -135,13 +137,13 @@ sequenceDiagram
         M-->>L: finish (usage)
     end
     L-->>B: TextChunk (the answering turn's text)
-    L-->>B: Complete { requestId, outcome, unavailableServers }
+    L-->>B: Complete { requestId, outcome, unavailableServers, model, usage }
     A->>T: write trace folded from the events (after the stream ends, in the background)
 ```
 
 ## Admission
 
-`Agent.ask` takes a permit from a semaphore sized the model configuration's `maxConcurrentQuestions`. If none is free, it fails with `AgentBusy`, which the handler returns as `503 AgentUnavailable { reason: "busy" }` before the stream starts, so a stream that starts always ends with `Complete`. Busy is the only reason for a `503`: an unreachable model ends the stream with `Complete { outcome: "failed" }` after its retries, and an unreachable server is reported in `Complete.unavailableServers` (see [Unavailable servers](#unavailable-servers)).
+`Agent.ask` finds the question's model configuration (the default when the question names none; `ModelNotOffered`, returned as `400 UnknownModel`, when it names one not offered) and takes a permit from that configuration's semaphore, sized its `maxConcurrentQuestions`, so a question for one configuration never waits behind another's. If none is free, it fails with `AgentBusy`, which the handler returns as `503 AgentUnavailable { reason: "busy" }` before the stream starts, so a stream that starts always ends with `Complete`. Busy is the only reason for a `503`: an unreachable model ends the stream with `Complete { outcome: "failed" }` after its retries, and an unreachable server is reported in `Complete.unavailableServers` (see [Unavailable servers](#unavailable-servers)).
 
 **The permit belongs to the answer's stream, not to an effect.** `Semaphore.withPermitsIfAvailable` releases its permits when the wrapped effect completes (`effect/src/Semaphore.ts`, 4.1.2), and `ask` completes as soon as it returns the `Stream` value, before any event is sent. So `ask` takes the permit with `Semaphore.takeIfAvailable` and, when it gets one, returns a stream with `Stream.ensuring(Semaphore.release(1))`, which releases it on every exit (completion, failure or the browser disconnecting). The take and the construction of the stream run uninterruptibly, so an interruption between them cannot leak a permit. Checked on November 5, 2026 with a throwaway test over a real socket, and kept covered by the admission tests in [Testing](#testing): while one `StreamSse` response is open a second request gets `503`, and the stream's finalizers run when the client disconnects, both mid-stream and before the first event, freeing the permit.
 
@@ -217,7 +219,7 @@ finalTurn(prompt, notice, failure):
   timedTurn(Prompt.concat(prompt, notice), final: true), answering with the limit's outcome and failure
 ```
 
-`Agent` drops the internal events and turns `Finished` into `QuestionEnded { requestId, outcome, message, unavailableServers }`; the handler turns that into `Complete` and merges in keepalives (see [Streaming to the browser](#streaming-to-the-browser)).
+`Agent` drops the internal events and turns `Finished` into `QuestionEnded { requestId, outcome, message, unavailableServers, model, usage }`; the handler turns that into `Complete` and merges in keepalives (see [Streaming to the browser](#streaming-to-the-browser)).
 
 - **One step** is one `LanguageModel.streamText` call: one model turn plus the resolution of the tool calls it makes.
 - **The next step's prompt** is this step's prompt plus this step's output: `Prompt.fromResponseParts` turns the step's parts into an assistant message (its text and tool calls) and a tool message (the tool results).
@@ -417,15 +419,15 @@ Every function is an `Effect.fn` with a name, so each request produces a span tr
 
 ## API contract
 
-One endpoint, in the `QuestionsApi` group defined in `protocol/` so the backend and the browser app share it (see [Streaming to the browser](#streaming-to-the-browser)). Requests are stateless: each question is answered on its own.
+Two endpoints, in the `QuestionsApi` and `ModelsApi` groups defined in `protocol/` so the backend and its clients (the browser app and the evaluation) share them; `GET /api/v1/models` returns `OfferedModels`, the configurations a question may name and the default (see [Streaming to the browser](#streaming-to-the-browser)). Requests are stateless: each question is answered on its own.
 
 ### `POST /api/v1/questions`
 
 | | |
 |---|---|
-| Request body | `QuestionRequest`: `{ "question": string }`, 1 to 2,000 characters |
+| Request body | `QuestionRequest`: `{ "question": string, "model"?: string, "evaluationRunId"?: uuid }`; the question 1 to 2,000 characters, `model` one of `GET /api/v1/models`'s configurations |
 | Success | `200`, `Content-Type: text/event-stream`: a stream of `AgentStreamEvent`s, always ending with `Complete` |
-| `400` | The body failed to decode: `HttpApi`'s built-in decode error |
+| `400` | The body failed to decode: `HttpApi`'s built-in decode error; or `UnknownModel { model, offered, message }`, for a `model` the backend does not offer |
 | `503` | `AgentUnavailable { reason: "busy", message }`, for the browser app to show. Checked before the stream starts, so a stream that starts always ends with `Complete` |
 
 **Wire format.** Each event is one server-sent event, written by `HttpApiSchema.StreamSse({ data: AgentStreamEvent })`: every event is named `message`, and `data` is the event encoded as JSON, `_tag` included. The browser app decodes `data` with `AgentStreamEvent`, so both ends share one definition.
@@ -444,7 +446,7 @@ event: message
 data: {"_tag":"TextChunk","text":"… [sf_data.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f]"}
 
 event: message
-data: {"_tag":"Complete","requestId":"…","outcome":"answered","message":null,"unavailableServers":[]}
+data: {"_tag":"Complete","requestId":"…","outcome":"answered","message":null,"unavailableServers":[],"model":{"configuration":"local","modelId":"gpt-oss:20b"},"usage":{"inputTokens":9120,"outputTokens":410}}
 ```
 
 The example's values are illustrative only, not data.
@@ -456,13 +458,20 @@ import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/ht
 
 import { Citation } from "./Citation.ts"
 
+/**
+ * One question. `model` names the model configuration to answer it, as `GET /api/v1/models` lists them; without it,
+ * the backend's default answers. `evaluationRunId` marks the question as part of an evaluation run, and is written to
+ * its trace.
+ */
 export class QuestionRequest extends Schema.Class<QuestionRequest>("QuestionRequest")({
   question: Schema.String.pipe(
     Schema.check(
       Schema.isMinLength(1, { message: "A question must not be empty" }),
       Schema.isMaxLength(2000, { message: "A question must be at most 2,000 characters" })
     )
-  )
+  ),
+  model: Schema.optionalKey(Schema.NonEmptyString),
+  evaluationRunId: Schema.optionalKey(Schema.String.pipe(Schema.check(Schema.isUUID())))
 }) {}
 
 /** The UUID the backend gives each lookup. */
@@ -522,13 +531,17 @@ export class Keepalive extends Schema.TaggedClass<Keepalive>()("Keepalive", {}) 
 
 /**
  * The last event of every stream that is not interrupted. `message` explains, for the user, why an answer is
- * incomplete, and is null when answered; `unavailableServers` names the data servers that could not be reached.
+ * incomplete, and is null when answered; `unavailableServers` names the data servers that could not be reached;
+ * `model` is the model configuration that answered and its model ID; `usage` is the tokens the model read and wrote
+ * over every step, thinking included.
  */
 export class Complete extends Schema.TaggedClass<Complete>()("Complete", {
   requestId: Schema.String.pipe(Schema.check(Schema.isUUID())),
   outcome: Schema.Literals(["answered", "step_limit", "context_limit", "truncated", "failed"]),
   message: Schema.NullOr(Schema.String),
-  unavailableServers: Schema.Array(Schema.String)
+  unavailableServers: Schema.Array(Schema.String),
+  model: Schema.Struct({ configuration: Schema.String, modelId: Schema.String }),
+  usage: Schema.Struct({ inputTokens: Schema.Int, outputTokens: Schema.Int })
 }) {}
 
 export const AgentStreamEvent = Schema.Union([TextChunk, LookupStarted, LookupEnded, Sources, Keepalive, Complete])
@@ -544,17 +557,48 @@ export class AgentUnavailable extends Schema.TaggedError<AgentUnavailable>()(
   { httpApiStatus: 503 }
 ) {}
 
+/** Returned as `400` before the stream starts, when a question names a model configuration the backend does not offer. */
+export class UnknownModel extends Schema.TaggedError<UnknownModel>()(
+  "UnknownModel",
+  {
+    model: Schema.String,
+    offered: Schema.Array(Schema.String),
+    message: Schema.String
+  },
+  { httpApiStatus: 400 }
+) {}
+
 /** `POST /api/v1/questions`: one question in, a stream of server-sent events out, always ending with `Complete`. */
 export const QuestionsApi = HttpApiGroup.make("questions").add(
   HttpApiEndpoint.post("ask", "/questions", {
     payload: QuestionRequest,
     success: HttpApiSchema.StreamSse({ data: AgentStreamEvent }),
-    error: AgentUnavailable
+    error: [AgentUnavailable, UnknownModel]
   })
 )
 
+/** One model configuration a question may name: its key, the label to show for it, and its model ID. */
+export const OfferedModel = Schema.Struct({
+  configuration: Schema.String,
+  label: Schema.String,
+  modelId: Schema.String
+})
+export type OfferedModel = typeof OfferedModel.Type
+
+/** The model configurations a question may name, in the backend's order, and the one that answers when it names none. */
+export const OfferedModels = Schema.Struct({
+  default: Schema.String,
+  models: Schema.Array(OfferedModel)
+})
+export type OfferedModels = typeof OfferedModels.Type
+
+/** `GET /api/v1/models`: the model configurations a question may name. */
+export const ModelsApi = HttpApiGroup.make("models").add(
+  HttpApiEndpoint.get("list", "/models", { success: OfferedModels })
+)
+
 /** The backend's API; every path is under `/api/v1`, so a later breaking change can live beside it as `/api/v2`. */
-export const PolicyHuisApi = HttpApi.make("policyhuis").add(QuestionsApi).prefix("/api/v1")
+export const PolicyHuisApi = HttpApi.make("policyhuis").add(QuestionsApi).add(ModelsApi).prefix("/api/v1")
 ```
 
 | `Complete.outcome` | Meaning |
@@ -613,7 +657,7 @@ CREATE TABLE "app"."tool_calls" (
 ALTER TABLE "app"."tool_calls" ADD CONSTRAINT "tool_calls_request_id_requests_request_id_fk" FOREIGN KEY ("request_id") REFERENCES "app"."requests"("request_id") ON DELETE no action ON UPDATE no action;
 ```
 
-`model_config` names one of the three model configurations in [Ubiquitous Language](../ubiquitous-language.md) (Local, Same model in the cloud, Frontier); their keys are declared in `backend/config/agent.yaml`. The request row and its children are written in one transaction after `Complete`. Evaluation and energy tables are designed with the evaluation work (MVP plan, Evaluation and energy).
+Migration `0001` adds `model_settings jsonb NOT NULL DEFAULT '{}'` (the configuration's effort or request options) and `evaluation_run_id uuid` (null for a question from a user). `model_config` names one of the three model configurations in [Ubiquitous Language](../ubiquitous-language.md) (Local, Same model in the cloud, Frontier); their keys are declared in `backend/config/agent.yaml`. The request row and its children are written in one transaction after `Complete`. Evaluation and energy tables are designed with the evaluation work (MVP plan, Evaluation and energy).
 
 Traces store each question as asked, so the web app tells users that questions are logged.
 

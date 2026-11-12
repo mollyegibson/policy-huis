@@ -1,6 +1,7 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { describe, expect, it } from "@effect/vitest"
-import { Context, Duration, Effect, Fiber, Layer, Ref, Schedule, Stream } from "effect"
+import { Context, Duration, Effect, Fiber, Layer, Option, Ref, Schedule, Semaphore, Stream } from "effect"
+import { LanguageModel } from "effect/ai"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
 
@@ -13,6 +14,8 @@ import type { AgentConfigFile } from "../src/config/AgentConfig.ts"
 import { AgentConfig } from "../src/config/AgentConfig.ts"
 import type { ServerEntry } from "../src/config/ServerDirectory.ts"
 import { SystemPrompt } from "../src/loop/SystemPrompt.ts"
+import type { AvailableModel } from "../src/model/ModelLayer.ts"
+import { Models } from "../src/model/ModelLayer.ts"
 import { McpConnections, makeConnections } from "../src/tools/McpConnections.ts"
 import type { TraceRecord } from "../src/trace/TraceStore.ts"
 import { TraceStore } from "../src/trace/TraceStore.ts"
@@ -24,11 +27,24 @@ import { startTestServer } from "./support/TestMcpServer.ts"
 /** Synthetic settings for these tests only; the backend's values are in config/agent.yaml. */
 const CONFIG: AgentConfigFile = {
   model: {
-    configuration: "frontier",
+    default: "frontier",
+    offered: ["frontier", "local"],
     configurations: {
       frontier: {
+        provider: "anthropic",
+        label: "Test frontier model",
+        modelId: "test-claude",
+        effort: "low",
+        contextTokens: 100_000,
+        answerTokens: 1_000,
+        bytesPerToken: 4,
+        maxConcurrentQuestions: 1
+      },
+      local: {
+        provider: "openai-compat",
+        label: "Test local model",
         baseUrl: "https://models.example.test/v1",
-        modelId: "test-model",
+        modelId: "test-local",
         contextTokens: 100_000,
         answerTokens: 1_000,
         bytesPerToken: 4,
@@ -57,6 +73,33 @@ const CONFIG: AgentConfigFile = {
 }
 
 class Traces extends Context.Service<Traces, Ref.Ref<ReadonlyArray<TraceRecord>>>()("test/Traces") {}
+
+/** Both configurations in `CONFIG`, answering from the one scripted model, each with its own permits. */
+const scriptedModels = Layer.effect(
+  Models,
+  Effect.gen(function* () {
+    const model = yield* LanguageModel.LanguageModel
+    const available = yield* Effect.forEach(
+      CONFIG.model.offered,
+      Effect.fnUntraced(function* (key) {
+        const endpoint = CONFIG.model.configurations[key]
+        if (endpoint === undefined) return yield* Effect.die(`no test entry for ${key}`)
+        const entry: AvailableModel = {
+          key,
+          endpoint,
+          model,
+          permits: yield* Semaphore.make(endpoint.maxConcurrentQuestions)
+        }
+        return entry
+      })
+    )
+    return {
+      default: available[0],
+      offered: available,
+      find: (key: string) => Option.fromNullishOr(available.find((entry) => entry.key === key))
+    }
+  })
+)
 
 /**
  * The question API on a local port with a scripted model, test MCP servers and an in-memory trace store; with
@@ -91,16 +134,16 @@ const apiLayer = (
         Layer.succeed(SystemPrompt, { text: "You answer housing questions.", version: "test" })
       )
     ),
-    Layer.provideMerge(scriptedModel(script)),
+    Layer.provideMerge(scriptedModels.pipe(Layer.provideMerge(scriptedModel(script)))),
     Layer.provideMerge(traces),
     Layer.provideMerge(NodeHttpServer.layerTest)
   )
 }
 
-const ask = (question: string) =>
+const ask = (question: string, options: { readonly model?: string; readonly evaluationRunId?: string } = {}) =>
   Effect.gen(function* () {
     const client = yield* HttpApiClient.make(PolicyHuisApi)
-    return yield* client.questions.ask({ payload: QuestionRequest.make({ question }) })
+    return yield* client.questions.ask({ payload: QuestionRequest.make({ question, ...options }) })
   })
 
 const collect = (stream: Stream.Stream<AgentStreamEvent, unknown>) =>
@@ -277,6 +320,89 @@ describe("POST /api/v1/questions", () => {
           "These data servers are unreachable for this question: b-data."
         )
         yield* up.stop
+      }).pipe(Effect.scoped),
+    30_000
+  )
+
+  it.live(
+    "answers with the configuration a question names, and says which in Complete and the trace",
+    () =>
+      Effect.gen(function* () {
+        const server = yield* startTestServer(0)
+        const runId = "0f1e2d3c-4b5a-4968-8776-5a4b3c2d1e0f"
+        const { complete, trace } = yield* Effect.gen(function* () {
+          const events = yield* collect(yield* ask("What is the word?", { model: "local", evaluationRunId: runId }))
+          const [trace] = yield* waitForTraces(1)
+          return { complete: events.at(-1), trace }
+        }).pipe(Effect.provide(apiLayer(answerScript, [{ name: "a-data", label: "A", prefix: "a_", url: server.url }])))
+
+        expect(complete?._tag === "Complete" ? [complete.model, complete.usage] : null).toEqual([
+          { configuration: "local", modelId: "test-local" },
+          { inputTokens: 130, outputTokens: 15 }
+        ])
+        expect(trace === undefined ? null : [trace.modelConfig, trace.modelId, trace.evaluationRunId]).toEqual([
+          "local",
+          "test-local",
+          runId
+        ])
+        yield* server.stop
+      }).pipe(Effect.scoped),
+    30_000
+  )
+
+  it.live(
+    "turns away a configuration it does not offer with 400, naming the ones it does",
+    () =>
+      Effect.gen(function* () {
+        const error = yield* ask("What is the word?", { model: "same_model_cloud" }).pipe(
+          Effect.flip,
+          Effect.provide(apiLayer(answerScript, []))
+        )
+        expect(error._tag === "UnknownModel" ? [error.model, error.offered] : error._tag).toEqual([
+          "same_model_cloud",
+          ["frontier", "local"]
+        ])
+      }).pipe(Effect.scoped),
+    30_000
+  )
+
+  it.live(
+    "admits a question for one configuration while another configuration is busy",
+    () =>
+      Effect.gen(function* () {
+        const server = yield* startTestServer(0)
+        const script: ReadonlyArray<ScriptedTurn> = [{ parts: [], stall: true }, ...answerScript]
+        yield* Effect.gen(function* () {
+          const reading = yield* Effect.forkChild(collect(yield* ask("first")))
+          yield* Effect.sleep("200 millis")
+          const busy = yield* ask("second").pipe(Effect.flip)
+          expect(busy._tag).toBe("AgentUnavailable")
+          const other = yield* collect(yield* ask("third", { model: "local" }))
+          expect(other.at(-1)?._tag === "Complete" ? other.at(-1) : null).toMatchObject({ outcome: "answered" })
+          yield* Fiber.interrupt(reading)
+        }).pipe(Effect.provide(apiLayer(script, [{ name: "a-data", label: "A", prefix: "a_", url: server.url }])))
+        yield* server.stop
+      }).pipe(Effect.scoped),
+    30_000
+  )
+})
+
+describe("GET /api/v1/models", () => {
+  it.live(
+    "lists the offered configurations in order, with their labels, and the default",
+    () =>
+      Effect.gen(function* () {
+        const listing = yield* Effect.gen(function* () {
+          const client = yield* HttpApiClient.make(PolicyHuisApi)
+          return yield* client.models.list()
+        }).pipe(Effect.provide(apiLayer([], [])))
+        expect(listing).toEqual({
+          default: "frontier",
+          models: [
+            { configuration: "frontier", label: "Test frontier model", modelId: "test-claude" },
+            { configuration: "local", label: "Test local model", modelId: "test-local" }
+          ]
+        })
       }).pipe(Effect.scoped),
     30_000
   )

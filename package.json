@@ -7,6 +7,7 @@
     "backend",
     "browser-app",
     "protocol",
+    "evaluation",
     "shared/node-config",
     "san-francisco/mcp-servers/data",
     "san-francisco/mcp-servers/documents",

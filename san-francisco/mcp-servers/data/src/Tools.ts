@@ -156,7 +156,7 @@ export const AffordablePipelineSummary = Tool.make("affordable_pipeline_summary"
 
 export const AffordablePipelineUnitsByIncomeBand = Tool.make("affordable_pipeline_units_by_income_band", {
   description:
-    "Total MOHCD's affordable pipeline units in each income band, as a share of area median income (AMI), with how many projects have units in that band. Bands are named as MOHCD's dataset names its columns, such as _50_ami for 50% of AMI. A project with units in several bands is counted in each, so the project counts do not add up to the number of projects.",
+    "Total MOHCD's affordable pipeline units in each income band, as a share of area median income (AMI), with how many projects have units in that band. Bands are named as MOHCD's dataset names its columns: the number in a band's name is its percent of AMI. A project with units in several bands is counted in each, so the project counts do not add up to the number of projects.",
   parameters: Schema.Struct({ status: OptionalParam(AffordableStatus) }),
   success: Schema.Struct({
     bands: Schema.Array(
@@ -290,8 +290,8 @@ const RentIncreasePeriod = Schema.Struct({
 export const AllowableRentIncrease = Tool.make("allowable_rent_increase", {
   description:
     "The Rent Board's annual allowable rent increase for rent-controlled units: the most a landlord may raise a " +
-    "tenant's base rent once a year, in percent. The Rent Board sets it each year from 60% of the CPI increase, as " +
-    "Rent Ordinance Sec. 37.3(a)(1) requires, and each rate runs from its effective date to the day before the next: " +
+    "tenant's base rent once a year, in percent. It gives the rate only: how the rate is set is in the rent " +
+    "ordinance, not this data. Each rate runs from its effective date to the day before the next: " +
     "say which period applies. With no date, it returns the latest period published. It is the annual amount only: " +
     "banked increases and increases for capital improvements or utilities are separate, and units outside rent " +
     "control are not covered.",

@@ -8,8 +8,9 @@ from policyhuis_ingest.archive import LocalArchive
 from policyhuis_ingest.load import ingest
 from policyhuis_ingest.source_types import load_sources
 from policyhuis_ingest.testing import FakeFetcher, pdf
+from pydantic import ValidationError
 
-from sf_docs_ingest.corpus import build_passages, load_corpus, load_search_config
+from sf_docs_ingest.corpus import CorpusEntry, build_passages, load_corpus, load_search_config
 from sf_docs_ingest.settings import CORPUS_FILE, CORPUS_SCHEMA, RAW_SCHEMA, SEARCH_FILE, SOURCES_FILE
 from tests.fixtures import pages
 
@@ -130,3 +131,8 @@ def test_reader_role_can_read_passages_and_search_entries_but_not_raw_pages(migr
     assert passages == (True,)
     assert entries == (True,)
     assert raw == (False,)
+
+
+def test_a_corpus_description_with_a_digit_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="holds no digits; found 37"):
+        CorpusEntry(document_type="law", description="The Chapter 37 rent law.", splitter="rent_ordinance")

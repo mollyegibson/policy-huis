@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Literal
@@ -5,7 +6,7 @@ from typing import Literal
 import psycopg
 import yaml
 from psycopg import sql
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from sf_docs_ingest import bla_affordable_housing, rent_ordinance
 from sf_docs_ingest.passages.embed import Embedder
@@ -27,6 +28,16 @@ class CorpusEntry(BaseModel):
     document_type: Literal["law", "report", "reference"]
     description: str = Field(min_length=1)
     splitter: Literal["rent_ordinance", "bla_affordable_housing"]
+
+    @field_validator("description")
+    @classmethod
+    def _no_digits(cls, description: str) -> str:
+        """The docs server shows the description to the model, which would repeat a figure in it without a
+        citation; figures, dates and section numbers belong in the passages."""
+        digits = re.findall(r"\S*\d\S*", description)
+        if digits:
+            raise ValueError(f"a corpus description holds no digits; found {', '.join(digits)}")
+        return description
 
 
 class _CorpusFile(BaseModel):

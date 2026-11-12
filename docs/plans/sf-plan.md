@@ -685,8 +685,8 @@ const RentIncreasePeriod = Schema.Struct({
 export const AllowableRentIncrease = Tool.make("allowable_rent_increase", {
   description:
     "The Rent Board's annual allowable rent increase for rent-controlled units: the most a landlord may raise a " +
-    "tenant's base rent once a year, in percent. The Rent Board sets it each year from 60% of the CPI increase, as " +
-    "Rent Ordinance Sec. 37.3(a)(1) requires, and each rate runs from its effective date to the day before the next: " +
+    "tenant's base rent once a year, in percent. It gives the rate only: how the rate is set is in the rent " +
+    "ordinance, not this data. Each rate runs from its effective date to the day before the next: " +
     "say which period applies. With no date, it returns the latest period published. It is the annual amount only: " +
     "banked increases and increases for capital improvements or utilities are separate, and units outside rent " +
     "control are not covered.",
@@ -724,7 +724,7 @@ export const SfDataToolkit = Toolkit.make(
 
 San Francisco's own server, `sf-docs` in the directory file, with the tool prefix `sf_docs_` (`sf_docs_search_policy`), beside `sf-data`'s `sf_data_`. Each document is loaded in one version, so the tools take no date. Search is vector search with `qwen3-embedding:4b`, served locally by Ollama, as [spike S4](spikes/s4-embeddings.md#decision) decided: the MVP plan's hybrid search added nothing over vector search on Chapter 37 with any model tried, and S4 left keyword search for exact terms (section numbers, named acts) as an open question. When the embedding model cannot be reached, serves another build or returns an unusable vector, a search fails with `EmbeddingModelUnavailable` rather than falling back; `get_provision` and `list_provisions` do not need the model. Search is exact: it computes every search entry's distance to the query, which takes milliseconds at a few thousand entries and returns what S4 measured, where an HNSW index scan would return at most `hnsw.ef_search` entries (40 by default). With no limit given, it returns 10 provisions, the depth S4's threshold is set at. The server is built in [`san-francisco/mcp-servers/documents/`](../../san-francisco/mcp-servers/documents/README.md), beside `data/`, and shares only the database with the passage pipeline in [`san-francisco/ingest/documents/`](../../san-francisco/ingest/documents/README.md): each has its own `config/search.yaml`, and the server checks at startup that its model build is the one stored with every search entry.
 
-**The model learns what the corpus covers from the tool list.** Asked "how much can my landlord raise the rent in a rent-controlled apartment?", the model made no tool call and said none of its tools covered rent control: `search_policy`'s description named no place, subject or document, and Chapter 37's title ("Residential Rent Stabilization and Arbitration Ordinance") never says "rent control". So the server reads `sf_docs.documents` at startup and writes the corpus into its tool descriptions: `search_policy` lists each document's ID, title, type, version and a description of what it covers, and tells the model to search before saying the documents cannot answer; `get_provision` and `list_provisions` list the document IDs, so the model can browse a document without searching first. Each description is declared in `config/corpus.yaml`, worded from the document itself (Chapter 37's is drawn from its own phrase "the rent control provisions of this Chapter 37", in Sec. 37.3, and its table of contents), and stored in `sf_docs.documents.description` (migration 0002). The listing costs no extra model turn, unlike a `list_documents` tool the model would have to call first. A corpus change needs the server restarted, then the backend, which lists each server's tools when it connects. The system prompt has the matching city-neutral rule (see [The system prompt](agent-loop.md#the-system-prompt)).
+**The model learns what the corpus covers from the tool list.** Asked "how much can my landlord raise the rent in a rent-controlled apartment?", the model made no tool call and said none of its tools covered rent control: `search_policy`'s description named no place, subject or document, and Chapter 37's title ("Residential Rent Stabilization and Arbitration Ordinance") never says "rent control". So the server reads `sf_docs.documents` at startup and writes the corpus into its tool descriptions: `search_policy` lists each document's ID, type and a description of what it covers, and tells the model to search before saying the documents cannot answer; `get_provision` and `list_provisions` list the document IDs, so the model can browse a document without searching first. **No tool description holds a digit**: the model repeats what a description says without a citation (on November 11, 2026, Claude stated the rent increase rule, "60% of the CPI … Sec. 37.3(a)(1)", from `allowable_rent_increase`'s description, uncited), so titles and versions stay out of the listing, the corpus descriptions hold no digits (`corpus.py` rejects one), and each server's tests check its tool descriptions and schemas for digits. Each description is declared in `config/corpus.yaml`, worded from the document itself (Chapter 37's is drawn from its own phrase "the rent control provisions of this Chapter 37", in Sec. 37.3, and its table of contents), and stored in `sf_docs.documents.description` (migration 0002). The listing costs no extra model turn, unlike a `list_documents` tool the model would have to call first. A corpus change needs the server restarted, then the backend, which lists each server's tools when it connects. The system prompt has the matching city-neutral rule (see [The system prompt](agent-loop.md#the-system-prompt)).
 
 **A provision often means little without its parent or its children.** 37.9(a)(8)(ii) ("For the use or occupancy of the landlords grandparents…") is a ground for eviction only because of the lead-ins of 37.9(a) and 37.9(a)(8) above it; 37.9(a) ("A landlord shall not endeavor to recover possession of a rental unit unless:") holds nothing until its 17 children. Search finds the right part of a document, and three things let the agent move from there to the provision that answers:
 
@@ -846,22 +846,22 @@ const listProvisions = (documentIds: string) =>
 /** A loaded document, as the tool descriptions list it. */
 export interface CorpusDocument {
   readonly documentId: string
-  readonly title: string
   readonly documentType: string
-  readonly versionDate: string
   readonly description: string
 }
 
-/** One line per document: its ID, title, type and version, and what it covers, in the corpus file's words. */
+/**
+ * One line per document: its ID, its type, and what it covers, in the corpus file's words. Titles and versions are
+ * left out: they hold numbers (a code chapter, a date) that the model would repeat without a citation, and every
+ * result carries its document's version and every citation its title.
+ */
 export const corpusListing = (documents: ReadonlyArray<CorpusDocument>): string =>
   documents.length === 0
     ? "None are loaded yet."
-    : documents
-        .map((d) => `- ${d.documentId}: ${d.title} (${d.documentType}, as of ${d.versionDate}). ${d.description}`)
-        .join("\n")
+    : documents.map((d) => `- ${d.documentId} (${d.documentType}): ${d.description}`).join("\n")
 
 const documentIdList = (documents: ReadonlyArray<CorpusDocument>): string =>
-  documents.length === 0 ? "none loaded yet" : documents.map((d) => `${d.documentId} (${d.title})`).join(", ")
+  documents.length === 0 ? "none loaded yet" : documents.map((d) => d.documentId).join(", ")
 
 /**
  * The server's tools, with the loaded documents written into their descriptions, so the model knows from the tool

@@ -33,7 +33,7 @@ The server connects as `sf_docs_reader`, which can read only the `sf_docs` schem
 
 ## What the model sees
 
-At startup the server reads `sf_docs.documents` and writes the corpus into its tool descriptions: `search_policy` lists each document's ID, title, type, version and description (from the documents ingestion's `config/corpus.yaml`), and `get_provision` and `list_provisions` list the document IDs. So the model knows which documents it can search, and their IDs, from the tool list alone. A corpus change needs this server restarted, then the backend, which lists tools when it connects.
+At startup the server reads `sf_docs.documents` and writes the corpus into its tool descriptions: `search_policy` lists each document's ID, type and description (from the documents ingestion's `config/corpus.yaml`), with no titles or versions, since no tool description holds a digit, and `get_provision` and `list_provisions` list the document IDs. So the model knows which documents it can search, and their IDs, from the tool list alone. A corpus change needs this server restarted, then the backend, which lists tools when it connects.
 
 ## Embedding model
 

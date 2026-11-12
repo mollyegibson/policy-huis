@@ -1,0 +1,24 @@
+{
+  "name": "@policyhuis/evaluation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "eval": "node src/runEval.ts",
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.1.2",
+    "@policyhuis/node-config": "workspace:*",
+    "@policyhuis/protocol": "workspace:*",
+    "effect": "4.1.2",
+    "promptfoo": "0.125.1"
+  },
+  "devDependencies": {
+    "@effect/vitest": "4.1.2",
+    "@types/node": "26.6.6",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
+  }
+}

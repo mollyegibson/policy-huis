@@ -3,14 +3,17 @@
 # document_type: law, report or reference; answers label reports as analysis, not rules.
 # description: what the document covers, in words a reader asking a question would use. The docs server shows it to the
 # model in its tool descriptions, so the model knows when to search this document. Take its wording from the document
-# itself (its title, table of contents and own terms), never from general knowledge, and say where it came from.
+# itself (its title, table of contents and own terms), never from general knowledge, and say where it came from. It
+# holds no digits: the model repeats what a tool description says without a citation, so a figure, date or section
+# number belongs in the passages, which the model cites.
 
 rent_ordinance:
   document_type: law
-  # The ordinance's own phrase "the rent control provisions of this Chapter 37" (Sec. 37.3), and the subjects of its
-  # sections as its table of contents lists them (37.2, 37.3, 37.4 to 37.8, 37.9 to 37.9E, 37.10A, 37.10B, 37.11A).
+  # The ordinance's own phrase "the rent control provisions of this Chapter 37" (Sec. 37.3), its title, and the
+  # subjects of its sections as its table of contents lists them (37.2, 37.3, 37.4 to 37.8, 37.9 to 37.9E, 37.10A,
+  # 37.10B, 37.11A).
   description: >-
-    San Francisco's rent control law (Administrative Code Chapter 37): definitions of the rental units it covers, rent
+    San Francisco's rent control law, the Residential Rent Stabilization and Arbitration Ordinance: definitions of the rental units it covers, rent
     limitations and allowable rent increases, rent increases for capital improvements, the Rent Board and its hearings,
     evictions and the just causes a landlord needs, tenant rights in owner move-in and other no-fault evictions,
     relocation payments, tenant buyout agreements, tenant harassment, and misdemeanors and civil actions.
@@ -19,13 +22,14 @@ rent_ordinance:
 bla_affordable_housing:
   document_type: report
   # The memo's "Summary of Requested Action" on page 1 (its four components) and the headings on its contents page
-  # (page 27), including the ten financing strategies of section 3.
+  # (page 27), including the financing strategies of section 3 except "Leverage SB 593 Bonding Authority", whose name
+  # is a bill number.
   description: >-
     A policy analysis report by the Board of Supervisors' Budget and Legislative Analyst, analysis rather than law:
     how San Francisco funds, builds and plans affordable housing; the impacts of the temporary reduction of impact
     fees and inclusionary requirements; the City's reliance on one-time and market-contingent funds, and financing
     strategies (a revolving loan fund, a joint powers agreement, an open indenture, a municipal bank, enhanced
-    infrastructure financing districts, SB 593 bonding authority, Proposition I revenue, the debt ceiling, the Housing
+    infrastructure financing districts, Proposition I revenue, the debt ceiling, the Housing
     Trust Fund, and new or enhanced taxes); and gaps in the affordable housing delivery system for vulnerable
     communities.
   splitter: bla_affordable_housing

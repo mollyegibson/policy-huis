@@ -12,7 +12,7 @@ import { AppDatabaseConfig, BackendEnv, HttpConfig, ModelApiKeysConfig } from ".
 import { ServerDirectory } from "./config/ServerDirectory.ts"
 import { runMigrations } from "./db/Migrations.ts"
 import { SystemPrompt } from "./loop/SystemPrompt.ts"
-import { ModelLayer } from "./model/ModelLayer.ts"
+import { Models } from "./model/ModelLayer.ts"
 import { McpConnections } from "./tools/McpConnections.ts"
 import { TraceStore } from "./trace/TraceStore.ts"
 
@@ -29,7 +29,7 @@ const Services = Layer.mergeAll(
   McpConnections.layer,
   TraceStore.layer.pipe(Layer.provide(MigrationsLive)),
   SystemPrompt.layer,
-  ModelLayer
+  Models.layer
 )
 
 /** Node's HTTP server on the configured port. */

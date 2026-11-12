@@ -2,9 +2,12 @@
 # Values marked provisional are set until spikes S1 and S2 measure them (see docs/plans/agent-loop.md#configuration).
 
 model:
-  configuration: local
+  default: local # answers a question that names no configuration
+  offered: [local, frontier] # a question may name any of these; each needs its API key in backend/.env, except local
   configurations:
     local:
+      provider: openai-compat
+      label: Open model on this computer
       baseUrl: http://localhost:11434/v1 # Ollama's OpenAI-compatible API
       modelId: gpt-oss:20b
       contextTokens: 32000 # provisional; Ollama must be started with OLLAMA_CONTEXT_LENGTH set to this value
@@ -14,15 +17,14 @@ model:
       requestOptions:
         reasoning_effort: low # provisional; gpt-oss generated about 7x fewer tokens than at high in a test on November 6, 2026
     frontier:
-      baseUrl: https://api.openai.com/v1
-      modelId: gpt-6-luna
-      contextTokens: 32000 # provisional: near a laptop model's budget, far below the model's published 1,050,000
-      answerTokens: 4000 # provisional
+      provider: anthropic
+      label: Frontier model in the cloud
+      modelId: claude-opus-5-5
+      effort: low # matches the local configuration's reasoning_effort
+      contextTokens: 32000 # provisional: the local configuration's budget, so both answer under the same limit
+      answerTokens: 4000 # provisional; includes thinking tokens
       bytesPerToken: 3 # provisional, to be measured on real tool results
-      maxConcurrentQuestions: 4 # provisional, within the provider's rate limits
-      outputTokensParameter: max_completion_tokens # gpt-6-luna rejects max_tokens (checked November 5, 2026)
-      requestOptions:
-        reasoning_effort: none # Chat Completions supports function calling for this model only with reasoning off
+      maxConcurrentQuestions: 4 # provisional, within the account's rate limits
 
 loop:
   maxSteps: 10 # provisional

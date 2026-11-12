@@ -1,0 +1,733 @@
+# The San Francisco question set. The evaluation plan (docs/plans/evaluation.md) explains each field and check.
+#
+# Facts are copied from the archived source each names, never computed or remembered: a data question's figures
+# change with every load, so data questions name none, and every answer is checked instead for numbers that came from
+# no tool result (figuresFromTools). The rent ordinance questions and their provisions are spike S4's
+# (docs/plans/spikes/s4-questions.yaml), labeled there from the loaded passages.
+
+x-docs-tools: &docs_tools [sf_docs_search_policy, sf_docs_get_provision, sf_docs_list_provisions]
+x-report-mentions: &report_mentions [report, analysis, Budget and Legislative Analyst]
+
+questions:
+  # The Budget and Legislative Analyst's report, version 2026-06-05; pages are the PDF's own page numbers. sf-bla-01
+  # to sf-bla-03 are the questions gpt-oss:20b answered without a tool call on November 11, 2026.
+  - id: sf-bla-01
+    type: report
+    question: "What share of San Francisco renter households were rent burdened in 2024?"
+    expect:
+      tools: *docs_tools
+      documents: [bla_affordable_housing]
+      mentions: *report_mentions
+      facts:
+        - any: ["37%", "37 percent"]
+          source: "bla_affordable_housing, Executive Summary, p. 1"
+
+  - id: sf-bla-02
+    type: report
+    question: "How far behind is San Francisco on its RHNA housing goals?"
+    expect:
+      tools: *docs_tools
+      documents: [bla_affordable_housing]
+      mentions: *report_mentions
+      facts:
+        - any: ["82,069"]
+          source: "bla_affordable_housing, Executive Summary, p. 4"
+        - any: ["46,598"]
+          source: "bla_affordable_housing, Executive Summary, p. 4"
+        - any: ["12 percent", "12%"]
+          source: "bla_affordable_housing, Executive Summary, p. 4"
+
+  - id: sf-bla-03
+    type: report
+    question: "How much did MOHCD spend on multifamily affordable housing in FY 2024-25, and where did the money come from?"
+    expect:
+      tools: *docs_tools
+      documents: [bla_affordable_housing]
+      mentions: *report_mentions
+      facts:
+        - any: ["$285.7 million"]
+          source: "bla_affordable_housing, Executive Summary, p. 5"
+        - any: ["$234 million"]
+          source: "bla_affordable_housing, Executive Summary, p. 5"
+
+  - id: sf-bla-04
+    type: report
+    question: "How much revenue did the City lose from the 2023 reduction of impact fees and inclusionary requirements?"
+    expect:
+      tools: *docs_tools
+      documents: [bla_affordable_housing]
+      mentions: *report_mentions
+      facts:
+        - any: ["$448,033"]
+          source: "bla_affordable_housing, Executive Summary, p. 11"
+        - any: ["$1,902,077"]
+          source: "bla_affordable_housing, Executive Summary, p. 12"
+        - any: ["$211,030"]
+          source: "bla_affordable_housing, Executive Summary, p. 12"
+
+  - id: sf-bla-05
+    type: report
+    question: "How much does the temporary fee discount save a developer per unit?"
+    expect:
+      tools: *docs_tools
+      documents: [bla_affordable_housing]
+      mentions: *report_mentions
+      facts:
+        - any: ["$16,433"]
+          source: "bla_affordable_housing, Executive Summary, p. 13"
+        - any: ["0.44"]
+          source: "bla_affordable_housing, Executive Summary, p. 13"
+        - any: ["1.83"]
+          source: "bla_affordable_housing, Executive Summary, p. 13"
+
+  - id: sf-bla-06
+    type: report
+    question: "How much public money would it take to meet San Francisco's affordable housing goals?"
+    expect:
+      tools: *docs_tools
+      documents: [bla_affordable_housing]
+      mentions: *report_mentions
+      facts:
+        - any: ["$17.9 billion"]
+          source: "bla_affordable_housing, Executive Summary, p. 16"
+        - any: ["$900,000"]
+          source: "bla_affordable_housing, Executive Summary, p. 16"
+
+  - id: sf-bla-07
+    type: report
+    question: "What financing tools has the Budget and Legislative Analyst suggested for affordable housing?"
+    expect:
+      tools: *docs_tools
+      documents: [bla_affordable_housing]
+      mentions: *report_mentions
+      facts:
+        - any: ["revolving loan fund"]
+          source: "bla_affordable_housing, recommendation 3.2, p. 23"
+        - any: ["joint powers"]
+          source: "bla_affordable_housing, recommendation 3.2, p. 23"
+        - any: ["open indenture"]
+          source: "bla_affordable_housing, recommendation 3.2, p. 23"
+        - any: ["municipal bank"]
+          source: "bla_affordable_housing, recommendation 3.2, p. 23"
+
+  - id: sf-bla-08
+    type: report
+    question: "What did the report recommend for extremely low-income housing?"
+    expect:
+      tools: *docs_tools
+      documents: [bla_affordable_housing]
+      mentions: *report_mentions
+      facts:
+        - any: ["extremely low-income", "extremely low income"]
+          source: "bla_affordable_housing, recommendation 4.1, p. 26"
+        - any: ["Housing Trust Fund"]
+          source: "bla_affordable_housing, recommendation 4.1, p. 26"
+        - any: ["floor"]
+          source: "bla_affordable_housing, recommendation 4.1, p. 26"
+
+  - id: sf-bla-09 # a good answer also says the inclusionary ordinance itself is not loaded, which no check reads
+    type: report
+    question: "What is the current inclusionary housing requirement for rental projects?"
+    expect:
+      tools: *docs_tools
+      documents: [bla_affordable_housing]
+      mentions: *report_mentions
+      facts:
+        - any: ["24 percent", "24%"]
+          source: "bla_affordable_housing, Exhibit J, p. 11"
+        - any: ["November 1, 2026"]
+          source: "bla_affordable_housing, Exhibit J, p. 11"
+
+  # The rent ordinance (Administrative Code Chapter 37), version 2026-06-29: spike S4's questions, in its order.
+  - id: sf-rent-01 # spike S4 q01
+    type: rule
+    question: "Can my landlord kick me out so his daughter can move into my apartment?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9(a)(8)(ii)"]
+
+  - id: sf-rent-02 # spike S4 q02
+    type: rule
+    question: "How much is my landlord allowed to raise the rent each year?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.3(a)(1)"]
+
+  - id: sf-rent-03 # spike S4 q03
+    type: rule
+    question: "My landlord is evicting me so he can move in himself. How much moving money do I get?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9C(e)(1)"]
+
+  - id: sf-rent-04 # spike S4 q04
+    type: rule
+    question: "Can my landlord refuse to give me an extra key for my dog walker?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.13(b)(2)"]
+
+  - id: sf-rent-05 # spike S4 q05
+    type: rule
+    question: "What is a buyout agreement?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9E(c)"]
+
+  - id: sf-rent-06 # spike S4 q06
+    type: rule
+    question: "What are the just causes for eviction under the Rent Ordinance?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9(a)"]
+
+  - id: sf-rent-07 # spike S4 q07
+    type: rule
+    question: "What does the Rent Ordinance say about landlords using algorithmic rent-setting software?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.10C(b)"]
+
+  - id: sf-rent-08 # spike S4 q08
+    type: rule
+    question: "What information do property owners have to report to the Rent Board about their units?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.15(b)", "37.15(b)(2)"]
+
+  - id: sf-rent-09 # spike S4 q09
+    type: rule
+    question: "How do capital improvement passthroughs work?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.7(a)"]
+
+  - id: sf-rent-10 # spike S4 q10
+    type: rule
+    question: "I signed a deal to take money and move out. Can I back out?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9E(g)"]
+
+  - id: sf-rent-11 # spike S4 q11
+    type: rule
+    question: "My landlord stopped doing repairs and keeps coming into my place to pressure me to leave. Is that allowed?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.10B(a)(2)", "37.10B(a)(4)"]
+
+  - id: sf-rent-12 # spike S4 q12
+    type: rule
+    question: "We just had a baby. Can our landlord charge more rent because there's another person living here now?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.3(a)(11)(A)"]
+
+  - id: sf-rent-13 # spike S4 q13
+    type: rule
+    question: "I'm 72 and have lived in my apartment for 15 years. Can the owner still make me leave so he can move in?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9(i)(1)(A)"]
+
+  - id: sf-rent-14 # spike S4 q14
+    type: rule
+    question: "Can they evict my family in the middle of the school year?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9(j)(1)"]
+
+  - id: sf-rent-15 # spike S4 q15
+    type: rule
+    question: "Our building was just sold. Can the new owner raise my rent or make me move?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9(k)(2)(A)", "37.9(k)(1)(A)"]
+
+  - id: sf-rent-16 # spike S4 q16
+    type: rule
+    question: "The bank foreclosed on my landlord. Do I have to move out?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9D(b)"]
+
+  - id: sf-rent-17 # spike S4 q17
+    type: rule
+    question: "My lease says I have to be out when it ends in August. Do I really have to leave?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9F(b)"]
+
+  - id: sf-rent-18 # spike S4 q18
+    type: rule
+    question: "My landlord is taking away my parking spot. Can he do that without lowering my rent?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.2(r)"]
+
+  - id: sf-rent-19 # spike S4 q19
+    type: rule
+    question: "My landlord evicted me to move in, then rented my old apartment to someone else. What can I do?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9B(a)"]
+
+  - id: sf-rent-20 # spike S4 q20
+    type: rule
+    question: "My landlord says he's taking the whole building off the rental market. How much relocation money do I get?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9A(e)(2)"]
+
+  - id: sf-rent-21 # spike S4 q21
+    type: rule
+    question: "I'm a small landlord and skipped rent increases for a few years. Can I add the ones I missed now?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.3(a)(2)"]
+
+  - id: sf-rent-22 # spike S4 q22
+    type: rule
+    question: "My landlord wants me out for a few months to redo the building. Do I get to move back in, and at what rent?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9(a)(11)"]
+
+  - id: sf-rent-23 # spike S4 q23
+    type: rule
+    question: "Which newly built units are exempt from the rent increase limits?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.3(g)(1)"]
+
+  - id: sf-rent-24 # spike S4 q24
+    type: rule
+    question: "What penalties apply when a landlord fails to file statements of occupancy after an owner move-in eviction?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9(a)(8)(vii)"]
+
+  - id: sf-rent-25 # spike S4 q25
+    type: rule
+    question: "What enforcement tools exist against landlords who harass tenants?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.10B(c)(5)", "37.10B(c)(2)", "37.10B(c)(1)"]
+
+  - id: sf-rent-26 # spike S4 q26
+    type: rule
+    question: "What happens to a landlord's ability to raise rents if they never send their unit info to the Rent Board?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.15(e)"]
+
+  - id: sf-rent-27 # spike S4 q27
+    type: rule
+    question: "My rent went up because of city bond costs on the property tax bill. Is that allowed, and can I get out of paying it?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.3(a)(6)(A)"]
+
+  - id: sf-rent-28 # spike S4 q28
+    type: rule
+    question: "Can my landlord evict me for complaining to the city about mold?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9(d)"]
+
+  - id: sf-rent-29 # spike S4 q29
+    type: rule
+    question: "What disclosures must a landlord give tenants before starting buyout negotiations?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9E(d)"]
+
+  - id: sf-rent-30 # spike S4 q30
+    type: rule
+    question: "I've been living in a motel room for over a month. Am I covered by rent control?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.2(r)(1)"]
+
+  - id: sf-rent-31 # spike S4 q31
+    type: rule
+    question: "Is it a crime for a landlord to charge more rent than the ordinance allows?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.10A(a)"]
+
+  - id: sf-rent-32 # spike S4 q32
+    type: rule
+    question: "Can my landlord keep my security deposit for normal wear and tear?"
+    expect:
+      tools: *docs_tools
+
+  - id: sf-rent-33 # spike S4 q33
+    type: rule
+    question: "How do I register my apartment as a short-term rental on Airbnb in San Francisco?"
+    expect:
+      tools: *docs_tools
+
+  - id: sf-rent-34 # spike S4 q34
+    type: rule
+    question: "What temperature does my landlord have to keep the heat at in winter?"
+    expect:
+      tools: *docs_tools
+
+  - id: sf-rent-35 # spike S4 q35
+    type: rule
+    question: "Under what conditions may a landlord recover possession of a rental unit for occupancy by a relative?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9(a)(8)(ii)"]
+
+  - id: sf-rent-36 # spike S4 q36
+    type: rule
+    question: "What reasons can my landlord legally use to evict me?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9(a)"]
+
+  - id: sf-rent-37 # spike S4 q37
+    type: rule
+    question: "What is the rescission period for a buyout agreement?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9E(g)"]
+
+  - id: sf-rent-38 # spike S4 q38
+    type: rule
+    question: "Is there a defense to a no-fault eviction when a child or an educator lives in the unit during the school year?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9(j)(1)"]
+
+  - id: sf-rent-39 # spike S4 q39
+    type: rule
+    question: "When does an accommodation in a hotel or motel become a rental unit under the Rent Ordinance?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.2(r)(1)"]
+
+  - id: sf-rent-40 # spike S4 q40
+    type: rule
+    question: "Section 37.9C relocation expenses"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9C(b)", "37.9C(e)(1)"]
+
+  - id: sf-rent-41 # spike S4 q41
+    type: rule
+    question: "Ellis Act relocation payments"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9A(e)(2)"]
+
+  - id: sf-rent-42 # spike S4 q42
+    type: rule
+    question: "Costa-Hawkins exemption from rent increase limits"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.3(d)(1)(A)"]
+
+  - id: sf-rent-43 # spike S4 q43
+    type: rule
+    question: "capital improvement amortization schedules"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.7(c)"]
+
+  - id: sf-rent-44 # spike S4 q44
+    type: rule
+    question: "I rent a single-family house in San Francisco. Is my rent controlled?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.3(d)(1)(A)"]
+
+  - id: sf-rent-45 # spike S4 q45
+    type: rule
+    question: "Is my in-law unit covered by rent control?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.2(r)(4)(D)"]
+
+  - id: sf-rent-46 # spike S4 q46
+    type: rule
+    question: "I'm a landlord and my tenant moved a roommate in without asking me. Can I evict them for that?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9(a)(2)(A)", "37.9(a)(2)(D)"]
+
+  - id: sf-rent-47 # spike S4 q47
+    type: rule
+    question: "My building's operating costs went up a lot. How can I raise rents more than the annual limit?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.8(b)(1)"]
+
+  - id: sf-rent-48 # spike S4 q48
+    type: rule
+    question: "Can I be evicted for rent I couldn't pay because of COVID?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+      provisions:
+        document: rent_ordinance
+        any: ["37.9(a)(1)(D)", "37.9(a)(1)(E)"]
+
+  - id: sf-rent-49 # spike S4 q49
+    type: rule
+    question: "How much notice does my landlord have to give before coming into my apartment?"
+    expect:
+      tools: *docs_tools
+
+  - id: sf-rent-50 # spike S4 q50
+    type: rule
+    question: "Can a landlord refuse to rent to me because I have a housing voucher?"
+    expect:
+      tools: *docs_tools
+
+  # The data tools: one question per sf-data tool. Their figures are the tool results', never this file's.
+  - id: sf-data-01 # provisional question SF-03, with the year stated
+    type: ground
+    question: "How many eviction notices were filed in the Mission in 2025, and for what reasons?"
+    expect:
+      tools: [sf_data_eviction_notice_counts]
+      arguments: { neighborhood: Mission, from: "2025-01", to: "2025-12" }
+
+  - id: sf-data-02
+    type: ground
+    question: "What reasons can a landlord give on an eviction notice in San Francisco?"
+    expect:
+      tools: [sf_data_eviction_grounds]
+
+  - id: sf-data-03 # provisional question SF-04
+    type: ground
+    question: "How many affordable units are in the city's pipeline at each income level?"
+    expect:
+      tools: [sf_data_affordable_pipeline_units_by_income_band]
+
+  - id: sf-data-04
+    type: ground
+    question: "How many affordable housing projects in MOHCD's pipeline are under construction?"
+    expect:
+      tools: [sf_data_affordable_pipeline_summary]
+
+  - id: sf-data-05
+    type: ground
+    question: "Which affordable housing projects are planned in the Tenderloin?"
+    expect:
+      tools: [sf_data_affordable_pipeline_projects]
+      arguments: { neighborhood: Tenderloin }
+
+  - id: sf-data-06
+    type: ground
+    question: "How many net new units are in the development pipeline, by status?"
+    expect:
+      tools: [sf_data_development_pipeline_summary]
+
+  - id: sf-data-07
+    type: ground
+    question: "What are the largest housing projects under construction in South of Market?"
+    expect:
+      tools: [sf_data_development_pipeline_projects]
+      arguments: { neighborhood: South of Market }
+
+  - id: sf-data-08 # provisional question SF-08
+    type: climate
+    question: "Which affordable projects in San Francisco fall inside the sea-level-rise zone?"
+    expect:
+      tools: [sf_data_project_hazard_exposure]
+      arguments: { zone: slr_66in_100yr_storm }
+
+  - id: sf-data-09
+    type: ground
+    question: "Where does your eviction data come from, and how current is it?"
+    expect:
+      tools: [sf_data_dataset_info]
+
+  - id: sf-data-10
+    type: ground
+    question: "What was the allowable annual rent increase for rent-controlled units from March 1, 2026?"
+    expect:
+      tools: [sf_data_allowable_rent_increase]
+      facts:
+        - any: ["1.6%", "1.6 percent"]
+          source: "allowable_rent_increase dataset, version 2026-05-01: the rate from March 1, 2026 to February 28, 2027"
+
+  # Rule and data.
+  - id: sf-mix-01
+    type: rule + data
+    question: "Can my landlord raise my rent by 10%?"
+    expect:
+      tools: [sf_data_allowable_rent_increase]
+      documents: [rent_ordinance]
+      notDocuments: [bla_affordable_housing]
+      facts:
+        - any: ["1.6%", "1.6 percent"]
+          source: "allowable_rent_increase dataset, version 2026-05-01: the rate from March 1, 2026 to February 28, 2027"
+
+  - id: sf-mix-02 # provisional question SF-06
+    type: rule + data
+    question: "Which grounds for eviction in the rent ordinance account for the most notices, and which are rising?"
+    expect:
+      tools: [sf_data_eviction_notice_counts]
+      documents: [rent_ordinance]
+
+  - id: sf-mix-03 # provisional question SF-01
+    type: rule
+    question: "Which units are covered by rent control under Chapter 37 of the Administrative Code?"
+    expect:
+      tools: *docs_tools
+      documents: [rent_ordinance]
+
+  # Declines. Whether the answer declines well is read by hand; these check what can be checked.
+  - id: sf-decline-01 # legal advice
+    type: decline
+    question: "My landlord gave me a notice to pay rent or quit. Should I stop paying and fight it in court?"
+    expect:
+      mentions: [Rent Board]
+
+  - id: sf-decline-02 # a causal claim
+    type: decline
+    question: "Did rent control cause evictions in San Francisco to fall?"
+    expect: {}
+
+  - id: sf-decline-03 # a city no server covers
+    type: decline
+    question: "How many eviction notices were filed in Oakland last year?"
+    expect:
+      citesNothing: true
+      mentions: [Oakland]

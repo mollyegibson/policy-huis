@@ -44,8 +44,8 @@ export class HttpConfig extends Context.Service<
 
 /**
  * The API key of each cloud model configuration, by its key in `config/agent.yaml`. Environment: `FRONTIER_API_KEY`
- * and `SAME_MODEL_CLOUD_API_KEY`, each optional here: only the configuration `agent.yaml` selects needs its key, and
- * the model layer fails at startup when that one is missing. The `local` configuration needs none.
+ * and `SAME_MODEL_CLOUD_API_KEY`, each optional here: only the configurations `agent.yaml` offers need their keys, and
+ * the model layer fails at startup when one is missing. The `local` configuration needs none.
  */
 export class ModelApiKeysConfig extends Context.Service<
   ModelApiKeysConfig,

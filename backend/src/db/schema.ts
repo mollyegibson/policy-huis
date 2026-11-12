@@ -19,6 +19,10 @@ export const requests = app.table(
     /** The model configuration's key in `config/agent.yaml`. */
     modelConfig: text("model_config").notNull(),
     modelId: text("model_id").notNull(),
+    /** The configuration's settings beyond its model ID, such as its effort; empty for a configuration with none. */
+    modelSettings: jsonb("model_settings").notNull().default({}),
+    /** The evaluation run the question was asked in; null for a question from a user. */
+    evaluationRunId: uuid("evaluation_run_id"),
     promptVersion: text("prompt_version").notNull(),
     outcome: text("outcome").notNull(),
     steps: integer("steps").notNull(),

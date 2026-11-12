@@ -15,6 +15,10 @@ export interface TraceRecord {
   readonly question: string
   readonly modelConfig: string
   readonly modelId: string
+  /** The model configuration's settings beyond its model ID, such as its effort. */
+  readonly modelSettings: Readonly<Record<string, unknown>>
+  /** The evaluation run the question was asked in, or null for a question from a user. */
+  readonly evaluationRunId: string | null
   readonly promptVersion: string
   readonly unavailableServers: ReadonlyArray<string>
   readonly latencyMs: number
@@ -86,6 +90,8 @@ const insertTrace = async (db: Database, record: TraceRecord) => {
     question: record.question,
     modelConfig: record.modelConfig,
     modelId: record.modelId,
+    modelSettings: record.modelSettings,
+    evaluationRunId: record.evaluationRunId,
     promptVersion: record.promptVersion,
     outcome: traceOutcome(trace),
     steps: trace.steps,
