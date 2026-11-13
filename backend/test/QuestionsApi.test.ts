@@ -427,8 +427,13 @@ describe("GET /api/v1/models", () => {
         expect(listing).toEqual({
           default: "frontier",
           models: [
-            { configuration: "frontier", label: "Test frontier model", modelId: "test-claude" },
-            { configuration: "local", label: "Test local model", modelId: "test-local" }
+            {
+              configuration: "frontier",
+              label: "Test frontier model",
+              modelId: "test-claude",
+              maxConcurrentQuestions: 1
+            },
+            { configuration: "local", label: "Test local model", modelId: "test-local", maxConcurrentQuestions: 1 }
           ]
         })
       }).pipe(Effect.scoped),

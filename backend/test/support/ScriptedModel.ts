@@ -13,6 +13,7 @@ export interface ScriptedTurn {
 export interface RecordedCall {
   readonly prompt: Prompt.Prompt
   readonly toolNames: ReadonlyArray<string>
+  readonly toolChoice: LanguageModel.ProviderOptions["toolChoice"]
 }
 
 export class ModelCalls extends Context.Service<ModelCalls, Ref.Ref<ReadonlyArray<RecordedCall>>>()(
@@ -63,7 +64,8 @@ export const scriptedModel = (script: ReadonlyArray<ScriptedTurn>) =>
                 ...all,
                 {
                   prompt: options.prompt,
-                  toolNames: options.tools.map((tool) => Schema.decodeUnknownSync(Schema.String)(tool.name))
+                  toolNames: options.tools.map((tool) => Schema.decodeUnknownSync(Schema.String)(tool.name)),
+                  toolChoice: options.toolChoice
                 }
               ])
               const turn = script[recorded.length - 1]

@@ -4,13 +4,12 @@ import { PgClient } from "@effect/sql-pg"
 import { describe, expect, layer } from "@effect/vitest"
 import { PostgreSqlContainer } from "@testcontainers/postgresql"
 import { Context, Effect, Layer, Redacted, Schema } from "effect"
-import { McpProtocol, McpServer, McpTest } from "effect/ai"
+import { McpProtocol, McpTest } from "effect/ai"
 import { SqlError } from "effect/sql"
 
 import { Citation, NAMESPACE } from "../src/Citations.ts"
-import { SfDataHandlers } from "../src/Handlers.ts"
 import { HousingRepo } from "../src/HousingRepo.ts"
-import { SfDataToolkit } from "../src/Tools.ts"
+import { RegistrationsLive } from "../src/Server.ts"
 
 const refused = new SqlError.SqlError({
   reason: new SqlError.ConnectionError({ cause: new Error("connection refused") })
@@ -32,8 +31,7 @@ class TestServer extends Context.Service<TestServer, McpTest.Client>()("test/Tes
         ),
         (started) => Effect.promise(() => started.stop())
       )
-      const registrations = McpServer.toolkit(SfDataToolkit).pipe(
-        Layer.provide(SfDataHandlers),
+      const registrations = RegistrationsLive.pipe(
         Layer.provide(HousingRepo.layer),
         Layer.provide(PgClient.layer({ url: Redacted.make(container.getConnectionUri()) }))
       )
@@ -364,6 +362,25 @@ layer(TestServer.layer, { timeout: 120_000 })("sf-data server", (it) => {
     )
   })
 
+  it.effect("offers only the loaded dataset keys to dataset_info", () =>
+    Effect.gen(function* () {
+      const { tools } = yield* (yield* TestServer).listTools()
+      const input = JSON.stringify(tools.find((t) => t.name === "dataset_info")?.inputSchema)
+      for (const key of [
+        "affordable_pipeline",
+        "allowable_rent_increase",
+        "development_pipeline",
+        "eviction_notices",
+        "eviction_report",
+        "sfpuc_100yr_storm"
+      ]) {
+        expect(input).toContain(`"${key}"`)
+      }
+      const invented = yield* call("dataset_info", { dataset: "development_pipeline_summary" })
+      expect(invented.isError).toBe(true)
+    })
+  )
+
   it.effect("describes each dataset with the publisher's own description", () =>
     Effect.gen(function* () {
       const content = yield* structured("dataset_info", { dataset: "sfpuc_100yr_storm" })
@@ -409,14 +426,20 @@ const unreachableRepo = Layer.succeed(HousingRepo, {
 class UnreachableServer extends Context.Service<UnreachableServer, McpTest.Client>()("test/UnreachableServer") {
   static readonly layer = Layer.effect(
     this,
-    McpTest.makeClient(
-      McpServer.toolkit(SfDataToolkit).pipe(Layer.provide(SfDataHandlers), Layer.provide(unreachableRepo)),
-      { protocols: [McpProtocol.v2026_07_28] }
-    )
+    McpTest.makeClient(RegistrationsLive.pipe(Layer.provide(unreachableRepo)), { protocols: [McpProtocol.v2026_07_28] })
   )
 }
 
 layer(UnreachableServer.layer)("sf-data server without its database", (it) => {
+  it.effect("starts, with dataset_info taking any dataset key", () =>
+    Effect.gen(function* () {
+      const { tools } = yield* (yield* UnreachableServer).listTools()
+      const input = JSON.stringify(tools.find((t) => t.name === "dataset_info")?.inputSchema)
+      expect(input).not.toContain("enum")
+      expect(input).not.toContain("const")
+    })
+  )
+
   it.effect("returns DatabaseUnavailable as an error result from every tool", () =>
     Effect.gen(function* () {
       const client = yield* UnreachableServer

@@ -2,9 +2,9 @@
 
 PolicyHuis - Climatebase Fellowship
 
-An AI agent that answers questions about housing policy in **San Francisco** and **Amsterdam** in plain language, citing the law, policy or dataset behind every claim. It runs an open-weight model on the group's own hardware and reaches its knowledge through independent [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) servers. Climate risk is a first-class topic alongside housing.
+An AI agent that answers questions about housing policy in **San Francisco** and **Amsterdam** in plain language, citing the law, policy or dataset behind every claim. It answers with an open-weight model, Qwen3.5-397B-A17B, hosted in the cloud through OpenRouter, and reaches its knowledge through independent [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) servers. Because the weights are open, the same model can later run on-premises, for example at a government agency with the machines for it (see [Model hosting](./docs/plans/mvp-technical-plan.md#model-hosting)). Climate risk is a first-class topic alongside housing.
 
-> **Status: discovery.** The design is a draft and open to revision as user research and the spikes report back. No application code exists yet. Final demo: November 30, 2026.
+> **Status: discovery.** San Francisco's servers, the backend, the browser app and the evaluation run; the Amsterdam nodes are not started. The design is open to revision as user research reports back. Final demo: November 30, 2026.
 
 ## What it answers
 
@@ -16,7 +16,7 @@ An AI agent that answers questions about housing policy in **San Francisco** and
 | Climate | Which neighborhoods with planned housing face high heat stress or flood risk? | City data, sometimes legal text |
 | Cross-city | How do Amsterdam and San Francisco each decide who qualifies for affordable housing? | Both cities' servers |
 
-It **declines** legal advice and causal conclusions ("did rent control reduce evictions?"), pointing to the San Francisco Rent Board or the Huurcommissie, and says when the data can't answer a question. The examples come from the [provisional questions](./docs/plans/provisional-questions.md), pending confirmation from the research team.
+It **declines** legal advice and causal conclusions ("did rent control reduce evictions?"), pointing to the San Francisco Rent Board or the Huurcommissie, and says when the data can't answer a question. San Francisco's questions are in the [evaluation's question set](./evaluation/questions/sf.yaml); Amsterdam's are [drafts](./docs/plans/netherlands-ingestion.md#draft-questions), pending confirmation from the research team.
 
 ## How it works
 
@@ -25,13 +25,13 @@ flowchart LR
     web["React web app<br/>(hosted)"]
     tunnel["Public tunnel<br/>(Cloudflare Tunnel)"]
 
-    subgraph host["Agent host (group hardware)"]
-        agent["Backend<br/>question API + agent loop<br/>TypeScript, Effect 4"]
-        llm["Local model runtime<br/>(OpenAI-compatible API)"]
-        emb["Embedding endpoint"]
-    end
+    agent["Backend<br/>question API + agent loop<br/>TypeScript, Effect 4"]
 
-    cloud["Cloud model<br/>(baseline only)"]
+    subgraph models["Cloud-hosted models"]
+        llm["Open-weight model<br/>Qwen3.5 through OpenRouter"]
+        cloud["Frontier model<br/>Claude, for comparison"]
+        emb["Embedding model<br/>Qwen3-Embedding through OpenRouter"]
+    end
 
     subgraph mesh["Private network (Tailscale)"]
         lt_sf["sf-docs MCP<br/>SF documents"]
@@ -49,7 +49,7 @@ flowchart LR
 
     web -- HTTPS --> tunnel --> agent
     agent --> llm
-    agent -. baseline runs .-> cloud
+    agent -. comparison .-> cloud
     agent -- MCP over HTTP --> lt_sf & lt_ams & d_sf & d_ams
     lt_sf & lt_ams --> emb
     lt_sf & lt_ams & d_sf & d_ams -- read-only --> pg
@@ -64,8 +64,8 @@ flowchart LR
 - **Data servers.** One per city (`sf-data`), with housing, demographic and climate data (flood and sea-level-rise zones, heat stress, energy labels, building age), queried with tested code so numbers come from data, not from the model.
 - **Citations by convention.** Every tool result carries the citations behind it, in a shape every server follows without sharing code. The backend reads them and streams them to the browser app, so each claim in an answer links to its source.
 - **Dutch sources.** Amsterdam's laws are translated to English once, at load time. Both texts are stored; citations quote the Dutch original and label translations as machine translation.
-- **Group-hosted.** The agent and its model run on a team laptop; the hosted web app reaches it through a Cloudflare Tunnel, and the agent reaches the servers over a Tailscale private network.
-- **Measured, not asserted.** Accuracy (checked by the research team's policy expert), latency and energy per query are compared across three configurations: the local model, the same open-weight model in the cloud, and a frontier model. Local energy is measured; cloud energy is estimated with [EcoLogits](https://ecologits.ai/latest/methodology/) and reported with its uncertainty.
+- **Open-weight models, hosted for now.** The chat and embedding models are open-weight models served through OpenRouter, since the team's laptops lack the memory and compute for a model that answers reliably. The backend and servers run on the group's machines: the hosted web app reaches the backend through a Cloudflare Tunnel, and the backend reaches the servers over a Tailscale private network (planned).
+- **Measured, not asserted.** Accuracy, latency and energy per answer are compared between the open-weight model and a frontier model (Claude Opus 5.5) over the same questions. Energy is estimated per answer from its token counts, as the [Energy Estimates Plan](./docs/plans/energy.md) describes.
 - **Reproducible.** Every number, citation and passage traces back to an archived source file through checked-in code.
 
 The full design, including the spikes, milestones and open questions, is in the [MVP Technical Plan](./docs/plans/mvp-technical-plan.md).
@@ -84,7 +84,7 @@ san-francisco/ingest/data/          SF data sources, raw_sf_data migrations, sf_
 san-francisco/ingest/documents/     SF documents, passage pipeline, raw_sf_docs and sf_docs migrations
 san-francisco/mcp-servers/data/     sf-data MCP server
 san-francisco/mcp-servers/documents/   sf-docs MCP server
-netherlands/                        the Dutch nodes, same shape
+netherlands/                        the Dutch nodes, same shape (not started)
 evaluation/                         question set and expected answers
 scripts/                            repo tooling: yarn dev
 docs/                               plans, architecture and style guides
@@ -92,7 +92,7 @@ docs/                               plans, architecture and style guides
 
 ## Running locally
 
-San Francisco's two MCP servers (`sf-data` and `sf-docs`), the backend and the browser app run as four processes, with the model served by Ollama or a cloud provider. Requires Node 26, Corepack, the loaded `sf-data` database (see [`san-francisco/ingest/data/`](./san-francisco/ingest/data/README.md)) and, for the docs server, the loaded and embedded `sf-docs` corpus (see [`san-francisco/ingest/documents/`](./san-francisco/ingest/documents/README.md)).
+San Francisco's two MCP servers (`sf-data` and `sf-docs`), the backend and the browser app run as four processes, with the models served through OpenRouter and Anthropic. Requires Node 26, Corepack, the loaded `sf-data` database (see [`san-francisco/ingest/data/`](./san-francisco/ingest/data/README.md)) and, for the docs server, the loaded and embedded `sf-docs` corpus (see [`san-francisco/ingest/documents/`](./san-francisco/ingest/documents/README.md)).
 
 1. **Install** from the repo root: `corepack enable && yarn install`.
 2. **Configure the MCP servers:**
@@ -101,15 +101,14 @@ San Francisco's two MCP servers (`sf-data` and `sf-docs`), the backend and the b
 3. **Configure the backend:** `cp backend/.env.example backend/.env`, then set:
    - `APP_DATABASE_URL`: the owner connection string of the `app` Neon project; the backend creates the `app` schema on first start;
    - `BACKEND_PORT`: the port for the question API (for example `8080`);
-   - the API key of the model configuration selected in `backend/config/agent.yaml` (`FRONTIER_API_KEY` for `frontier`); the `local` configuration needs none.
+   - `OPEN_CLOUD_API_KEY`: an OpenRouter API key, for the default `open_cloud` configuration;
+   - `FRONTIER_API_KEY`: an Anthropic API key, for the `frontier` configuration. Each configuration `backend/config/agent.yaml` offers needs its key; a question may name any of them, and the browser app offers each.
 
    Check that the `sf-data` and `sf-docs` URLs in `backend/config/servers.yaml` use the servers' ports.
-4. **Serve the model.** `model.configuration` in `backend/config/agent.yaml` selects it. For `local`, the model runs in [Ollama](https://ollama.com/download/mac), installed as a Mac app, with models stored outside the repo in `~/.ollama/models`:
-   1. Download the model named by the `local` configuration's `modelId`: `ollama pull gpt-oss:20b`.
-   2. Set Ollama's context length to the configuration's `contextTokens`. Ollama defaults to 4,096 tokens and drops the start of a longer prompt without failing ([FAQ](https://docs.ollama.com/faq)), so this is required. The Mac app reads it from `launchctl`, so run `launchctl setenv OLLAMA_CONTEXT_LENGTH 32000`, then quit and reopen Ollama. The setting is lost on restart, so set it again after rebooting.
-   3. Check it answers: `ollama run gpt-oss:20b "hello"`. The backend calls it at `http://localhost:11434/v1`.
-
-   Ollama answers one request at a time by default (`OLLAMA_NUM_PARALLEL`), which is why the `local` configuration's `maxConcurrentQuestions` is 1; raise both together.
+4. **Optional: the `local` configuration.** It runs `gpt-oss:20b` in [Ollama](https://ollama.com/download/mac) on this computer, as a reference for running an open model on-premises; on a 24 GB laptop it answers too unreliably to be the default. To use it:
+   1. `ollama pull gpt-oss:20b`.
+   2. Set Ollama's context length to the configuration's `contextTokens`: Ollama defaults to 4,096 tokens and drops the start of a longer prompt without failing ([FAQ](https://docs.ollama.com/faq)). The Mac app reads it from `launchctl`: run `launchctl setenv OLLAMA_CONTEXT_LENGTH 32000`, then quit and reopen Ollama, and again after rebooting.
+   3. Check it answers: `ollama run gpt-oss:20b "hello"`. The backend calls it at `http://localhost:11434/v1`. Ollama answers one request at a time by default (`OLLAMA_NUM_PARALLEL`), which is why the configuration's `maxConcurrentQuestions` is 1; raise both together.
 5. **Configure the browser app:** `cp browser-app/.env.example browser-app/.env`, then set `BACKEND_URL` to the backend's address (for example `http://localhost:8080`). The app's dev server proxies `/api` to it.
 6. **Start everything**, from the repo root:
    - `yarn dev --include san-francisco` runs San Francisco's two MCP servers, the backend and the browser app in one terminal, with their logs interleaved. `yarn dev` alone runs only the backend and the browser app; `--include` takes one or more groups (`--include san-francisco netherlands`), and `--all` starts every group. A group is a top-level directory, other than `shared/`, holding a workspace with a `start` script; an unknown group is refused with the list of groups;
@@ -133,7 +132,7 @@ San Francisco's two MCP servers (`sf-data` and `sf-docs`), the backend and the b
 | Agent and MCP servers | TypeScript, Effect 4, yarn workspaces, ESLint + Prettier, `@effect/vitest` |
 | Data pipelines | Python with uv, ruff and pytest; Alembic (raw SQL) for raw schemas; dbt for city data models |
 | Database | Postgres with pgvector on Neon, one schema per server; archived source files in Neon object storage |
-| Models | Any OpenAI-compatible runtime (Ollama, LM Studio, llama.cpp, `mlx_lm.server`) through `@effect/ai-openai-compat`; the runtime is chosen in spike S1 |
+| Models | Open-weight models through OpenRouter's OpenAI-compatible API (`@effect/ai-openai-compat`), which also reaches a local runtime such as Ollama; Claude through `@effect/ai-anthropic` |
 | Network | Cloudflare Tunnel (web app → agent), Tailscale (agent → servers) |
 
 ## Team
@@ -143,12 +142,12 @@ San Francisco work (sources, ingestion, corpus, `sf-data` and `sf-docs`) is owne
 ## Documentation
 
 - [MVP Technical Plan](./docs/plans/mvp-technical-plan.md): the backend design
-- [Provisional Questions](./docs/plans/provisional-questions.md): the draft question set
 - [San Francisco Plan](./docs/plans/sf-plan.md): San Francisco phases, sources, tools, contracts and schemas
 - [Agent Loop Plan](./docs/plans/agent-loop.md): the backend's agent loop, question API and `app` schema, shared by every city
 - [Browser App Plan](./docs/plans/browser-app.md): the browser app's Phase 1 prototype: the streamed answer, tool calls and citations, shared by every city
-- [Netherlands Ingestion and Tools Plan](./docs/plans/netherlands-ingestion.md): loading the Dutch sources and designing the Dutch data server's tools
-- [Restructuring Plan](./docs/plans/restructure.md): the layout by deployable unit, the `sf-data` and `sf-docs` names, and the citation and lookup contracts
+- [Netherlands Ingestion and Tools Plan](./docs/plans/netherlands-ingestion.md): loading the Dutch sources, the Dutch data server's tools, and the draft Amsterdam and cross-city questions
+- [Evaluation and Model Comparison Plan](./docs/plans/evaluation.md): the model configurations, the promptfoo evaluation, its checks and question types
+- [Energy Estimates Plan](./docs/plans/energy.md): per-answer energy estimates for the cloud configurations (on hold)
 - [Domain-Driven Design and Hexagonal Architecture](./docs/domain-driven-design.md): where code belongs and why
 - [Working Agreement](./docs/working-agreement.md): the rules we hold each other to in review
 - [Ubiquitous Language](./docs/ubiquitous-language.md): the vocabulary

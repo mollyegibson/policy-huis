@@ -20,6 +20,7 @@ const SETTINGS: LoopSettings = {
   modelRetries: 0,
   modelRetryBaseDelay: Duration.seconds(1),
   toolConcurrency: 2,
+  requireFirstLookup: false,
   contextTokens: 100_000,
   answerTokens: 1_000,
   bytesPerToken: 4

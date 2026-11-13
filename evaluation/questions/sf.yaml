@@ -59,9 +59,7 @@ questions:
       facts:
         - any: ["$448,033"]
           source: "bla_affordable_housing, Executive Summary, p. 11"
-        - any: ["$1,902,077"]
-          source: "bla_affordable_housing, Executive Summary, p. 12"
-        - any: ["$211,030"]
+        - any: ["$1,944,825"]
           source: "bla_affordable_housing, Executive Summary, p. 12"
 
   - id: sf-bla-05
@@ -89,7 +87,7 @@ questions:
       facts:
         - any: ["$17.9 billion"]
           source: "bla_affordable_housing, Executive Summary, p. 16"
-        - any: ["$900,000"]
+        - any: ["$954,127"]
           source: "bla_affordable_housing, Executive Summary, p. 16"
 
   - id: sf-bla-07

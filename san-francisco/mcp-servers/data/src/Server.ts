@@ -10,7 +10,7 @@ import { HttpRouter } from "effect/http"
 import { SfDataHandlers } from "./Handlers.ts"
 import { HousingRepo } from "./HousingRepo.ts"
 import { DatabaseConfig, HttpConfig, SfDataEnv } from "./SfDataServerConfig.ts"
-import { SfDataToolkit } from "./Tools.ts"
+import { makeSfDataToolkit } from "./Tools.ts"
 
 /** The read-only connection to the `sf_data` schema, as the `sf_data_reader` role. */
 export const DatabaseLive = Layer.unwrap(
@@ -20,17 +20,34 @@ export const DatabaseLive = Layer.unwrap(
   })
 )
 
+/**
+ * The tool registrations, given the housing repository. `dataset_info` offers the dataset keys loaded when the server
+ * starts, so a new dataset needs a restart of the server, then of the backend. If they cannot be read, the server
+ * still starts, with `dataset` taking any text, and every tool reports the database error when called.
+ */
+export const RegistrationsLive = Layer.unwrap(
+  Effect.gen(function* () {
+    const datasetKeys = yield* (yield* HousingRepo).datasets().pipe(
+      Effect.map((datasets) => datasets.map((d) => d.datasetKey)),
+      Effect.catch((error) =>
+        Effect.as(
+          Effect.logWarning("The loaded datasets could not be read; dataset_info will take any dataset key", error),
+          []
+        )
+      )
+    )
+    const toolkit = makeSfDataToolkit(datasetKeys)
+    return McpServer.toolkit(toolkit).pipe(Layer.provide(SfDataHandlers(toolkit)))
+  })
+)
+
 /** The sf-data tools, served by `McpServer` over Streamable HTTP at `/mcp`. */
 export const McpLive = McpServer.layerHttp({
   name: "sf-data",
   version: "0.1.0",
   path: "/mcp",
   protocols: [McpProtocol.v2026_07_28],
-  registrations: McpServer.toolkit(SfDataToolkit).pipe(
-    Layer.provide(SfDataHandlers),
-    Layer.provide(HousingRepo.layer),
-    Layer.provide(DatabaseLive)
-  )
+  registrations: RegistrationsLive.pipe(Layer.provide(HousingRepo.layer), Layer.provide(DatabaseLive))
 })
 
 /** Node's HTTP server on the configured port. */

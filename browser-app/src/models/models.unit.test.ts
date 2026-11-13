@@ -7,8 +7,13 @@ import { answeredBy, chosenModel } from "./models.ts"
 const offered: OfferedModels = {
   default: "local",
   models: [
-    { configuration: "local", label: "Open model on this computer", modelId: "gpt-oss:20b" },
-    { configuration: "frontier", label: "Frontier model in the cloud", modelId: "claude-opus-5-5" }
+    { configuration: "local", label: "Open model on this computer", modelId: "gpt-oss:20b", maxConcurrentQuestions: 1 },
+    {
+      configuration: "frontier",
+      label: "Frontier model in the cloud",
+      modelId: "claude-opus-5-5",
+      maxConcurrentQuestions: 4
+    }
   ]
 }
 

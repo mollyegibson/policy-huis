@@ -117,11 +117,12 @@ The dashboard compares configurations, not bare models. As configured on Novembe
 |---|---|---|
 | Model | Qwen3.5-397B-A17B | Claude Opus 5.5 |
 | Reasoning | Off (`effort: none`) | Low (`effort: low`) |
+| First step | Must call a tool (`requireFirstLookup`) | Model's choice (Claude rejects a forced tool choice) |
 | Context budget | 250,000 tokens | 250,000 tokens |
 | Host | Routed by OpenRouter, not pinned | Anthropic |
 | Factors' hardware | CLEER's measured serving setup, not OpenRouter's host | CLEER's proxy for Claude's serving |
 
-The reasoning setting differs, so a difference in energy is partly a difference in how much each model was asked to think. The dashboard shows these settings beside the results.
+The reasoning setting and the first step's tool choice differ, so a difference in energy is partly a difference in how much each model was asked to think. The dashboard shows these settings beside the results.
 
 ## Ubiquitous Language
 

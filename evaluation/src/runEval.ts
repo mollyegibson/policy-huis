@@ -7,6 +7,7 @@ import { Clock, Console, Effect, FileSystem, Layer, ManagedRuntime, Schema } fro
 import { evaluate } from "promptfoo"
 
 import { BackendClient, backendProvider } from "./BackendProvider.ts"
+import { concurrencyFor } from "./Concurrency.ts"
 import { BackendConfig, EvaluationEnv } from "./EvaluationConfig.ts"
 import { loadQuestions } from "./Questions.ts"
 import { byProvider, formatSummary, ResultsFile, summarize } from "./results.ts"
@@ -28,7 +29,7 @@ export class EvaluationFailed extends Schema.TaggedError<EvaluationFailed>()("Ev
 }) {}
 
 const USAGE =
-  "yarn workspace @policyhuis/evaluation eval [--model local,frontier] [--repeat N] [--only sf-bla-01,sf-data-10]"
+  "yarn workspace @policyhuis/evaluation eval [--model open_cloud,frontier] [--repeat N] [--only sf-bla-01,sf-data-10]"
 
 const parseCommandLine = Effect.fn("runEval.parseCommandLine")(function* () {
   const { values } = yield* Effect.try({
@@ -101,8 +102,9 @@ const main = Effect.gen(function* () {
   for (const { label, evaluationRunId } of providers) {
     yield* Console.log(`${label}: evaluation run ${evaluationRunId}`)
   }
+  const concurrency = concurrencyFor(offered, chosen)
   yield* Console.log(
-    `Asking ${String(selected.length)} questions, ${String(repeat)} time(s) each, of ${String(providers.length)} model configuration(s), one at a time`
+    `Asking ${String(selected.length)} questions, ${String(repeat)} time(s) each, of ${String(providers.length)} model configuration(s), ${String(concurrency)} at a time`
   )
   yield* Effect.tryPromise({
     try: () =>
@@ -115,7 +117,7 @@ const main = Effect.gen(function* () {
           outputPath: [resultsJson, resultsHtml],
           writeLatestResults: true
         },
-        { maxConcurrency: 1, repeat, cache: false, showProgressBar: true }
+        { maxConcurrency: concurrency, repeat, cache: false, showProgressBar: true }
       ),
     catch: (error) => new EvaluationFailed({ message: `promptfoo failed: ${String(error)}` })
   })

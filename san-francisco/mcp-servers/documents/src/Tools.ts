@@ -51,8 +51,9 @@ const searchPolicy = (corpus: string) =>
     description:
       "Search these documents for the provisions most relevant to a question, best first. Use it for any question " +
       "about what one of them says, even when the question does not name the document, and search before saying the " +
-      "documents cannot answer. A report is analysis, not law: say so when an answer rests on one. A result whose " +
-      "childCount is above zero may hold its substance in its subsections: get them with get_provision." +
+      "documents cannot answer. If no other tool is more relevant, always use this one before claiming that you don't " +
+      "have a tool to answer the user's question. A report is analysis, not law: say so when an answer rests on one. " +
+      "A result whose childCount is above zero may hold its substance in its subsections: get them with get_provision." +
       `\n\nThe documents:\n${corpus}`,
     parameters: Schema.Struct({
       query: Schema.NonEmptyString.pipe(

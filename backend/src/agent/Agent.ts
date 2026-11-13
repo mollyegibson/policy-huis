@@ -87,6 +87,7 @@ export class Agent extends Context.Service<
       ) {
         const settings: LoopSettings = {
           ...config.loop,
+          requireFirstLookup: endpoint.provider === "openai-compat" && endpoint.requireFirstLookup === true,
           contextTokens: endpoint.contextTokens,
           answerTokens: endpoint.answerTokens,
           bytesPerToken: endpoint.bytesPerToken

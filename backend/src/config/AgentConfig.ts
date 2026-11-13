@@ -55,7 +55,9 @@ const answerTokensBelowContext = Schema.makeFilter((endpoint: { answerTokens: nu
  * `@effect/ai-openai-compat`. `outputTokensParameter` names the request field that carries `answerTokens`: `max_tokens`
  * when omitted, which local runtimes accept, or `max_completion_tokens` for OpenAI models that reject `max_tokens`.
  * `requestOptions` are extra fields sent unchanged in every request body, for settings the server needs, such as
- * Ollama's `reasoning_effort` or OpenRouter's `reasoning: { effort }`.
+ * Ollama's `reasoning_effort` or OpenRouter's `reasoning: { effort }`. `requireFirstLookup` makes the first step
+ * call a tool (`tool_choice: "required"`), for a model that otherwise answers from its own knowledge; it is not offered
+ * for Claude, whose current models reject a forced tool choice.
  */
 export const OpenAiCompatEndpoint = Schema.Struct({
   provider: Schema.Literal("openai-compat"),
@@ -64,6 +66,7 @@ export const OpenAiCompatEndpoint = Schema.Struct({
   modelId: Schema.NonEmptyString,
   ...ModelLimits,
   outputTokensParameter: Schema.optionalKey(Schema.Literals(["max_tokens", "max_completion_tokens"])),
+  requireFirstLookup: Schema.optionalKey(Schema.Boolean),
   requestOptions: Schema.optionalKey(Schema.Record(Schema.NonEmptyString, Schema.Json))
 }).pipe(Schema.check(answerTokensBelowContext))
 
@@ -83,9 +86,17 @@ export const AnthropicEndpoint = Schema.Struct({
 export const ModelEndpoint = Schema.Union([OpenAiCompatEndpoint, AnthropicEndpoint])
 export type ModelEndpoint = typeof ModelEndpoint.Type
 
-/** The settings a trace records with each question, beyond the model ID, so a change of effort shows in the traces. */
+/**
+ * The settings a trace records with each question, beyond the model ID, so a change of effort or of the first step's
+ * tool choice shows in the traces.
+ */
 export const modelSettings = (endpoint: ModelEndpoint): Readonly<Record<string, unknown>> =>
-  endpoint.provider === "anthropic" ? { effort: endpoint.effort } : { ...endpoint.requestOptions }
+  endpoint.provider === "anthropic"
+    ? { effort: endpoint.effort }
+    : {
+        ...endpoint.requestOptions,
+        ...(endpoint.requireFirstLookup === undefined ? {} : { requireFirstLookup: endpoint.requireFirstLookup })
+      }
 
 const ModelSection = Schema.Struct({
   /** The configuration that answers a question that names none. */

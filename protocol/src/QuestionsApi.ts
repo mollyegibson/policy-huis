@@ -122,11 +122,15 @@ export const QuestionsApi = HttpApiGroup.make("questions").add(
   })
 )
 
-/** One model configuration a question may name: its key, the label to show for it, and its model ID. */
+/**
+ * One model configuration a question may name: its key, the label to show for it, its model ID, and how many questions
+ * it answers at once; a question beyond that gets `503 busy`.
+ */
 export const OfferedModel = Schema.Struct({
   configuration: Schema.String,
   label: Schema.String,
-  modelId: Schema.String
+  modelId: Schema.String,
+  maxConcurrentQuestions: Schema.Int
 })
 export type OfferedModel = typeof OfferedModel.Type
 

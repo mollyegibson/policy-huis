@@ -107,7 +107,7 @@ Contexts communicate through published contracts (database schemas, MCP tools an
 - Lint and format with `ruff`; test with `pytest`. Run `uv run ruff check . && uv run ruff format --check . && uv run pytest` before finishing a change.
 - Integration tests run against a throwaway Postgres testcontainer started for each test session; they need Docker running. Never run them against a real database: they reset the schema.
 - Settings are read from the project's own `.env` (for example `san-francisco/ingest/data/.env`), which takes priority over the shell, so other projects' variables (`DATABASE_URL`, `AWS_PROFILE`) can't leak in. Object storage uses only the project's own settings, never ambient AWS configuration.
-- Migrations for the raw and documents schemas (`raw_sf_data`, `raw_sf_docs`, `sf_docs`) are Alembic with raw SQL, sequential ids (`uv run alembic revision -m "…" --rev-id 0005`) and are append-only once applied. Only the database owner runs them. Applied migrations were deleted once, in the [restructure](./docs/plans/restructure.md), because every database they had run on was replaced; that is the only case in which an applied migration may be removed.
+- Migrations for the raw and documents schemas (`raw_sf_data`, `raw_sf_docs`, `sf_docs`) are Alembic with raw SQL, sequential ids (`uv run alembic revision -m "…" --rev-id 0005`) and are append-only once applied. Only the database owner runs them. Applied migrations were deleted once, when the repository was restructured by deployable unit (November 11, 2026), because every database they had run on was replaced; that is the only case in which an applied migration may be removed.
 - Loaders archive each downloaded file, then parse the archived copy into `raw_*`, writing the manifest row and data rows in one transaction. Row filters (such as filtering a nationwide dataset to one city) live in the city's `config/sources.yaml` and are recorded in the manifest.
 
 ## TypeScript (`backend/`, `browser-app/`, `protocol/`, `shared/`, city servers)
@@ -143,9 +143,7 @@ When guidance conflicts, higher sources win:
 - [San Francisco Plan](./docs/plans/sf-plan.md): San Francisco sources, servers and tools
 - [Agent Loop Plan](./docs/plans/agent-loop.md): the backend's agent loop, question API and `app` schema, shared by every city
 - [Browser App Plan](./docs/plans/browser-app.md): the browser app's Phase 1 prototype: the streamed answer, tool calls and citations, shared by every city
-- [Netherlands Ingestion and Tools Plan](./docs/plans/netherlands-ingestion.md): loading the Dutch sources and designing the Dutch data server's tools
-- [Provisional Questions](./docs/plans/provisional-questions.md): the draft question set, pending confirmation from the research team
-- [Restructuring Plan](./docs/plans/restructure.md): the layout by deployable unit, the `sf-data` and `sf-docs` names, and the citation and lookup contracts
+- [Netherlands Ingestion and Tools Plan](./docs/plans/netherlands-ingestion.md): loading the Dutch sources, designing the Dutch data server's tools, and the draft Amsterdam and cross-city questions
 - [Evaluation and Model Comparison Plan](./docs/plans/evaluation.md): choosing the model per question, Claude as the frontier model, the promptfoo evaluation and its checks, and the browser app's model choice
 - [Energy Estimates Plan](./docs/plans/energy.md): per-answer energy estimates for the cloud configurations from CLEER's per-token factors, shown under each answer and compared on a dashboard tab; on hold until CLEER provides the factors
 

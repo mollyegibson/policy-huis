@@ -30,6 +30,7 @@ const SETTINGS: LoopSettings = {
   modelRetries: 2,
   modelRetryBaseDelay: Duration.seconds(1),
   toolConcurrency: 2,
+  requireFirstLookup: false,
   contextTokens: 1000,
   answerTokens: 100,
   bytesPerToken: 4
@@ -249,6 +250,25 @@ describe("runAgentLoop", () => {
       const finished = last(events)
       expect(finished.outcome).toBe("step_limit")
       expect(finished.failure).toEqual(Failure.StepLimit({ maxSteps: SETTINGS.maxSteps }))
+    })
+  )
+
+  it.effect("requires a tool call on the first step only when requireFirstLookup is set", () =>
+    Effect.gen(function* () {
+      const required = yield* run([lookup("c1", "a"), answer], { requireFirstLookup: true })
+      expect(required.calls.map((call) => call.toolChoice)).toEqual(["required", "auto"])
+      const free = yield* run([lookup("c1", "a"), answer])
+      expect(free.calls.map((call) => call.toolChoice)).toEqual(["auto", "auto"])
+    })
+  )
+
+  it.effect("keeps requiring a tool call when the first step is retried", () =>
+    Effect.gen(function* () {
+      const limited: ScriptedTurn = { parts: [], failWith: aiError(new AiError.RateLimitError({})) }
+      const { calls } = yield* runTimed([limited, lookup("c1", "a"), answer], "5 seconds", {
+        requireFirstLookup: true
+      })
+      expect(calls.map((call) => call.toolChoice)).toEqual(["required", "required", "auto"])
     })
   )
 

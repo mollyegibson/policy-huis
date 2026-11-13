@@ -31,6 +31,8 @@ export interface LoopSettings {
   readonly modelRetries: number
   readonly modelRetryBaseDelay: Duration.Duration
   readonly toolConcurrency: number
+  /** Whether the first step must call a tool, so the model looks something up before it answers. */
+  readonly requireFirstLookup: boolean
   readonly contextTokens: number
   readonly answerTokens: number
   readonly bytesPerToken: number
@@ -255,7 +257,8 @@ export const runAgentLoop = <Tools extends Record<string, Tool.Any>>(
         cause: Cause.Cause<unknown>,
         prompt: Prompt.Prompt,
         final: boolean,
-        keys: CitationKeys
+        keys: CitationKeys,
+        required: boolean
       ): LoopStream =>
         Stream.unwrap(
           Effect.gen(function* () {
@@ -269,25 +272,34 @@ export const runAgentLoop = <Tools extends Record<string, Tool.Any>>(
             yield* Ref.set(retriesLeft, left - 1)
             const retried = Stream.make(new ModelRetried({ reason: detail }))
             if (retry._tag === "correct") {
-              return Stream.concat(retried, turn(Prompt.concat(prompt, Prompt.make(retry.message)), final, keys))
+              return Stream.concat(
+                retried,
+                turn(Prompt.concat(prompt, Prompt.make(retry.message)), final, keys, required)
+              )
             }
             yield* Effect.sleep(Duration.times(settings.modelRetryBaseDelay, 2 ** (settings.modelRetries - left)))
-            return Stream.concat(retried, turn(prompt, final, keys))
+            return Stream.concat(retried, turn(prompt, final, keys, required))
           })
         )
 
       /**
-       * One model turn, ending with its `StepEnded`. The final turn is called without tools. `keys` are the citation
-       * keys the prompt's tool results use, which the turn's text is expanded from.
+       * One model turn, ending with its `StepEnded`. The final turn is called without tools; a `required` turn must
+       * call one, unless no tool is offered. `keys` are the citation keys the prompt's tool results use, which the
+       * turn's text is expanded from.
        */
-      const turn = (prompt: Prompt.Prompt, final: boolean, keys: CitationKeys): LoopStream =>
+      const turn = (prompt: Prompt.Prompt, final: boolean, keys: CitationKeys, required: boolean): LoopStream =>
         Stream.unwrap(
           Effect.gen(function* () {
             const turnId = crypto.randomUUID()
             const reachedBrowser = yield* Ref.make(false)
             const model = final
               ? LanguageModel.streamText({ prompt })
-              : LanguageModel.streamText({ prompt, toolkit, concurrency: settings.toolConcurrency })
+              : LanguageModel.streamText({
+                  prompt,
+                  toolkit,
+                  concurrency: settings.toolConcurrency,
+                  toolChoice: required && Object.keys(toolkit.tools).length > 0 ? "required" : "auto"
+                })
             return model.pipe(
               Stream.mapEffect((part) =>
                 Effect.map(Clock.currentTimeMillis, (at): TurnInput<Tools> => ({ _tag: "Part", part, at }))
@@ -304,7 +316,7 @@ export const runAgentLoop = <Tools extends Record<string, Tool.Any>>(
                       const detail = Cause.pretty(cause)
                       return Stream.fail(new LoopFailure({ failure: Failure.ModelStopped({ detail }) }))
                     }
-                    return retryOrFail(cause, prompt, final, keys)
+                    return retryOrFail(cause, prompt, final, keys, required)
                   })
                 )
               )
@@ -332,7 +344,8 @@ export const runAgentLoop = <Tools extends Record<string, Tool.Any>>(
           Effect.gen(function* () {
             const ended = yield* Ref.make<StepEnded | null>(null)
             const timeout = failAfter(settings.stepTimeout, Failure.StepTimedOut({ timeout: settings.stepTimeout }))
-            const events = turn(prompt, final, keys).pipe(
+            const required = !final && step === 0 && settings.requireFirstLookup
+            const events = turn(prompt, final, keys, required).pipe(
               Stream.tap((event) => (event._tag === "StepEnded" ? Ref.set(ended, event) : Effect.void)),
               Stream.interruptWhen(timeout)
             )

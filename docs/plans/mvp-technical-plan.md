@@ -242,7 +242,7 @@ The agent and servers are reachable only while their machines are awake and conn
 - **Questions:** drawn from the project overview's question types, for both cities, including questions the agent should decline. San Francisco's set is [`evaluation/questions/sf.yaml`](../../evaluation/questions/sf.yaml); Amsterdam's are [drafts](netherlands-ingestion.md#draft-questions), pending confirmation from the research team.
 - **Verification:** the research team's policy expert checks the expected answers and citations.
 - **Storage:** questions live in a reviewed file in the repo; each answer's trace goes to the `app` schema with its evaluation run ID, and promptfoo keeps each run's results in `evaluation/results/`.
-- **Run conditions:** evaluation runs never overlap demo traffic, and answer one question at a time, so latencies are comparable. Traces record tool latency apart from model time.
+- **Run conditions:** evaluation runs never overlap demo traffic, and ask questions concurrently up to what each configuration admits. Traces record tool latency apart from model time.
 
 **Per question, record:**
 

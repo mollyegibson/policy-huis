@@ -24,7 +24,7 @@ yarn workspace @policyhuis/evaluation eval --only sf-bla-01,sf-data-10
 yarn workspace @policyhuis/evaluation promptfoo view            # browse every run
 ```
 
-`--model` takes the model configurations `backend/config/agent.yaml` offers (`GET /api/v1/models` lists them); each gets its own evaluation run ID, written to every trace it produces. Questions are asked one at a time. The run prints, for each configuration, each check's pass rate and each failing question's failed checks. A question the backend could not answer (a server unavailable, the model unreachable, `503 busy`) is an error, counted apart from passes and failures.
+`--model` takes the model configurations `backend/config/agent.yaml` offers (`GET /api/v1/models` lists them); each gets its own evaluation run ID, written to every trace it produces. Questions are asked as many at a time as the most limited chosen configuration admits (its `maxConcurrentQuestions`), so a run that includes `local` asks one at a time. The run prints, for each configuration, each check's pass rate and each failing question's failed checks. A question the backend could not answer (a server unavailable, the model unreachable, `503 busy`) is an error, counted apart from passes and failures.
 
 ## Check
 

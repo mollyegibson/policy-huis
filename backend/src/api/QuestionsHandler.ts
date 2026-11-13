@@ -62,7 +62,8 @@ export const ModelsLive = HttpApiBuilder.group(PolicyHuisApi, "models", (handler
       models: models.offered.map(({ key, endpoint }) => ({
         configuration: key,
         label: endpoint.label,
-        modelId: endpoint.modelId
+        modelId: endpoint.modelId,
+        maxConcurrentQuestions: endpoint.maxConcurrentQuestions
       }))
     }
     return handlers.handle("list", () => Effect.succeed(listing))

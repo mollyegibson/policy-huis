@@ -205,27 +205,37 @@ export const ProjectHazardExposure = Tool.make("project_hazard_exposure", {
   failureMode: "return"
 }).annotate(Tool.Title, "Projects in a flood or exposure zone")
 
-export const DatasetInfo = Tool.make("dataset_info", {
-  description:
-    "Describe the loaded datasets: source, license, version, load date, and the publisher's own description, which states the data's limits in the publisher's words. Quote it when a user asks how current or reliable the data is.",
-  parameters: Schema.Struct({ dataset: OptionalParam(Schema.String) }),
-  success: Schema.Struct({
-    datasets: Schema.Array(
-      Schema.Struct({
-        key: Schema.String,
-        title: Schema.String,
-        publisher: Schema.NullOr(Schema.String),
-        sourceUrl: Schema.String,
-        license: Schema.NullOr(Schema.String),
-        sourceVersion: Schema.String,
-        publisherDescription: Schema.NullOr(Schema.String)
-      })
-    ),
-    citations: Citations
-  }),
-  failure: ToolFailure,
-  failureMode: "return"
-}).annotate(Tool.Title, "Dataset details")
+/**
+ * A dataset key: one of `datasetKeys` when the loaded datasets were read at startup, so the model is offered only keys
+ * that exist, or any text when they could not be.
+ */
+const DatasetKey = (datasetKeys: ReadonlyArray<string>) =>
+  (datasetKeys.length === 0 ? Schema.String : Schema.Literals(datasetKeys)).annotate({
+    description: "A dataset's key; omit it to describe every loaded dataset"
+  })
+
+const datasetInfo = (datasetKeys: ReadonlyArray<string>) =>
+  Tool.make("dataset_info", {
+    description:
+      "Describe the loaded datasets: source, license, version, load date, and the publisher's own description, which states the data's limits in the publisher's words. Quote it when a user asks how current or reliable the data is.",
+    parameters: Schema.Struct({ dataset: OptionalParam(DatasetKey(datasetKeys)) }),
+    success: Schema.Struct({
+      datasets: Schema.Array(
+        Schema.Struct({
+          key: Schema.String,
+          title: Schema.String,
+          publisher: Schema.NullOr(Schema.String),
+          sourceUrl: Schema.String,
+          license: Schema.NullOr(Schema.String),
+          sourceVersion: Schema.String,
+          publisherDescription: Schema.NullOr(Schema.String)
+        })
+      ),
+      citations: Citations
+    }),
+    failure: ToolFailure,
+    failureMode: "return"
+  }).annotate(Tool.Title, "Dataset details")
 
 /** A month range outside the months the Eviction Notices data covers. */
 export class PeriodOutOfRange extends Schema.TaggedError<PeriodOutOfRange>()("PeriodOutOfRange", {
@@ -311,15 +321,22 @@ export const AllowableRentIncrease = Tool.make("allowable_rent_increase", {
   failureMode: "return"
 }).annotate(Tool.Title, "Annual allowable rent increase")
 
-export const SfDataToolkit = Toolkit.make(
-  DevelopmentPipelineProjects,
-  DevelopmentPipelineSummary,
-  AffordablePipelineProjects,
-  AffordablePipelineSummary,
-  AffordablePipelineUnitsByIncomeBand,
-  ProjectHazardExposure,
-  DatasetInfo,
-  EvictionNoticeCounts,
-  EvictionGrounds,
-  AllowableRentIncrease
-)
+/**
+ * The server's tools, with `dataset_info`'s `dataset` limited to `datasetKeys`, the datasets loaded when the server
+ * starts; with none, it takes any text. Built at startup from `sf_data.datasets`.
+ */
+export const makeSfDataToolkit = (datasetKeys: ReadonlyArray<string>) =>
+  Toolkit.make(
+    DevelopmentPipelineProjects,
+    DevelopmentPipelineSummary,
+    AffordablePipelineProjects,
+    AffordablePipelineSummary,
+    AffordablePipelineUnitsByIncomeBand,
+    ProjectHazardExposure,
+    datasetInfo(datasetKeys),
+    EvictionNoticeCounts,
+    EvictionGrounds,
+    AllowableRentIncrease
+  )
+
+export type SfDataToolkit = ReturnType<typeof makeSfDataToolkit>

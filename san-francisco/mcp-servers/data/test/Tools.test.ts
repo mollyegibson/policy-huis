@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Tool } from "effect/ai"
 
-import { SfDataToolkit } from "../src/Tools.ts"
+import { makeSfDataToolkit } from "../src/Tools.ts"
 
 /** Every description and title in a JSON Schema, as the model reads them. */
 const schemaTexts = (node: unknown): ReadonlyArray<string> =>
@@ -15,7 +15,7 @@ const schemaTexts = (node: unknown): ReadonlyArray<string> =>
 
 describe("the tools the model reads", () => {
   it("hold no digit in a description or title, so the model has no figure to repeat without a citation", () => {
-    const texts = Object.values(SfDataToolkit.tools).flatMap((tool) => [
+    const texts = Object.values(makeSfDataToolkit(["dataset_a", "dataset_b"]).tools).flatMap((tool) => [
       Tool.getDescription(tool) ?? "",
       ...schemaTexts(Tool.getJsonSchema(tool)),
       ...schemaTexts(Tool.getJsonSchemaFromSchema(tool.successSchema))
