@@ -2,7 +2,7 @@
 
 Draft, November 12, 2026. **On hold:** no energy is shown anywhere until the Sustainable AI Group answers our request for per-token energy factors (see [Waiting on CLEER](#waiting-on-cleer)). Steps 1 and 4 do not depend on the factors and can be built before then.
 
-This plan estimates the energy each answer took, for the two cloud configurations: `open_cloud` (Qwen3.5-397B-A17B through OpenRouter) and `frontier` (Claude Opus 5.5). It shows the estimate under each answer in the browser app, and adds a dashboard tab that compares the two configurations over evaluation runs. It settles the [energy open questions](evaluation.md#energy-and-the-dashboard-open-questions) of the evaluation plan for the cloud configurations, and replaces the [MVP plan's](mvp-technical-plan.md#energy) choice of EcoLogits for cloud estimates.
+This plan estimates the energy each answer took, for the two cloud configurations: `open_cloud` (Qwen3.5-397B-A17B through OpenRouter) and `frontier` (Claude Opus 5.5). It shows the estimate under each answer in the browser app, and adds a dashboard tab that compares the two configurations over evaluation runs. It replaces the MVP plan's earlier choice of EcoLogits for cloud estimates.
 
 ## Decisions
 
@@ -12,7 +12,7 @@ Recorded November 12, 2026, by the San Francisco owner:
 2. **The method is CLEER** (Closed-model Latent Energy Estimation Range) from the [Sustainable AI Group](https://www.sustainableaigroup.com), applied to each answer's own token counts. Nothing is shown until its per-token factors are available; EcoLogits is not used in the meantime.
 3. **Under each answer:** energy in watt-hours with a range, labelled as an estimate, with a link to how it is estimated. No carbon or water.
 4. **The dashboard compares evaluation runs:** each configuration answers the same question set, so energy per question sits beside the pass rate on the same questions, as the MVP plan requires ("a lower energy figure is never shown without the quality it came with").
-5. **The local configuration is out of scope** for now. Measuring it needs `powermetrics` with sudo through a separate privileged sampler ([evaluation plan, energy question 1](evaluation.md#energy-and-the-dashboard-open-questions)).
+5. **The local configuration is out of scope** for now. Measuring it needs `powermetrics`, which needs sudo, through a separate privileged sampler that joins its samples to requests by time.
 
 The results are reported whichever way they come out. The plan tests whether the open model uses less energy per answer; it does not assume so.
 
@@ -36,7 +36,7 @@ The San Francisco owner is asking the Sustainable AI Group for:
 
 1. **Per-token factors** for Qwen3.5-397B and for Claude Opus 5.5, or Opus 5 until Opus 5.5 is added: Wh per uncached input token, per cached input token read, per cache write if it differs, and per output token, each with its standard deviation, on CLEER's facility basis (accelerator, host, idle and cooling).
 2. **Whether reasoning tokens** take the output factor.
-3. **A published, versioned source** for the factors, such as a release file in their repository or the planned CLEER Feed API, so the factors can be fetched by a script with a hash. Factors sent only by email could not meet the data provenance rules (see [Factors](#factors)).
+3. **A published, versioned source** for the factors, such as a release file in their repository or the planned CLEER Feed API, so the factors can be fetched by a script with a hash. Factors sent only by email could not meet the data provenance rules (see [Step 2](#step-2-factors)).
 4. **Permission** to show the estimates in this non-commercial research prototype with attribution, under the data's CC BY-NC 4.0 license.
 
 This plan is revisited when they answer.

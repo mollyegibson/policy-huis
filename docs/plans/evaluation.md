@@ -1,102 +1,52 @@
 # PolicyHuis: Evaluation and Model Comparison Plan
 
-Draft, November 11, 2026.
+How PolicyHuis compares model configurations: one backend answers with the configuration each question names, a promptfoo evaluation in `evaluation/` runs the question set against each configuration with deterministic checks, and the browser app lets a viewer choose the model. Energy is planned separately, in the [Energy Estimates Plan](energy.md).
 
-This plan lets one backend answer with either the local model or the frontier model, chosen per question; makes Claude the frontier model; adds a promptfoo evaluation in `evaluation/` that runs the question set against each model configuration with deterministic checks; and adds a model choice to the browser app. It ends with the open questions for energy, which the energy dashboard depends on and which this plan does not settle.
-
-It starts from a measured failure. With the [Budget and Legislative Analyst report](sf-plan.md) loaded and listed in `search_policy`'s description, `gpt-oss:20b` at `reasoning_effort: low` answered "What share of San Francisco renter households were rent burdened in 2024?" without calling a tool in 7 of 7 runs through the backend and 3 of 3 against Ollama directly; its reasoning ("Need dataset. Maybe SF census? Not available.") looked only at the data tools. Rewording the tool description, adding a system prompt rule and `tool_choice: required` (which Ollama ignored) each changed 0 of 3 runs; `reasoning_effort: medium` searched in 1 of 3. Fixes like these need pass rates over many questions and repeated runs, and a comparison with a model that is not the bottleneck.
+The evaluation exists because single-question fixes did not tell whether an answer improved: the small local model (`gpt-oss:20b`) answered questions about the loaded analysis report without calling a tool, whatever its tool description or system prompt said. Telling a fix from noise needs pass rates over many questions and repeated runs, and a comparison with a model that is not the bottleneck.
 
 ## Decisions
 
-- **The model is chosen per question, not per backend.** `agent.yaml` lists the configurations a deployment offers; a question names one, or gets the default. Each configuration keeps its own admission limit, so a frontier question never waits behind a local one.
-- **Claude replaces `gpt-6-luna` as the frontier configuration**, through Effect's first-party provider `@effect/ai-anthropic` (4.1.2, matching `effect` 4.1.2), not an OpenAI-compatible endpoint. The [MVP plan](mvp-technical-plan.md#backend-agent-service) preferred one provider package for every configuration, so that differences come from the model rather than the client, and allowed a configuration to fall back to its provider's first-party package; the frontier configuration now does. The like-for-like comparison of hardware stays between Local and Same model in the cloud, which both keep `@effect/ai-openai-compat`.
-- **The model is `claude-opus-5-5`, at effort `low`.** It is the accuracy ceiling the frontier configuration stands for; `low` keeps cost and latency down and matches the local configuration's `reasoning_effort: low`.
-- **The evaluation uses promptfoo**, MIT-licensed, actively released (0.125.1, October 25, 2026, on npm), and owned by OpenAI since March 2026, which [committed to keeping it open source](https://openai.com/index/openai-to-acquire-promptfoo/). It follows the shape of an earlier promptfoo evaluation by the same author: a custom provider, scenario YAML decoded with `Schema`, assertion functions applied in code, and `evaluate()` called from a CLI.
+- **The open-weight model in the cloud is the main configuration.** `open_cloud` (Qwen3.5-397B-A17B through OpenRouter) is the backend's default, to show that an open-weight model is fit for the job; `frontier` (Claude Opus 5.5) is the comparison. `local` (`gpt-oss:20b` in Ollama) stays configured, not the default, as the reference for running on-premises. See the [MVP plan](mvp-technical-plan.md) for why the model is not run on the team's laptops.
+- **The model is chosen per question, not per backend.** `agent.yaml` lists the configurations a deployment offers; a question names one, or gets the default. Each configuration keeps its own admission limit, so a question to one never waits behind another's.
+- **Claude is the frontier configuration**, through Effect's first-party provider `@effect/ai-anthropic`, not an OpenAI-compatible endpoint. The [MVP plan](mvp-technical-plan.md#backend-agent-service) prefers one provider package for every configuration, so that differences come from the model rather than the client, and allows a configuration its provider's first-party package; the frontier configuration uses it. The open-weight configurations keep `@effect/ai-openai-compat`.
+- **The model is `claude-opus-5-5`, at effort `low`,** the accuracy ceiling the frontier configuration stands for, with cost and latency kept down.
+- **The evaluation uses promptfoo**, MIT-licensed and owned by OpenAI since March 2026, which [committed to keeping it open source](https://openai.com/index/openai-to-acquire-promptfoo/): a custom provider, a question file decoded with `Schema`, assertion functions applied in code, and `evaluate()` called from a CLI.
 - **Checks are deterministic for now.** No LLM grader: the checks read the answer text, the tools called and the citations sent, and compare the answer with expected facts taken from the original sources. A model grader can be added later beside them.
 - **The evaluation calls the running backend over its API**, with the real MCP servers and databases, not an in-process backend with mocked tools. What is under test is the agent choosing tools and citing passages from the real corpus.
-- **Traces stay the record.** promptfoo keeps its own results for its viewer; every evaluation request also carries an evaluation run ID, which the backend writes to its trace, so the energy dashboard and any later report read `app`, never promptfoo's database.
+- **Traces stay the record.** promptfoo keeps its own results for its viewer; every evaluation request also carries an evaluation run ID, which the backend writes to its trace, so any later report reads `app`, never promptfoo's database.
 
-## Step 1: Model configurations chosen per question
+## Model configurations
 
-### `agent.yaml`
+The configurations are declared in [`backend/config/agent.yaml`](../../backend/config/agent.yaml) and decoded by `backend/src/config/AgentConfig.ts`; the [Agent Loop Plan](agent-loop.md#configuration) describes each field.
 
-```yaml
-model:
-  default: local
-  offered: [local, frontier] # each needs its API key in backend/.env, except local
-  configurations:
-    local:
-      provider: openai-compat
-      label: Open model on this computer
-      baseUrl: http://localhost:11434/v1
-      modelId: gpt-oss:20b
-      # contextTokens, answerTokens, bytesPerToken, maxConcurrentQuestions, requestOptions as today
-    frontier:
-      provider: anthropic
-      label: Frontier model in the cloud
-      modelId: claude-opus-5-5
-      effort: low
-      contextTokens: 250000 # within Claude's 1M-token context; the same budget as the open_cloud configuration
-      answerTokens: 4000 # provisional; includes thinking tokens
-      bytesPerToken: 3 # provisional
-      maxConcurrentQuestions: 4 # provisional, within the account's rate limits
-```
+- `model.default` answers a question that names no configuration; `model.offered` lists the ones a question may name. An offered configuration without its API key (`<CONFIGURATION>_API_KEY` in `backend/.env`) fails startup with a `ConfigFileError`; one listed but not offered needs no key.
+- A configuration is a union on `provider`: `openai-compat` has `baseUrl`, `outputTokensParameter` and `requestOptions`, which carry settings such as OpenRouter's `reasoning: { effort }`; `anthropic` has `effort` and no base URL.
+- Claude Opus 5.5 always thinks; `effort` is its only control. Refusal fallbacks to another model stay off, since a fallback would answer with a model other than the one the trace names. A refusal finishes with reason `content-filter`, which the loop reports as `ContentRefused`.
+- `backend/src/model/ModelLayer.ts` builds, for each offered configuration, a `LanguageModel` and its admission semaphore; it is the only module that imports a provider package. `Agent.ask` takes the configuration's permit and provides its `LanguageModel` to the loop.
+- `app.requests` records `model_config`, `model_id`, `model_settings` (the configuration's effort or request options) and `evaluation_run_id`.
+- A two-step question with a tool call between the steps is tested against Claude: Claude requires a turn's thinking blocks to come back unchanged, which `Prompt.fromResponseParts` and `@effect/ai-anthropic` preserve.
 
-- `model.configuration` (one configuration per backend) becomes `model.default` and `model.offered`. A configuration that is offered but has no API key fails startup with a `ConfigFileError`, as a selected one does today; a configuration that is listed but not offered needs no key.
-- Each configuration gains `provider` and `label`. `AgentConfig.ts` decodes a configuration as a union on `provider`: `openai-compat` keeps `baseUrl`, `outputTokensParameter` and `requestOptions`; `anthropic` has `effort` and no base URL. The frontier entry's `outputTokensParameter: max_completion_tokens` and `reasoning_effort: none` go with `gpt-6-luna`.
-- `FRONTIER_API_KEY` in `backend/.env` becomes an Anthropic API key; the variable keeps its name, by the existing `<CONFIGURATION>_API_KEY` rule.
-- Claude Opus 5.5 always thinks; `effort` (`low`, `medium`, `high`, `xhigh`, `max`, default `medium`) is its only control, and `@effect/ai-anthropic` 4.1.2 accepts it in its `Config`. Refusal fallbacks to another model stay off: a fallback would answer with a model other than the one the trace names. A refusal finishes with reason `content-filter`, which the loop already reports as `ContentRefused`.
+The API side is in [`protocol/src/QuestionsApi.ts`](../../protocol/src/QuestionsApi.ts): `QuestionRequest` takes an optional `model` and `evaluationRunId`; `GET /api/v1/models` lists the offered configurations and the default; `Complete` carries the `model` that answered and the token `usage`.
 
-### Backend
+## The evaluation
 
-| Module | Change |
+`evaluation/` is a TypeScript workspace, `@policyhuis/evaluation`, a client of the backend's API like the browser app: it depends on `protocol/` to decode the event stream, and on nothing else in the repo. Its files and commands are in its [README](../../evaluation/README.md).
+
+`yarn workspace @policyhuis/evaluation eval [--model open_cloud,frontier] [--repeat 3] [--only sf-bla-01,sf-data-10]` runs the set against a running backend, with one provider per configuration named (the backend's default when none is), checked against `GET /api/v1/models` before any question is asked. It prints each configuration's pass rate per check and each failing question's failed checks; `promptfoo view` shows every run's answers side by side.
+
+`BackendProvider` posts each question, decodes every server-sent event with `protocol`'s `AgentStreamEvent`, and folds them into an `Answer`: the text, each lookup, the citations sent and `Complete`'s fields. The run ID is one UUID per configuration per run: an evaluation run is one pass of the question set against one model configuration ([Ubiquitous Language](../ubiquitous-language.md)). Questions run one at a time (`maxConcurrency: 1`). A result the provider could not get (the stream ended without `Complete`, a server was unavailable, the outcome was `failed`, or the backend answered `503 busy`) is a promptfoo error, counted apart from passes and failures.
+
+### Question types
+
+| Type | Answered from |
 |---|---|
-| `model/ModelLayer.ts` | Becomes `ModelConfigurations`: for each offered configuration, a `LanguageModel` (through `@effect/ai-openai-compat` or `@effect/ai-anthropic`, by `provider`) and its admission semaphore. Still the only module that imports a provider package. |
-| `agent/Agent.ts` | `ask` takes the configuration key, takes that configuration's permit, and provides that configuration's `LanguageModel` to the loop. An unknown or unoffered key fails before the stream starts. |
-| `trace/` and `db/schema.ts` | `app.requests` gains `evaluation_run_id uuid` (nullable) and `model_settings jsonb` (the configuration's effort or request options, so a change of effort shows in the traces); `model_config` and `model_id` already exist. Regenerated with `db:generate`. |
-
-**To verify on the first run against Claude**, with a test kept in the backend's suite: a two-step question with a tool call between the steps. Claude requires a turn's thinking blocks to come back unchanged in the next request. The loop builds the next prompt with `Prompt.fromResponseParts`, which keeps reasoning parts and their metadata, and `@effect/ai-anthropic` sends a reasoning part's signature back as a `thinking` block (both 4.1.2); the test confirms the pair works end to end. It also confirms the finish reasons the loop sees (`end_turn` → `stop`, `tool_use` → `tool-calls`, `max_tokens` → `length`, by the provider's mapping) and that the trace's output tokens include thinking.
-
-### `protocol/`
-
-- `QuestionRequest` gains `model` (optional; a configuration key) and `evaluationRunId` (optional UUID). A request naming a configuration that is not offered gets `400 UnknownModel` with the offered keys.
-- `GET /api/v1/models` returns the offered configurations, in order, with each one's key, label and model ID, and which is the default; the browser app builds its model choice from it.
-- `Complete` gains `model` (the configuration key and model ID that answered) and `usage` (input and output tokens), so the browser app labels each answer and the evaluation records tokens without reading the database.
-
-## Step 2: The evaluation
-
-### Layout
-
-`evaluation/` becomes a TypeScript workspace, `@policyhuis/evaluation`. It is a client of the backend's API like the browser app, so it depends on `protocol/` to decode the event stream, and on nothing else in the repo.
-
-```
-evaluation/
-  package.json
-  .env.example            EVALUATION_BACKEND_URL, optional
-  questions/
-    sf.yaml               the San Francisco question set
-  src/
-    EvaluationConfig.ts   the one configuration module: the backend's URL
-    Questions.ts          the question file's Schema, and loading it
-    Answer.ts             the backend's events for one question, folded into an Answer
-    BackendProvider.ts    the promptfoo provider: one question to the backend's API
-    checks.ts             the checks, as functions of the answer
-    suite.ts              each question's expectations as promptfoo assertions
-    results.ts            the run's summary, from promptfoo's results.json
-    runEval.ts            the CLI
-  test/                   unit tests of the checks, the question file and the summary
-  results/                one folder per run, never overwritten: promptfoo's results.json and results.html (gitignored)
-```
-
-`yarn workspace @policyhuis/evaluation eval [--model local,frontier] [--repeat 3] [--only sf-bla-01,sf-data-10]` runs the set against a backend already running (its URL from `evaluation/.env`, through `EvaluationConfig.ts`), with one provider per model configuration named (the backend's default when none is), checked against `GET /api/v1/models` before any question is asked. It then prints, for each configuration, each check's pass rate and each failing question's failed checks. `yarn workspace @policyhuis/evaluation promptfoo view` browses every run, each question's answers from every configuration side by side.
-
-### The provider
-
-`BackendProvider` is a promptfoo `ApiProvider`. For each question it posts `QuestionRequest`, decodes every server-sent event with `protocol`'s `AgentStreamEvent`, and folds them into an `Answer`: the text (the `TextChunk`s), each lookup (tool, arguments, outcome, result, error), the citations sent (`Sources`) and `Complete`'s request ID, outcome, message, unavailable servers, model and token usage. It sends the configuration as `model` and its run's `evaluationRunId` with every question, and returns the text as `output`, the `Answer` as `metadata.answer`, which the checks decode with `Schema`, and `Complete.usage` as `tokenUsage`.
-
-The run ID is one UUID per configuration per run, matching the [Ubiquitous Language](../ubiquitous-language.md) entry: an evaluation run is one pass of the question set against one model configuration.
-
-Questions run one at a time (`maxConcurrency: 1`), as the [MVP plan](mvp-technical-plan.md#question-set) requires for energy sampling, and because the local configuration answers one question at a time. Repeats use promptfoo's `repeat`. A result the provider could not get (the stream ended without `Complete`, a server was unavailable, the outcome was `failed`, or the backend answered `503 busy`) is a promptfoo error (`failureReason` 2), counted apart from passes and failures.
+| `rule` | The docs server only |
+| `ground` | A data server only |
+| `rule + data` | Both: a rule from the docs server, numbers from a data server |
+| `climate` | Mostly a data server, sometimes the docs server |
+| `report` | An analysis report on the docs server, with the answer saying it is analysis, not law |
+| `cross-city` | Both cities' servers |
+| `decline` | None. The agent declines, explains why, and points to the right body or says what data is missing |
 
 ### The question file
 
@@ -118,7 +68,7 @@ questions:
 
 | Field | Meaning |
 |---|---|
-| `type` | A question type from [Provisional Questions](provisional-questions.md), plus `report`: answered from an analysis report on the docs server, with the answer saying it is analysis, not law |
+| `type` | A [question type](#question-types) |
 | `expect.tools` | At least one of these tools is called |
 | `expect.documents` | The answer cites a passage of each of these documents |
 | `expect.provisions` | The answer cites one of these provisions, or a subsection of one |
@@ -132,9 +82,9 @@ questions:
 
 ### The checks
 
-Each check is a function of the `Answer` in `checks.ts`, run as a promptfoo `javascript` assertion named by its `metric`, except `citedExpectedDocuments` and `notCitedDocuments`, which are promptfoo's `contains` and `not-contains` on the citation prefix. promptfoo's built-in `icontains-any` was the first choice for facts and mentions, but it compares text as written, and `gpt-oss:20b` writes narrow no-break spaces (`1.6\u202f%`) and non-breaking hyphens (`rent\u2011controlled`); the checks compare after `normalizeText` instead. promptfoo's `trajectory:tool-used` and `trajectory:tool-args-match` check tool calls too, but read them from OpenTelemetry traces the target exports to promptfoo, which the backend does not.
+Each check is a function of the `Answer` in `checks.ts`, run as a promptfoo `javascript` assertion named by its `metric`, except `citedExpectedDocuments` and `notCitedDocuments`, which are promptfoo's `contains` and `not-contains` on the citation prefix. Facts and mentions are compared after `normalizeText`, not with promptfoo's `icontains-any`, because models write narrow no-break spaces (`1.6\u202f%`) and non-breaking hyphens (`rent\u2011controlled`). promptfoo's `trajectory:tool-used` and `trajectory:tool-args-match` check tool calls too, but read them from OpenTelemetry traces the target exports to promptfoo, which the backend does not.
 
-A **citation marker** is anything in square brackets, as one token with a digit, `.` or `#` in it, that is not a Markdown link's text: a well-formed `[<citationId>]`, and also a mangled one, such as `[6b56a3fe0ccdd6cc]` (only the part after `#`), which `gpt-oss:20b` wrote on November 11, 2026.
+A **citation marker** is anything in square brackets, as one token with a digit, `.` or `#` in it, that is not a Markdown link's text: a well-formed `[<citationId>]`, and also a mangled one, such as `[6b56a3fe0ccdd6cc]` (only the part after `#`).
 
 | Check | Assertion | Passes when |
 |---|---|---|
@@ -144,7 +94,7 @@ A **citation marker** is anything in square brackets, as one token with a digit,
 | `citedExpectedDocuments` | `contains`, one per document | The answer contains `[sf_docs.<documentId>@` |
 | `notCitedDocuments` | `not-contains`, one per document | The answer does not contain `[sf_docs.<documentId>@` |
 | `citedExpectedProvisions` | `javascript` | The answer cites one of `expect.provisions`, or a subsection of one (`37.9(a)(8)(ii)` also matches `37.9(a)(8)(ii)(A)`, but `37.9` does not match `37.9A`) |
-| `citationIdsExact` | `javascript` | Every citation marker in the answer is an ID the backend sent in `Sources` for this question, character for character, and no ID is written in other brackets (`gpt-oss:20b` writes `【…】`, which the browser app shows as text, not as a source) |
+| `citationIdsExact` | `javascript` | Every citation marker in the answer is an ID the backend sent in `Sources` for this question, character for character, and no ID is written in other brackets, which the browser app shows as text, not as a source |
 | `citesFigures` | `javascript` | An answer that states a figure contains at least one citation marker. Numbers the question states, list and heading numbering, references to laws (`Section 415`, `§37.3(a)(1)`, `Chapter 37`) and decades (`1990s`) are not figures. Where the citation sits (after each figure, at a table's caption, once for a paragraph) is the answer's presentation and is not checked |
 | `expectedFacts` | `javascript` | Each fact appears in one of its forms, after `normalizeText` |
 | `mentions` | `javascript` | One of the words appears, after `normalizeText` |
@@ -154,7 +104,7 @@ Every question gets `completed`, `citationIdsExact` and `citesFigures`; the othe
 
 ### The question set
 
-**The BLA report.** Facts from the archived report (version 2026-06-05), at the pages its executive summary states them; the body repeats most of them, and any passage of the report counts as a citation. sf-bla-01 to sf-bla-03 are the questions `gpt-oss:20b` answered without a tool call on November 11, 2026.
+**The BLA report.** Facts from the archived report (version 2026-06-05), at the pages its executive summary states them; the body repeats most of them, and any passage of the report counts as a citation.
 
 | ID | Type | Question | Facts (each in at least one form) | Where |
 |---|---|---|---|---|
@@ -229,14 +179,14 @@ All nine expect a docs tool, a citation of `bla_affordable_housing`, and a menti
 
 | ID | Type | Question | Expected tool | Expected arguments or facts |
 |---|---|---|---|---|
-| sf-data-01 | ground | How many eviction notices were filed in the Mission in 2025, and for what reasons? (SF-03, with the year stated) | `sf_data_eviction_notice_counts` | neighborhood `Mission`; months January to December 2025 |
+| sf-data-01 | ground | How many eviction notices were filed in the Mission in 2025, and for what reasons? | `sf_data_eviction_notice_counts` | neighborhood `Mission`; months January to December 2025 |
 | sf-data-02 | ground | What reasons can a landlord give on an eviction notice in San Francisco? | `sf_data_eviction_grounds` | |
-| sf-data-03 | ground | How many affordable units are in the city's pipeline at each income level? (SF-04) | `sf_data_affordable_pipeline_units_by_income_band` | |
+| sf-data-03 | ground | How many affordable units are in the city's pipeline at each income level? | `sf_data_affordable_pipeline_units_by_income_band` | |
 | sf-data-04 | ground | How many affordable housing projects in MOHCD's pipeline are under construction? | `sf_data_affordable_pipeline_summary` | |
 | sf-data-05 | ground | Which affordable housing projects are planned in the Tenderloin? | `sf_data_affordable_pipeline_projects` | neighborhood `Tenderloin` |
 | sf-data-06 | ground | How many net new units are in the development pipeline, by status? | `sf_data_development_pipeline_summary` | |
 | sf-data-07 | ground | What are the largest housing projects under construction in South of Market? | `sf_data_development_pipeline_projects` | neighborhood `South of Market` |
-| sf-data-08 | climate | Which affordable projects in San Francisco fall inside the sea-level-rise zone? (SF-08) | `sf_data_project_hazard_exposure` | zone `slr_66in_100yr_storm` |
+| sf-data-08 | climate | Which affordable projects in San Francisco fall inside the sea-level-rise zone? | `sf_data_project_hazard_exposure` | zone `slr_66in_100yr_storm` |
 | sf-data-09 | ground | Where does your eviction data come from, and how current is it? | `sf_data_dataset_info` | |
 | sf-data-10 | ground | What was the allowable annual rent increase for rent-controlled units from March 1, 2026? | `sf_data_allowable_rent_increase` | fact "1.6%" or "1.6 percent": the Rent Board's figure for March 1, 2026 to February 28, 2027 (dataset `allowable_rent_increase`, version 2026-05-01) |
 
@@ -245,8 +195,8 @@ All nine expect a docs tool, a citation of `bla_affordable_housing`, and a menti
 | ID | Type | Question | Expected |
 |---|---|---|---|
 | sf-mix-01 | rule + data | Can my landlord raise my rent by 10%? | `sf_data_allowable_rent_increase` and a docs tool; citations of `rent_ordinance`; fact "1.6%" or "1.6 percent", as in sf-data-10; no citation of `bla_affordable_housing` |
-| sf-mix-02 | rule + data | Which grounds for eviction in the rent ordinance account for the most notices, and which are rising? (SF-06) | `sf_data_eviction_notice_counts`; the eviction data names each ground's section of the ordinance, so a citation of `rent_ordinance` is not required |
-| sf-mix-03 | rule | Which units are covered by rent control under Chapter 37 of the Administrative Code? (SF-01) | A docs tool; a citation of `rent_ordinance` |
+| sf-mix-02 | rule + data | Which grounds for eviction in the rent ordinance account for the most notices, and which are rising? | `sf_data_eviction_notice_counts`; the eviction data names each ground's section of the ordinance, so a citation of `rent_ordinance` is not required |
+| sf-mix-03 | rule | Which units are covered by rent control under Chapter 37 of the Administrative Code? | A docs tool; a citation of `rent_ordinance` |
 
 **Declines.**
 
@@ -258,36 +208,14 @@ All nine expect a docs tool, a citation of `bla_affordable_housing`, and a menti
 
 That is 75 questions: 9 on the report, 50 on the ordinance, 10 on the data tools, 3 combining them and 3 declines.
 
-## Step 3: The model choice in the browser app
+## The model choice in the browser app
 
-Built: see [Browser App Plan § Model choice](browser-app.md#model-choice).
-
-- A model choice beside the question box, built from `GET /api/v1/models`, sent as `model` with each question and remembered per viewer in `localStorage`.
-- Each answer is labeled with the configuration's label and model ID from `Complete.model`.
-- **Compare** (not built yet): one question sent to two configurations at once, the answers shown side by side, each with its lookups and sources. The local configuration's limit still applies: a second compare while one is answering gets the `busy` message on the local side.
-
-The details go in the [Browser App Plan](browser-app.md).
-
-## Step 4: Documentation
-
-- [Agent Loop Plan](agent-loop.md): configuration table, startup, admission per configuration, API contract, `app` schema.
-- [MVP Technical Plan](mvp-technical-plan.md): the frontier model and its provider package; S5's question about Chat Completions no longer applies to the frontier configuration.
-- [Ubiquitous Language](../ubiquitous-language.md): Frontier now names Claude; add Check, Evaluation run ID and Compare.
-- `CLAUDE.md`: `evaluation/` is a TypeScript workspace; `protocol/` is shared by the backend and its API clients, the browser app and the evaluation.
-- [Provisional Questions](provisional-questions.md): the `report` question type.
-
-## Energy and the dashboard: open questions
-
-Energy is not in Steps 1 to 4, but these decide how it fits. The [Energy Estimates Plan](energy.md) settles 2 to 4 for the cloud configurations:
-
-1. **Local measurement.** The MVP plan samples `powermetrics`, which needs sudo, net of an idle baseline. The backend should not run as root, so a separate privileged sampler would record samples that the backend or the evaluation joins to a request by time. Which one joins them, and where samples are stored, is open.
-2. **Cloud estimates.** EcoLogits is Python and estimates from token counts and latency after the fact. Its coverage of Claude Opus 5.5, and its uncertainty for a closed model, are unchecked.
-3. **Where estimates are stored.** `app` is the backend's schema, written by the backend through Drizzle. Options: the backend computes an estimate itself and writes it with the trace; a Python job writes to a table it owns, beside `app`; or the evaluation records energy with its results. Interactive questions, including Compare, are not sampled: their requests overlap.
-4. **The dashboard** reads evaluation runs and traces through new read endpoints on the backend, as the MVP plan's follow-up describes, once 1 to 3 are settled.
+See [Browser App Plan § Model choice](browser-app.md#model-choice): a model choice beside the question box, built from `GET /api/v1/models`, sent as `model` with each question and remembered per viewer; each answer is labeled with the configuration that answered. **Compare**, one question sent to two configurations at once with the answers side by side, is not built.
 
 ## Open questions
 
-1. **The context budget.** The cloud configurations (open_cloud and frontier) share a budget of 250,000 tokens, within Qwen3.5's 262,144 and Claude's 1M; the local configuration keeps 32,000, what Ollama can hold on a laptop. At 32,000 the cloud models stopped early on questions whose search results filled the budget, so the cloud runs are no longer compared with the local run under one limit. A prompt near the budget costs far more per step on Claude than on Qwen.
+1. **The context budget.** The cloud configurations share a budget of 250,000 tokens, within Qwen3.5's 262,144 and Claude's 1M; the local configuration keeps 32,000, what Ollama holds on a laptop, so runs of the local configuration are not compared with the cloud runs under one limit. A prompt near the budget costs far more per step on Claude than on Qwen.
 2. **Pass thresholds.** None for now: runs report pass rates; the evaluation is not a gate.
-3. **Same model in the cloud** stays unconfigured until its provider is chosen (MVP plan, open question 3). OpenRouter, which the open_cloud configuration uses, serves `openai/gpt-oss-20b` and is a candidate.
-4. **Open model in the cloud** (`open_cloud`) asks a larger open-weight model through OpenRouter, to test whether the local model's failures come from its size. OpenRouter routes each request to one of several hosts, which may serve different quantizations, so its answers can vary by host; pinning a host (OpenRouter's `provider` request option) is open.
+3. **The OpenRouter host.** OpenRouter routes each `open_cloud` request to one of several hosts, which may serve different quantizations, so answers can vary by host; pinning a host (OpenRouter's `provider` request option) is open.
+4. **Reasoning effort.** `open_cloud` runs with reasoning off and `frontier` at `low`, so the comparison is between configurations as set, not at equal effort.
+5. **Same model in the cloud** stays unconfigured; it would isolate the local hardware from the model, which matters only if the local configuration is evaluated again.

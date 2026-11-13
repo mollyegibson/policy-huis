@@ -616,7 +616,7 @@ questions:
       tools: *docs_tools
 
   # The data tools: one question per sf-data tool. Their figures are the tool results', never this file's.
-  - id: sf-data-01 # provisional question SF-03, with the year stated
+  - id: sf-data-01 # with the year stated
     type: ground
     question: "How many eviction notices were filed in the Mission in 2025, and for what reasons?"
     expect:
@@ -629,7 +629,7 @@ questions:
     expect:
       tools: [sf_data_eviction_grounds]
 
-  - id: sf-data-03 # provisional question SF-04
+  - id: sf-data-03
     type: ground
     question: "How many affordable units are in the city's pipeline at each income level?"
     expect:
@@ -661,7 +661,7 @@ questions:
       tools: [sf_data_development_pipeline_projects]
       arguments: { neighborhood: South of Market }
 
-  - id: sf-data-08 # provisional question SF-08
+  - id: sf-data-08
     type: climate
     question: "Which affordable projects in San Francisco fall inside the sea-level-rise zone?"
     expect:
@@ -695,14 +695,14 @@ questions:
         - any: ["1.6%", "1.6 percent"]
           source: "allowable_rent_increase dataset, version 2026-05-01: the rate from March 1, 2026 to February 28, 2027"
 
-  - id: sf-mix-02 # provisional question SF-06
+  - id: sf-mix-02
     type: rule + data
     question: "Which grounds for eviction in the rent ordinance account for the most notices, and which are rising?"
     expect:
       # The eviction data names each ground's section of the ordinance, so citing the ordinance itself is not required.
       tools: [sf_data_eviction_notice_counts]
 
-  - id: sf-mix-03 # provisional question SF-01
+  - id: sf-mix-03
     type: rule
     question: "Which units are covered by rent control under Chapter 37 of the Administrative Code?"
     expect:

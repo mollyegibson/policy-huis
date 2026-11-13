@@ -1,12 +1,8 @@
 # PolicyHuis: Browser App Plan
 
-Draft, November 5, 2026.
-
 The browser app sends a question to the backend and shows the answer as it streams in: the agent's lookups while it works, the answer text, and the sources behind each claim. Like the agent loop, it is the same for every city; it knows a city only through the lookups and citations the backend streams to it.
 
 This plan covers the Phase 1 prototype, enough to show the agent working, built to be iterated on. It builds on the [Agent Loop Plan](agent-loop.md), whose [API contract](agent-loop.md#api-contract) defines everything the app receives. The full web app design (pages, Dutch originals beside machine translations, hosting, the energy dashboard) remains the MVP plan's [follow-up](mvp-technical-plan.md#follow-up).
-
-The app is built as described here; the code below is excerpted from it or simplified, and `browser-app/README.md` lists its files.
 
 ## Scope
 
@@ -28,227 +24,29 @@ Not in Phase 1: accounts, history, follow-up questions in a thread, maps, and ho
 | Build and dev server | Vite with `@vitejs/plugin-react` |
 | Checks | The repo's TypeScript, ESLint, Prettier and Vitest setup, like every other workspace |
 
-Exact package versions are pinned when the workspace is created.
+## Design
 
-## How it follows the reference app
-
-The design follows the reference project's browser app (`browser-sdk-internal`) where its patterns fit, and departs from it where this app is simpler:
-
-| Reference app | This app | Why |
-|---|---|---|
-| A state atom updated by pure, exported reducers (`onMessageReducer`), unit-tested on their own | The same: one pure `reduce(state, event)` per event, unit-tested | The core of both designs |
-| Tool-call lifecycle kept apart from message text, updated by `callId` (`upsertToolCall`) | The same, by `lookupId` | Lookup events must never leak into the answer |
-| Chunks carry the accumulated text, so the newer chunk replaces the text | `TextChunk` carries a delta, so the reducer appends it | Our protocol streams deltas |
-| An `Atom.fn` writes to a separate state atom through the registry, guarded by a `streamGeneration` counter so a stale stream cannot write | The atom function returns a stream of states (`Stream.scan(() => initialState, reduce)`), so its value is the latest state; asking again interrupts the previous run | One question at a time and no threads, so there is no stale stream to guard against. In Effect 4, writing a new argument to an `Atom.fn` interrupts the computation it replaces, and `Atom.Interrupt` cancels it |
-| `@effect-atom/atom-react` on Effect 3 | `effect/reactivity` and `@effect/atom-react` on Effect 4 | The atoms moved into Effect 4 |
-| `ToolsUsed`: a "Used N tools" toggle once the message is committed | A live list of lookups while the agent works, collapsing to "Made N lookups" when the answer is complete | Shows progress during the 10 to 60 seconds an answer can take |
-| `humanizeToolName` strips the provider prefix | Tags the lookup with its server's label and shows the tool's title, both of which the backend sends in `LookupStarted` (`SF Data · Planning pipeline totals`) | A tool from the wrong city's server stands out, and the browser never parses tool names |
-| A private Markdown component | `react-markdown`, with citation markers turned into links before parsing | The private component is not available |
-| Client-side tools, approvals, interrupts, threads, artifacts, generated UI, auth, analytics | None | Not part of this app |
+The state follows one pattern: a pure, unit-tested `reduce(state, event)` folds each event into the page state, keeping lookups apart from the answer text and updating each by `lookupId`. The ask atom's value is the stream of states (`Stream.scan(() => initialState, reduce)`), so asking again interrupts the previous run and no stale stream can write. While the agent works, the lookups show as a live list, collapsing to "Made N lookups" when the answer is complete.
 
 ## Files
 
-| File | Contents |
-|---|---|
-| `src/main.tsx` | Mounts `App` inside MUI's `ThemeProvider` and `CssBaseline`, and the atom `RegistryProvider` |
-| `src/App.tsx` | The page layout |
-| `src/api/ApiClient.ts` | The `ApiClient` service and its layer: the typed client for `PolicyHuisApi` |
-| `src/questions/QuestionState.ts` | `QuestionState`, `initialState` and the pure `reduce` |
-| `src/api/runtime.ts` | The atom runtime that provides `ApiClient` |
-| `src/questions/askAtom.ts` | `askAtom`: one question and the model configuration to answer it |
-| `src/models/modelsAtom.ts`, `src/models/useModelChoice.ts` | The offered model configurations, and the viewer's choice among them |
-| `src/models/models.ts` | Which configuration to ask with, and how an answer names its model |
-| `src/components/ModelChoice.tsx` | One toggle button for each offered configuration, beside Ask |
-| `src/questions/useAsk.ts` | The hook components use: the page's view of the result, `ask` and `stop` |
-| `src/questions/notices.ts` | `questionView`: the latest state, whether it is streaming, and the notices, from the atom's result |
-| `src/questions/useQuestionDraft.ts`, `src/hooks/useDisclosure.ts` | The draft question, and open or closed sections, as the style guide puts all state in hooks |
-| `src/questions/citations.ts` | Linking markers, numbering sources and grouping the sources cited in the answer |
-| `src/components/QuestionForm.tsx` | The question box and Ask button |
-| `src/components/Lookups.tsx`, `LookupRow.tsx` | The lookup list and each expandable row |
-| `src/components/Answer.tsx` | The answer as Markdown with linked citation markers |
-| `src/components/Sources.tsx` | The sources list |
-| `src/components/Notices.tsx` | Incomplete answers, unreachable servers, busy and offline states, and the logging note |
-| `*.unit.test.ts` | Beside each module they test, with `src/questions/fixtures.ts` building events as the browser receives them; `vitest.config.ts` runs them without the dev server |
+[`browser-app/README.md`](../../browser-app/README.md) lists the app's files.
 
 ## Page state
 
-Everything the page shows comes from one value, folded from the event stream:
+Everything the page shows comes from one value, `QuestionState`, folded from the event stream by the pure `reduce` in [`src/questions/QuestionState.ts`](../../browser-app/src/questions/QuestionState.ts): the answer text (each `TextChunk` appended), the lookups in `LookupStarted` order (each updated by its `LookupEnded`: status, `result` and error type), every citation received in `Sources` by `citationId`, and `Complete`, which also marks any lookup still running as `unfinished`. A lookup's `result` is the tool's `structuredContent`, kept for display; citations are never read from it.
 
-```ts
-// src/questions/QuestionState.ts
-import type { Citation } from "@policyhuis/protocol/Citation"
-import type { AgentStreamEvent, Complete, LookupOutcome, LookupSource } from "@policyhuis/protocol/QuestionsApi"
-
-export type LookupStatus = "running" | LookupOutcome | "unfinished"
-
-export interface LookupView {
-  readonly lookupId: string
-  /** The server the lookup went to, as the backend named it; null when no server offered the tool. */
-  readonly source: LookupSource | null
-  /** The name the model called, with its server's prefix. */
-  readonly tool: string
-  readonly title: string
-  readonly arguments: unknown
-  readonly status: LookupStatus
-  /** The tool's `structuredContent`, shown as it is; null until it succeeds. Citations are never read from it. */
-  readonly result: unknown
-  /** The failure's type only, such as `UnknownValue`; null unless it failed or its server was unavailable. */
-  readonly error: string | null
-}
-
-/** Everything the page shows about one question, folded from its event stream. */
-export interface QuestionState {
-  readonly answer: string
-  readonly lookups: ReadonlyArray<LookupView>
-  /** Every citation received so far in `Sources`, by `citationId`. */
-  readonly citations: ReadonlyMap<string, Citation>
-  /** Set by `Complete`, the last event of every stream that is not interrupted. */
-  readonly complete: Complete | null
-}
-
-export const initialState: QuestionState = { answer: "", lookups: [], citations: new Map(), complete: null }
-
-const updateLookup = (
-  lookups: ReadonlyArray<LookupView>,
-  lookupId: string,
-  update: (lookup: LookupView) => LookupView
-): ReadonlyArray<LookupView> => lookups.map((lookup) => (lookup.lookupId === lookupId ? update(lookup) : lookup))
-
-export const reduce = (state: QuestionState, event: AgentStreamEvent): QuestionState => {
-  switch (event._tag) {
-    case "TextChunk":
-      return { ...state, answer: state.answer + event.text }
-    case "LookupStarted":
-      return {
-        ...state,
-        lookups: [
-          ...state.lookups,
-          {
-            lookupId: event.lookupId,
-            source: event.source,
-            tool: event.tool,
-            title: event.title,
-            arguments: event.arguments,
-            status: "running",
-            result: null,
-            error: null
-          }
-        ]
-      }
-    case "LookupEnded":
-      return {
-        ...state,
-        lookups: updateLookup(state.lookups, event.lookupId, (lookup) => ({
-          ...lookup,
-          status: event.outcome,
-          result: event.result,
-          error: event.error
-        }))
-      }
-    case "Sources":
-      return {
-        ...state,
-        citations: new Map([...state.citations, ...event.citations.map((c): [string, Citation] => [c.citationId, c])])
-      }
-    case "Keepalive":
-      return state
-    case "Complete":
-      return {
-        ...state,
-        complete: event,
-        lookups: state.lookups.map((lookup) =>
-          lookup.status === "running" ? { ...lookup, status: "unfinished" } : lookup
-        )
-      }
-  }
-}
-```
-
-The `switch` is exhaustive over `AgentStreamEvent`, so a new event in `protocol/` fails the type check here until it is handled.
+The `switch` is exhaustive over `AgentStreamEvent`, so a new event in `protocol/` fails the type check there until it is handled.
 
 ## Asking a question
 
-The API client is a service, so the atom runtime provides it once:
-
-```ts
-// src/api/ApiClient.ts
-import { Context, Effect, Layer } from "effect"
-import { FetchHttpClient } from "effect/http"
-import { HttpApiClient } from "effect/http-api"
-
-import { PolicyHuisApi } from "@policyhuis/protocol/QuestionsApi"
-
-/** The typed client for the backend's API, on the app's own origin, where the dev server proxies `/api`. */
-const makeClient = HttpApiClient.make(PolicyHuisApi, { baseUrl: window.location.origin })
-
-export class ApiClient extends Context.Service<ApiClient, Effect.Success<typeof makeClient>>()(
-  "browser-app/ApiClient"
-) {
-  static readonly layer = Layer.effect(this, makeClient).pipe(Layer.provide(FetchHttpClient.layer))
-}
-```
-
-The ask atom is a function atom whose computation is a stream of states:
-
-```ts
-// src/questions/askAtom.ts
-import { Effect, Stream } from "effect"
-import { Atom } from "effect/reactivity"
-
-import { QuestionRequest } from "@policyhuis/protocol/QuestionsApi"
-
-import { ApiClient } from "../api/ApiClient.ts"
-import { initialState, reduce } from "./QuestionState.ts"
-
-const runtime = Atom.runtime(ApiClient.layer)
-
-/**
- * The current question's state, as a stream of states folded from the backend's events. Writing a question starts a
- * new answer and interrupts the one before it; writing `Atom.Interrupt` stops it.
- */
-export const askAtom = runtime.fn((question: string) =>
-  Stream.unwrap(
-    Effect.gen(function* () {
-      const client = yield* ApiClient
-      return yield* client.questions.ask({ payload: QuestionRequest.make({ question }) })
-    })
-  ).pipe(Stream.scan(() => initialState, reduce))
-)
-```
-
+- **The client:** `ApiClient` ([`src/api/ApiClient.ts`](../../browser-app/src/api/ApiClient.ts)) is the typed `HttpApiClient` for `PolicyHuisApi` on the app's own origin, where the dev server proxies `/api`; the atom runtime in [`src/api/runtime.ts`](../../browser-app/src/api/runtime.ts) provides it once.
+- **The ask atom** ([`src/questions/askAtom.ts`](../../browser-app/src/questions/askAtom.ts)) is a function atom taking the question and the chosen model configuration, or none for the backend's default. Its computation posts a `QuestionRequest` and scans the event stream into `QuestionState`s. Writing a new question starts a new answer and interrupts the one before it; writing `Atom.Interrupt` stops it.
 - **While streaming**, the atom's value is `AsyncResult.Success` with the latest `QuestionState` and `waiting: true`. It starts with `initialState`, so the page clears at once.
 - **When the stream ends**, `waiting` turns false and the value holds the final state, with `complete` set.
 - **A `503`** fails the stream with `AgentUnavailable`, whose `message` the page shows.
-- **An unreachable backend, or a stream that breaks before `Complete`,** fails with an `HttpClientError`, and the page shows the offline notice. A failed stream atom keeps its last state as `previousSuccess` (`effect/reactivity`, 4.1.2), so a broken or stopped stream still shows the partial answer and lookups.
-
-Components reach the atom through one hook, as the style guide requires:
-
-```ts
-// src/questions/useAsk.ts
-import { useAtomSet, useAtomValue } from "@effect/atom-react"
-import { useCallback, useMemo } from "react"
-import { Atom } from "effect/reactivity"
-
-import { askAtom } from "./askAtom.ts"
-import { questionView } from "./notices.ts"
-
-/** The current question for components: what to show, and how to ask or stop. */
-export const useAsk = () => {
-  const result = useAtomValue(askAtom)
-  const write = useAtomSet(askAtom)
-  const view = useMemo(() => questionView(result), [result])
-  const ask = useCallback(
-    (question: string) => {
-      write(question)
-    },
-    [write]
-  )
-  const stop = useCallback(() => {
-    write(Atom.Interrupt)
-  }, [write])
-  return { ...view, ask, stop }
-}
-```
+- **An unreachable backend, or a stream that breaks before `Complete`,** fails with an `HttpClientError`, and the page shows the offline notice. A failed stream atom keeps its last state as `previousSuccess` (`effect/reactivity`), so a broken or stopped stream still shows the partial answer and lookups.
+- **Components reach the atom through one hook**, as the style guide requires: `useAsk` ([`src/questions/useAsk.ts`](../../browser-app/src/questions/useAsk.ts)) returns the page's view of the result (`questionView` in `notices.ts`), `ask(question, model)` and `stop`.
 
 Stop, asking a new question, and leaving the page all interrupt the stream, which closes the connection. The backend's loop runs inside the response stream, so closing it interrupts the model call and any tool calls in flight, frees the question's slot and records the question as `cancelled`. Tokens the model has already generated are still billed.
 
@@ -307,75 +105,11 @@ A lookup is one tool call: the agent consulting a server. A question can make se
 - **Sources list:** citations grouped by `sourceId` (one dataset or document version), numbered to match the chips, each showing the title, publisher, version and a link to `sourceUrl`, and underneath each citation's `locator` (the provision, or the data selected, in words) and its `quote`, when it has one.
 - **Versions:** each source shows the version cited and notes that the live link may show newer data, since users can open only the publisher's live link, not our archived copy.
 
-```ts
-// src/questions/citations.ts (excerpt)
-import type { Citation } from "@policyhuis/protocol/Citation"
-
-/** A citation marker: a `citationId`, which is `<sourceId>#<part>`, in square brackets. */
-const MARKER_SOURCE = String.raw`\[([^[\]\s]+@[^[\]\s]+#[^[\]\s]+)\]`
-const MARKER = new RegExp(MARKER_SOURCE, "g")
-
-/** Markers in a row, separated only by spaces or tabs, never by a line break or other text. */
-const MARKER_RUN = new RegExp(`${MARKER_SOURCE}(?:[ \t]*${MARKER_SOURCE})*`, "g")
-
-/** The link target of a marker whose ID matches no citation received. */
-export const MISSING_CITATION = "#cite-missing"
-
-/** The link target of the chip for source number `n`. */
-export const citationHref = (n: number) => `#cite-${String(n)}`
-
-/** Source numbers in order of first use in the answer, by `sourceId`. */
-export const sourceNumbers = (
-  answer: string,
-  citations: ReadonlyMap<string, Citation>
-): ReadonlyMap<string, number> => {
-  const numbers = new Map<string, number>()
-  for (const [, citationId] of answer.matchAll(MARKER)) {
-    const citation = citationId === undefined ? undefined : citations.get(citationId)
-    if (citation !== undefined && !numbers.has(citation.sourceId)) numbers.set(citation.sourceId, numbers.size + 1)
-  }
-  return numbers
-}
-
-/**
- * Replaces markers with Markdown links that the answer's link component renders as citation chips: to the source's
- * number, or to `MISSING_CITATION`, titled with the unmatched ID, when no citation has that ID. Markers in a row that
- * lead to the same chip (two queries of one source, or one ID repeated) become one chip; markers apart keep their own.
- */
-export const linkCitations = (
-  answer: string,
-  citations: ReadonlyMap<string, Citation>,
-  numbers: ReadonlyMap<string, number>
-): string =>
-  answer.replace(MARKER_RUN, (run) => {
-    const links = [...run.matchAll(MARKER)].map(([, citationId = ""]) => {
-      const citation = citations.get(citationId)
-      const n = citation === undefined ? undefined : numbers.get(citation.sourceId)
-      return n === undefined ? `[?](${MISSING_CITATION} "${citationId}")` : `[${String(n)}](${citationHref(n)})`
-    })
-    return [...new Set(links)].join(" ")
-  })
-```
+The marker matching, source numbering and linking are in [`src/questions/citations.ts`](../../browser-app/src/questions/citations.ts).
 
 ## Running locally
 
-`browser-app/.env` (gitignored, with a `.env.example`) holds `BACKEND_URL`, for example `http://localhost:8080`. The Vite dev server proxies `/api` to it, so the browser calls the backend on the app's own origin and no CORS setup is needed while developing:
-
-```ts
-// browser-app/vite.config.ts
-import react from "@vitejs/plugin-react"
-import { defineConfig, loadEnv } from "vite"
-
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, import.meta.dirname, "")
-  return {
-    plugins: [react()],
-    server: { proxy: { "/api": { target: env.BACKEND_URL, changeOrigin: true } } }
-  }
-})
-```
-
-The proxy passes server-sent events through as they arrive, checked on November 5, 2026 against a test server sending one every 0.7 seconds. `BACKEND_URL` is required only by the dev server; `vite build` does not need it. `yarn dev` at the repo root starts the browser app with the backend, and with each city's servers named by `--include`. Serving the built app from another origin needs CORS on the backend, decided with hosting.
+`browser-app/.env` (gitignored, with a `.env.example`) holds `BACKEND_URL`, for example `http://localhost:8080`. The Vite dev server ([`vite.config.ts`](../../browser-app/vite.config.ts)) proxies `/api` to it, so the browser calls the backend on the app's own origin and no CORS setup is needed while developing; it refuses to start without `BACKEND_URL`, and `vite build` does not read it. The proxy passes server-sent events through as they arrive. `yarn dev` at the repo root starts the browser app with the backend, and with each city's servers named by `--include`. Serving the built app from another origin needs CORS on the backend, decided with hosting.
 
 ## Testing
 

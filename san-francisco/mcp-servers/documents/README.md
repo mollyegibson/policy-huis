@@ -1,6 +1,6 @@
 # sf-docs MCP server
 
-The San Francisco docs server: three tools over the `sf_docs` schema that [`san-francisco/ingest/documents/`](../../ingest/documents/README.md) builds, served by Effect's `McpServer` over Streamable HTTP at `/mcp`. The tools are designed in the [San Francisco Plan](../../../docs/plans/sf-plan.md#legal-text-tools-phase-2); search follows [spike S4's decision](../../../docs/plans/spikes/s4-embeddings.md#decision).
+The San Francisco docs server: three tools over the `sf_docs` schema that [`san-francisco/ingest/documents/`](../../ingest/documents/README.md) builds, served by Effect's `McpServer` over Streamable HTTP at `/mcp`. The tools are designed in the [San Francisco Plan](../../../docs/plans/sf-plan.md#docs-server-tools-phase-2); search follows [spike S4's decision](../../../docs/plans/spikes/s4-embeddings.md#decision).
 
 | Tool | Returns |
 |---|---|
@@ -11,7 +11,7 @@ The San Francisco docs server: three tools over the `sf_docs` schema that [`san-
 | File | Contents |
 |---|---|
 | `src/Tools.ts` | Tool names, parameters, results and descriptions |
-| `src/SearchConfig.ts` | `config/search.yaml`: the embedding model and build, its context, and the query instruction |
+| `src/SearchConfig.ts` | `config/search.yaml`: the embedding API, model and host, and the query instruction |
 | `src/PassageRepo.ts` | Read-only SQL over the `sf_docs` schema; every row is decoded with a schema |
 | `src/QueryEmbedder.ts` | Embeds a search query with the configured model and host, through OpenRouter |
 | `src/Handlers.ts` | Input checks and results |

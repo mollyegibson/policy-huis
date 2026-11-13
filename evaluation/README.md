@@ -18,7 +18,7 @@ Start the backend and the servers (`yarn dev --include san-francisco` from the r
 
 ```sh
 yarn workspace @policyhuis/evaluation eval                      # every question once, with the backend's default model
-yarn workspace @policyhuis/evaluation eval --model local,frontier   # every question with both models, side by side
+yarn workspace @policyhuis/evaluation eval --model open_cloud,frontier   # every question with both models, side by side
 yarn workspace @policyhuis/evaluation eval --repeat 3           # each question three times, for pass rates
 yarn workspace @policyhuis/evaluation eval --only sf-bla-01,sf-data-10
 yarn workspace @policyhuis/evaluation promptfoo view            # browse every run

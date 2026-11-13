@@ -2,7 +2,7 @@
 
 The agreed vocabulary for PolicyHuis. If a term is here, code and docs spell it this way. If the code needs a term that isn't here, add a row in the same PR.
 
-The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and the [Provisional Questions](./plans/provisional-questions.md). Housing-law terms specific to one city (for example *huurtoeslag* or *just cause*) are added as the sources are loaded, with the source that defines them.
+The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and the [Evaluation and Model Comparison Plan](./plans/evaluation.md). Housing-law terms specific to one city (for example *huurtoeslag* or *just cause*) are added as the sources are loaded, with the source that defines them.
 
 ## Questions and answers
 
@@ -17,7 +17,7 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | **Citation key** | The short name (`C1`, `C2`, …) the backend gives a citation ID for one question, so the model marks claims with a key it can copy; the backend expands each key back to its citation ID before the answer leaves it. |
 | **Locator** | A citation's description, in words, of which part of the source it used: a provision ("Sec. 37.9(a)(8)") or the data selected ("Planning pipeline projects, with status BP Filed"). Built from the source's fields and the tool's parameters only. |
 | **Decline** | An answer that does not give what was asked, says why, and points to the right body (the San Francisco Rent Board or the Huurcommissie) or to the missing data. Used for legal advice, causal conclusions and questions the data can't answer. |
-| **Question type** | One of Rule (docs server only), Ground (data server only), Rule + data (both), Climate, Cross-city (both cities' servers) and Decline. |
+| **Question type** | One of Rule (docs server only), Ground (data server only), Rule + data (both), Climate, Report (an analysis report on the docs server), Cross-city (both cities' servers) and Decline. See the [evaluation plan](./plans/evaluation.md#question-types). |
 | **Rule-plus-data pair** | A provision and a dataset that answer questions about it together, e.g. Chapter 37 of the SF Administrative Code with the Eviction Notices dataset. Each city's first pair is loaded in full before other sources. |
 
 ## Agent and servers
@@ -36,16 +36,16 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | **Tool error** | A typed failure returned as a tool's result (e.g. no data for that period), not a transport failure. Every server that reads a database can return **`DatabaseUnavailable`** (it could not connect or log in; the backend treats the server as unavailable) and **`DataUnavailable`** (it reached the database, but the data the tool reads is not loaded or could not be read). |
 | **Lookup** | The agent consulting a server: one tool call, as the browser app shows it, with its source's label, the tool's title and its outcome (`succeeded`, `failed` or `unavailable`). Streamed as `LookupStarted` and `LookupEnded`. Not to be confused with a step, which is a model turn. |
 | **Call ID** | The UUID the backend gives each tool call, sent to the browser as the lookup ID and used as the call's key in the trace. The model's provider has its own ID for the call (the provider call ID), which the trace keeps but which need not be unique. |
-| **Directory file** | The file in the repo listing each server's name, address, owner and tool prefix (`backend/config/servers.yaml`, decoded as `ServerDirectory`). The agent connects to every server it lists. |
+| **Directory file** | The file in the repo listing each server's name, label, URL and tool prefix (`backend/config/servers.yaml`, decoded as `ServerDirectory`). The agent connects to every server it lists. |
 | **Unavailable server** | A server in the directory file that the agent could not reach for a question: never connected, so its tools were left out, or a call to it failed in transport or with `DatabaseUnavailable`. The answer names it, and may be missing its data. |
 | **Step** | One model turn with tools and the resolution of the tool calls it makes; one `LanguageModel.streamText` call. A question takes at most `maxSteps` steps. |
 | **Final turn** | The model turn without tools that answers from what was gathered when a limit is reached (the step limit or the context budget). |
 | **Narration** | Text a model writes in a turn that also calls a tool ("Let me look that up"). It stays in the prompt but is never sent to the browser. |
 | **Context budget** | The tokens a prompt may use: the model's context length less the tokens reserved for its answer. The loop never sends a prompt estimated to exceed it. |
 | **Outcome** | How a question ended: `answered`, `step_limit`, `context_limit`, `truncated` or `failed`, and in the trace also `cancelled` when the browser disconnected first. Every outcome but `answered` carries a message for the user. |
-| **Model configuration** | Which model provides `LanguageModel` for a question: Local (the open-weight model on the agent host), Same model in the cloud (the same open-weight model at a cloud provider), Open model in the cloud (a larger open-weight model at a cloud provider, too large for the agent host) or Frontier (a closed cloud model, Claude, as the accuracy ceiling). A question names one of the configurations the backend offers, or gets the default. |
-| **Agent host** | The machine running the backend and the local model runtime. |
-| **Trace** | The record of one request in the `app` schema: model configuration, tool calls, token counts, latency and energy sample. |
+| **Model configuration** | Which model provides `LanguageModel` for a question: Open model in the cloud (`open_cloud`, the default: an open-weight model, Qwen3.5-397B-A17B, at a cloud provider), Frontier (a closed cloud model, Claude, as the accuracy ceiling), Local (an open-weight model in Ollama on the machine running the backend, kept as the reference for running on-premises) or Same model in the cloud (the local model at a cloud provider; not configured). A question names one of the configurations the backend offers, or gets the default. |
+| **Agent host** | The machine running the backend. |
+| **Trace** | The record of one request in the `app` schema: model configuration, tool calls, token counts and latency. |
 
 ## Legal text and retrieval
 
@@ -86,8 +86,8 @@ The terms come from the [MVP Technical Plan](./plans/mvp-technical-plan.md) and 
 | Term | Meaning |
 |---|---|
 | **Question set** | The reviewed file of evaluation questions, with expected answers and citations checked by the research team's policy expert. |
-| **Evaluation run** | One pass of the question set against one model configuration, with results written to `app`. |
-| **Measured energy** | Energy for a local request, sampled with `powermetrics` net of an idle baseline taken the same way. |
-| **Estimated energy** | Energy for a cloud request, estimated with EcoLogits from token counts and latency. Always shown with its uncertainty and never presented as measured. |
+| **Evaluation run** | One pass of the question set against one model configuration. Its run ID is written to the trace of each of its questions. |
+| **Measured energy** | Energy for a local request, sampled with `powermetrics` net of an idle baseline taken the same way. Deferred: the local configuration is not measured for now. |
+| **Estimated energy** | Energy for a cloud request, estimated from its token counts with CLEER's per-token factors (see the [Energy Estimates Plan](./plans/energy.md)). Always shown with its range and never presented as measured. |
 | **One-time cost** | Energy spent at load time (translation, embedding), reported separately from per-query energy. |
 | **Spike** | A short experiment that answers one question before build-out, recorded in `docs/plans/spikes/` with its decision. |

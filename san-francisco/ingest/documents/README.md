@@ -6,7 +6,7 @@ The documents the [`sf-docs` server](../../mcp-servers/documents/README.md) answ
 |---|---|
 | `config/sources.yaml` | How to fetch each document: PDFs, loaded into `raw_sf_docs.document_pages` one row per page |
 | `config/corpus.yaml` | Corpus membership: each document's type, a description of what it covers, and the rule that splits it. The docs server shows each description to the model, so word it from the document itself, as a reader would ask |
-| `config/search.yaml` | How search entries are built: the embedding model and its pinned build, its context, and the size limit for a provision's entry with its descendants |
+| `config/search.yaml` | How search entries are built: the embedding API, the model and the one host allowed to serve it, and the size limit for a provision's entry with its descendants |
 | `migrations/` | Alembic migrations (raw SQL) for `raw_sf_docs`, `sf_docs` and the `sf_docs_reader` role |
 | `src/sf_docs_ingest/rent_ordinance.py` | The rules for the Rent Board's copy of Chapter 37 |
 | `src/sf_docs_ingest/passages/` | Splitting a section into passages along its enumerated subsections ((a), (1), (A), (i), (I)), each passage's summary, its search entries, embedding through OpenRouter from a pinned host, and writing a document with its passages and entries in one transaction |

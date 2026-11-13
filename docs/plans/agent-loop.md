@@ -1,12 +1,10 @@
 # PolicyHuis: Agent Loop Plan
 
-Draft, November 5, 2026.
-
 The backend (`backend/`) answers one question per request by running a custom multi-step loop: call the model, run the tools it asks for, call the model again with the results, and stop when it answers. Effect's `LanguageModel.streamText` resolves one round of tool calls per call and has no step limit or loop of its own, so the loop is ours.
 
 The loop is not specific to any city: it is the same backend for every deployment, and knows a city only through the servers in its directory. San Francisco is the first deployment; its servers and tools are in the [San Francisco Plan](sf-plan.md).
 
-This plan is the technical design for that loop and the service around it. It builds on the [MVP Technical Plan](mvp-technical-plan.md). Effect APIs named here were checked against the `effect` 4.1.2 type declarations and source on November 5, 2026; anything still to confirm is marked **(verify)**.
+This plan is the technical design for that loop and the service around it. It builds on the [MVP Technical Plan](mvp-technical-plan.md). Effect APIs named here are those of `effect` 4.1.x; anything still to confirm is marked **(verify)**.
 
 ## Scope
 
@@ -54,27 +52,27 @@ It does not:
 | `db/Migrations.ts` | Applies pending migrations from `backend/drizzle/` with Drizzle's migrator |
 | `backend/drizzle/` (outside `src/`) | The SQL migrations `drizzle-kit generate` writes, and Drizzle's snapshots; never edited by hand |
 
-`protocol/` gains the `QuestionsApi` `HttpApiGroup`, so the browser app can call it with `HttpApiClient`.
+`protocol/` holds the `QuestionsApi` and `ModelsApi` `HttpApiGroup`s, so the browser app and the evaluation call them with `HttpApiClient`.
 
 ## Configuration
 
-Declared choices live in `backend/config/agent.yaml`, reviewed by pull request; secrets live only in `backend/.env`. Values marked "from S1/S2" are set from the spikes' results, not chosen in advance.
+Declared choices live in `backend/config/agent.yaml`, reviewed by pull request; secrets live only in `backend/.env`. Values marked provisional there are set from evaluation runs and traces.
 
 | Field | Meaning | Value |
 |---|---|---|
-| `model.default` | The configuration that answers a question that names none: `local`, `same_model_cloud`, `open_cloud` or `frontier` | `local` |
-| `model.offered` | The configurations a question may name, in the order the browser app lists them; each needs its API key in `backend/.env`, except `local` | `[local, frontier]` |
-| `model.configurations.<key>` | For each configuration: its `provider` (`openai-compat` or `anthropic`), the `label` the browser app shows for it, its model ID (and base URL, for `openai-compat`), no keys, and the limits below, which depend on the model | From S1 |
-| `model.configurations.<key>.effort` | For an `anthropic` configuration: `low`, `medium` or `high`, sent as `output_config.effort`. Claude thinks on every turn; effort is how much | frontier: `low`, matching the local configuration's `reasoning_effort` |
-| `model.configurations.<key>.contextTokens` | The model's context length; a local runtime is configured with the same value (Ollama's `num_ctx`, llama.cpp's `--ctx-size`) | From S1; for a cloud model, its published context length or less |
-| `model.configurations.<key>.answerTokens` | Maximum output tokens per model turn, sent with every request and reserved from `contextTokens`. The provider stops generating at this cap and reports finish reason `length`; for a reasoning model, the cap includes its reasoning tokens | From S2 |
-| `model.configurations.<key>.bytesPerToken` | Conservative bytes-per-token ratio for estimating tool results' tokens before a step | From S1, measured on real tool results with the model's tokenizer |
-| `model.configurations.<key>.maxConcurrentQuestions` | Questions answered at once with this model | For a local runtime, from S1: no more than the requests it serves in parallel (see [Admission](#admission)); for a cloud provider, within its rate limits |
-| `model.configurations.<key>.outputTokensParameter` | The request field that carries `answerTokens`: `max_tokens` (the default, which Ollama documents) or `max_completion_tokens`. `@effect/ai-openai-compat` sends the cap as `max_tokens`, which OpenAI rejects for `gpt-6-luna` ("Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.", a test call on November 5, 2026), so the model layer sends the cap itself under the configured name | Per `openai-compat` configuration; `max_tokens` when omitted |
+| `model.default` | The configuration that answers a question that names none: `local`, `same_model_cloud`, `open_cloud` or `frontier` | `open_cloud` |
+| `model.offered` | The configurations a question may name, in the order the browser app lists them; each needs its API key in `backend/.env`, except `local` | `[local, open_cloud, frontier]` |
+| `model.configurations.<key>` | For each configuration: its `provider` (`openai-compat` or `anthropic`), the `label` the browser app shows for it, its model ID (and base URL, for `openai-compat`), no keys, and the limits below, which depend on the model | Per configuration |
+| `model.configurations.<key>.effort` | For an `anthropic` configuration: `low`, `medium` or `high`, sent as `output_config.effort`. Claude thinks on every turn; effort is how much | frontier: `low` |
+| `model.configurations.<key>.contextTokens` | The context the loop allows the model: its published context length or less; a local runtime is started with the same value (see the [README](../../README.md#running-locally)) | 250,000 for the cloud configurations; 32,000 for `local` |
+| `model.configurations.<key>.answerTokens` | Maximum output tokens per model turn, sent with every request and reserved from `contextTokens`. The provider stops generating at this cap and reports finish reason `length`; for a reasoning model, the cap includes its reasoning tokens | Provisional |
+| `model.configurations.<key>.bytesPerToken` | Conservative bytes-per-token ratio for estimating tool results' tokens before a step | Provisional, to be measured on real tool results with the model's tokenizer |
+| `model.configurations.<key>.maxConcurrentQuestions` | Questions answered at once with this model | Within the provider's rate limits; for a local runtime, no more than the requests it serves in parallel (see [Admission](#admission)) |
+| `model.configurations.<key>.outputTokensParameter` | The request field that carries `answerTokens`: `max_tokens` (the default, which Ollama documents) or `max_completion_tokens`. `@effect/ai-openai-compat` sends the cap as `max_tokens`, which some OpenAI-style APIs reject, so the model layer sends the cap itself under the configured name | Per `openai-compat` configuration; `max_tokens` when omitted |
 | `model.configurations.<key>.requestOptions` | Optional extra fields sent unchanged in every request body to that model, for settings its server needs; any JSON value, so nested settings fit. `@effect/ai-openai-compat` passes unknown `Config` fields through. The local configuration sets Ollama's `reasoning_effort`; the open_cloud configuration sets OpenRouter's `reasoning: { effort: none }`, which turns Qwen's thinking off | Per `openai-compat` configuration |
-| `loop.maxSteps` | Model turns with tools per question; one final turn without tools follows when the limit is reached | From S2 |
-| `loop.stepTimeout` | Longest one model turn may take, including its tool calls | From S1 (local generation takes 10–30 seconds per answer) |
-| `loop.requestTimeout` | Longest a whole question may take, across all steps and the final turn | From S1 |
+| `loop.maxSteps` | Model turns with tools per question; one final turn without tools follows when the limit is reached | Provisional |
+| `loop.stepTimeout` | Longest one model turn may take, including its tool calls | Provisional |
+| `loop.requestTimeout` | Longest a whole question may take, across all steps and the final turn | Provisional |
 | `loop.modelRetries` | Retries of a model turn per question, for transient provider errors and for tool calls the model wrote invalidly (see [Model errors and retries](#model-errors-and-retries)) | 2 |
 | `loop.modelRetryBaseDelay` | First delay of the exponential backoff between model retries | To decide |
 | `loop.toolConcurrency` | Tool calls run at once when the model asks for several in one turn | To decide |
@@ -84,7 +82,7 @@ Declared choices live in `backend/config/agent.yaml`, reviewed by pull request; 
 | `trace.writeTimeout` | Longest a trace write may take, including connecting to the `app` database; the pool's connection and query timeouts are set to the same value | 10 seconds, provisional |
 | `prompt.file`, `prompt.version` | The system prompt file and its version, recorded in every trace | `backend/prompts/system.v3.md`, `v3` |
 
-`backend/config/servers.yaml` is the server directory, and the only place a deployment names its cities: for each server, its `name` (for example `sf-data`), `label` (`SF Data`, shown in the browser app beside each of its lookups), `url` (`http://<host>:<port>/mcp`) and tool `prefix` (`sf_data_`). `backend/.env` holds the port to serve on (`BACKEND_PORT`), the `app` database URL (`APP_DATABASE_URL`) and each cloud model configuration's API key, named `<CONFIGURATION>_API_KEY` (`FRONTIER_API_KEY`, `SAME_MODEL_CLOUD_API_KEY`, `OPEN_CLOUD_API_KEY`); `backend/.env.example` lists them.
+`backend/config/servers.yaml` is the server directory, and the only place a deployment names its cities: for each server, its `name` (for example `sf-data`), `label` (`SF Data`, shown in the browser app beside each of its lookups), `url` (`http://<host>:<port>/mcp`) and tool `prefix` (`sf_data_`). Each cloud model configuration's API key is named `<CONFIGURATION>_API_KEY` (see `config/BackendConfig.ts` above); `backend/.env.example` lists every variable.
 
 **Missing configuration is a `ConfigFileError`.** The shared library `@policyhuis/node-config` (`shared/node-config/`) reads every node's configuration the same way: YAML files decoded with a `Schema`, and a `.env` file that takes priority over the shell, so another project's variables cannot leak in. The backend reads its `.env` variables only through `config/BackendConfig.ts` (see [Effect Style § 13](../effect-style.md#13-read-the-environment-through-one-configuration-module)). Anything missing or invalid (a field in `agent.yaml`, the prompt file it names, an offered model configuration with no entry or no API key, a variable missing from `.env`) fails startup with a `ConfigFileError` naming the file to fix and the field or variable, never a defect.
 
@@ -98,9 +96,9 @@ Declared choices live in `backend/config/agent.yaml`, reviewed by pull request; 
 
 ### MCP connections
 
-**Sessionless protocol.** Every client and server uses MCP protocol version `2026-07-28`, which has no session. Under the earlier, sessionful versions, a server restart makes the server answer the client's session ID with `404`, and Effect's client then fails permanently with `ClosedError({ sessionExpired: true })` (`effect/src/ai/McpClient.ts`, 4.1.2), so one restart of `sf-data` would cut it off until the backend restarted too. Checked on November 5, 2026 with a throwaway test against 4.1.2, and kept covered by the connection tests in [Testing](#testing): one client on `2026-07-28` gets a `TransportError` while the server is down and succeeds, without being rebuilt, once the server is back on the same port.
+**Sessionless protocol.** Every client and server uses MCP protocol version `2026-07-28`, which has no session. Under the earlier, sessionful versions, a server restart makes the server answer the client's session ID with `404`, and Effect's client then fails permanently with `ClosedError({ sessionExpired: true })` (`effect/src/ai/McpClient.ts`), so one restart of `sf-data` would cut it off until the backend restarted too. The connection tests in [Testing](#testing) cover it: one client on `2026-07-28` gets a `TransportError` while the server is down and succeeds, without being rebuilt, once the server is back on the same port.
 
-**One client per server, never rebuilt.** A `TransportError` (the request could not be sent, or the server is down) does not close a sessionless client (`McpClient.http` sets its closed state only for session expiry or when its own scope closes, 4.1.2), so the same client is used again once the server is back, and nothing in the backend rebuilds clients.
+**One client per server, never rebuilt.** A `TransportError` (the request could not be sent, or the server is down) does not close a sessionless client (`McpClient.http` sets its closed state only for session expiry or when its own scope closes), so the same client is used again once the server is back, and nothing in the backend rebuilds clients.
 
 **Toolkits are built once.** Each connection holds the toolkit `McpClient.toolkit(client, { prefix, tools, resultMode: "complete", failureMode: "return", timeout: tools.callTimeout })` builds from the tools the server listed when it connected, so no request repeats the conversion from the tools' JSON Schema.
 
@@ -146,27 +144,18 @@ sequenceDiagram
 
 `Agent.ask` finds the question's model configuration (the default when the question names none; `ModelNotOffered`, returned as `400 UnknownModel`, when it names one not offered) and takes a permit from that configuration's semaphore, sized its `maxConcurrentQuestions`, so a question for one configuration never waits behind another's. If none is free, it fails with `AgentBusy`, which the handler returns as `503 AgentUnavailable { reason: "busy" }` before the stream starts, so a stream that starts always ends with `Complete`. Busy is the only reason for a `503`: an unreachable model ends the stream with `Complete { outcome: "failed" }` after its retries, and an unreachable server is reported in `Complete.unavailableServers` (see [Unavailable servers](#unavailable-servers)).
 
-**The permit belongs to the answer's stream, not to an effect.** `Semaphore.withPermitsIfAvailable` releases its permits when the wrapped effect completes (`effect/src/Semaphore.ts`, 4.1.2), and `ask` completes as soon as it returns the `Stream` value, before any event is sent. So `ask` takes the permit with `Semaphore.takeIfAvailable` and, when it gets one, returns a stream with `Stream.ensuring(Semaphore.release(1))`, which releases it on every exit (completion, failure or the browser disconnecting). The take and the construction of the stream run uninterruptibly, so an interruption between them cannot leak a permit. Checked on November 5, 2026 with a throwaway test over a real socket, and kept covered by the admission tests in [Testing](#testing): while one `StreamSse` response is open a second request gets `503`, and the stream's finalizers run when the client disconnects, both mid-stream and before the first event, freeing the permit.
+**The permit belongs to the answer's stream, not to an effect.** `Semaphore.withPermitsIfAvailable` releases its permits when the wrapped effect completes (`effect/src/Semaphore.ts`), and `ask` completes as soon as it returns the `Stream` value, before any event is sent. So `ask` takes the permit with `Semaphore.takeIfAvailable` and, when it gets one, returns a stream with `Stream.ensuring(Semaphore.release(1))`, which releases it on every exit (completion, failure or the browser disconnecting). The take and the construction of the stream run uninterruptibly, so an interruption between them cannot leak a permit. The admission tests in [Testing](#testing) cover it: while one `StreamSse` response is open a second request gets `503`, and the stream's finalizers run when the client disconnects, both mid-stream and before the first event, freeing the permit.
 
-**The limit is the model runtime's, not the backend's.** Effect runs any number of requests concurrently, so the backend is not what limits answering several questions at once; the model runtime is. Each candidate runtime has its own parallel setting and queues requests beyond it:
+**The limit is the model provider's, not the backend's.** Effect runs any number of requests concurrently, so each configuration's `maxConcurrentQuestions` matches what its provider or runtime serves at once, and the backend never admits more: a question a provider or runtime queued would wait silently and could reach the step timeout before it started. A question beyond the limit gets `503` with the `busy` message, not a queue. Admission is in the `Agent`, not the HTTP handler, so an evaluation runner that calls `Agent.ask` in-process is held to the same limit.
 
-| Runtime | Parallel requests | Beyond the limit |
-|---|---|---|
-| Ollama | `OLLAMA_NUM_PARALLEL`, default 1; "Required RAM will scale by `OLLAMA_NUM_PARALLEL * OLLAMA_CONTEXT_LENGTH`" ([FAQ](https://docs.ollama.com/faq)) | Queued |
-| llama.cpp server | `--parallel` slots, default auto, with continuous batching on by default ([server README](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)) | Queued |
-| LM Studio | "Max Concurrent Predictions", default 4, since 0.4.0; not in its MLX engine ([docs](https://lmstudio.ai/docs/app/advanced/parallel-requests), [0.4.0 notes](https://lmstudio.ai/blog/0.4.0)) | Queued |
-| `mlx_lm.server` | Unconfirmed; third-party reports say sequential by default | To check in S1 |
-
-Admission is in the `Agent`, not the HTTP handler, so an evaluation runner that calls `Agent.ask` in-process is held to the same limit.
-
-Parallel requests on one machine share its memory and compute: each needs its own context (KV cache), and each answers more slowly than it would alone. An agent's prompt grows with every tool result, so context memory, not the backend, sets how many questions fit. S1 measures, for the chosen runtime and model, the time per answer at one, two and four parallel requests and the memory each uses; the model configuration's `maxConcurrentQuestions` is set from that and the runtime's parallel setting is set to match. The backend never admits more questions than the runtime serves in parallel: a question the runtime queued would wait silently and could reach the step timeout before it started. A question beyond the limit gets `503` with the `busy` message, not a queue.
+**Evaluation runs never share the backend with demo traffic,** and answer one question at a time, so each request's latency and energy can be attributed to it alone (see the [Evaluation Plan](evaluation.md)).
 
 ## Building the turn
 
 For each admitted question, `Agent` builds:
 
 1. **Request ID**: a UUID, sent in `Complete` and used as the trace's key.
-2. **Prompt**: `Prompt.make` with one system message and the question (a user message). The system message is the system prompt, with a sentence naming any [unavailable servers](#unavailable-servers) appended; some local chat templates reject a second system message. Nothing is carried over from earlier requests.
+2. **Prompt**: `Prompt.make` with one system message and the question (a user message). The system message is the system prompt, with a sentence naming any [unavailable servers](#unavailable-servers) appended, so the prompt has one system message. Nothing is carried over from earlier requests.
 3. **Toolkit**: `turnTools` merges the toolkits of the servers that are connected, routing each call to the server whose toolkit has the tool, and returns the map from each tool to its server, which the agent uses to name a server whose call failed.
    - `resultMode: "complete"` gives the loop each full MCP result, `structuredContent` included, while the model reads it as text.
    - `failureMode: "return"` hands MCP and transport errors to the model as failed tool results instead of failing the step.
@@ -226,12 +215,12 @@ finalTurn(prompt, notice, failure):
 - **The next step's prompt** is this step's prompt plus this step's output: `Prompt.fromResponseParts` turns the step's parts into an assistant message (its text and tool calls) and a tool message (the tool results).
 - **How a turn ends** decides what happens next (`turnEnd`):
   - finish reason `length`: the turn was cut off at the model's `answerTokens`, so the question ends `truncated`, whatever else the turn did. Without this, a cut-off answer would look finished, and a cut-off tool call would continue: Effect resolves tool calls that never started with "interrupted" failure results;
-  - the turn made tool calls, and is not the final turn: the next step runs, whatever finish reason the provider gave (some local runtimes report `stop` with tool calls);
+  - the turn made tool calls, and is not the final turn: the next step runs, whatever finish reason the provider gave (some providers report `stop` with tool calls);
   - `stop`: the model has answered (`answered`, or the limit's outcome for the final turn);
   - `content-filter`: `failed`, with the content-refused message;
   - no finish event at all: `failed` with `MissingFinish`, checked first. `@effect/ai-openai-compat` emits the finish part only when the stream ends with `[DONE]`, so a response cut off before then (for example, a runtime that stopped or dropped the connection) has none;
   - any other reason (`error`, `pause`, `other`, or `unknown`): `failed` with `UnexpectedFinish`, since the answer may be incomplete. `@effect/ai-openai-compat` maps a finish reason it does not recognize to `unknown` and drops the original string, so the trace cannot show it; `MissingFinish` keeps that case apart from a stream with no finish at all.
-- **At `maxSteps`, or when the next prompt would not fit, one final turn runs without tools.** The loop appends a fixed user message (answer from the results so far, with citations, and say what could not be checked) and calls the model with no toolkit at all, so it cannot call a tool whatever the runtime does with `toolChoice`. Its text streams as it is written; the outcome is the limit's, and `Complete` carries the "incomplete" message. If the final turn fails or times out, the outcome is `failed`. **(verify)** in S1 that the chosen runtime accepts a prompt holding tool calls and results when no tools are declared; some chat templates reject it.
+- **At `maxSteps`, or when the next prompt would not fit, one final turn runs without tools.** The loop appends a fixed user message (answer from the results so far, with citations, and say what could not be checked) and calls the model with no toolkit at all, so it cannot call a tool whatever the runtime does with `toolChoice`. Its text streams as it is written; the outcome is the limit's, and `Complete` carries the "incomplete" message. If the final turn fails or times out, the outcome is `failed`.
 - **Narration is never sent.** A turn that may call tools holds its text until it ends (see [Turn state](#turn-state)). If it called a tool, the text ("Let me look that up") is dropped from what the browser receives, and stays in the prompt; if it did not, the text is the answer and is sent when the turn finishes. Every model then shows the same thing: tool status lines, then the answer. The cost is that an answer written in a turn that could have called tools appears when its turn finishes rather than token by token; the final turn's answer still streams.
 - **A failed model turn is retried only while nothing from it has reached the browser,** and only for the error classes in [Model errors and retries](#model-errors-and-retries). Held text has not reached the browser, so a turn that wrote text and then failed can still be retried. Once a tool call has been sent, an error ends the request: the browser never has to take back what it showed.
 - **The step timeout** covers the whole turn, including its retries, and ends the request rather than retrying it, because retrying a stalled turn usually stalls again. It does not cover the steps that follow: the turn's `StepEnded` is kept in a `Ref` and read after the turn's stream, and its timer, have ended.
@@ -240,7 +229,7 @@ finalTurn(prompt, notice, failure):
 
 ### Turn state
 
-A turn's state is folded with `Stream.mapAccum` over its parts, each paired with the time it arrived: the parts so far (for `StepEnded` and the next prompt), the text held back, and whether the turn has called a tool. The fold is pure. The model stream is followed by an end marker, appended only when the stream succeeds, and the marker releases the held text, unless the turn called a tool, and emits `StepEnded`. `mapAccum`'s own `onHalt` is not used for this because it also runs when the stream fails (4.1.2), which would send held text just before an error.
+A turn's state is folded with `Stream.mapAccum` over its parts, each paired with the time it arrived: the parts so far (for `StepEnded` and the next prompt), the text held back, and whether the turn has called a tool. The fold is pure. The model stream is followed by an end marker, appended only when the stream succeeds, and the marker releases the held text, unless the turn called a tool, and emits `StepEnded`. `mapAccum`'s own `onHalt` is not used for this because it also runs when the stream fails, which would send held text just before an error.
 
 Whether anything has reached the browser is kept in a `Ref` per attempt, since the retry decision is made after the stream fails, outside the fold.
 
@@ -258,11 +247,11 @@ Both retried classes share `loop.modelRetries` per question, and retry only whil
 
 ### The context budget
 
-The prompt grows with every tool result, and a local runtime given more than its context length may drop the start of the prompt without failing (Ollama does), so the model would answer without results it is citing. The loop never sends a prompt that does not fit:
+The prompt grows with every tool result, and a runtime given more than its context length may drop the start of the prompt without failing, so the model would answer without results it is citing. The loop never sends a prompt that does not fit:
 
 - **Before each step after the first**, `ContextBudget` estimates the next prompt's tokens as the previous step's reported input and output tokens plus the new tool results' bytes divided by the model's `bytesPerToken`. If that is more than `contextTokens − answerTokens`, the step does not run.
 - **The final turn then runs on the last prompt that fit**, the one before the step whose results pushed it over, with a fixed message to answer from the results so far. The outcome is `context_limit`, with its own message. The dropped step's `LookupEnded` and `Sources` events have already reached the browser; their citations stay linkable but the answer does not use them.
-- **The runtime is configured to the same context length** (`num_ctx` for Ollama, `--ctx-size` for llama.cpp), recorded with the S1 results. The first step's prompt is not checked; a startup check with the longest allowed question is in [Next steps](#next-steps).
+- **A local runtime is started with the same context length** as its configuration's `contextTokens`. The first step's prompt is not checked; a startup check with the longest allowed question is in [Next steps](#next-steps).
 
 ## The request's prompt
 
@@ -296,7 +285,7 @@ The loop calls `LanguageModel.streamText` directly rather than through Effect's 
 | MCP or transport error during a call | `McpClient` | A failed tool result (`failureMode: "return"`); the model reads it; the server is listed in `Complete.unavailableServers`, and later requests use the same client |
 | A server unreachable since startup | `McpConnections` | Its tools are left out, the prompt names it, and it is listed in `Complete.unavailableServers` |
 | Defect in the backend's tool handling | Toolkit | `failed` |
-| A tool name the model invented, or arguments that are not valid JSON | Provider package | Both fail the model stream: `@effect/ai-openai-compat` raises an `AiError` (`ToolParameterValidationError`) for arguments it cannot parse, and Effect's decoding of the response raises a `SchemaError` for an undeclared tool name (4.1.2 source). Retried with a correction message (see [Model errors and retries](#model-errors-and-retries)) |
+| A tool name the model invented, or arguments that are not valid JSON | Provider package | Both fail the model stream: `@effect/ai-openai-compat` raises an `AiError` (`ToolParameterValidationError`) for arguments it cannot parse, and Effect's decoding of the response raises a `SchemaError` for an undeclared tool name. Retried with a correction message (see [Model errors and retries](#model-errors-and-retries)) |
 | Transient provider error before anything reached the browser | `AiError` from the model | Retried with backoff up to `loop.modelRetries`; then `failed` |
 | Request, authentication, quota or policy error | `AiError` from the model | `failed` at once |
 | Any model error after the turn's output reached the browser | `AiError` from the model | `failed` |
@@ -338,7 +327,7 @@ Every outcome other than `answered` carries a `message` the browser app shows as
 | Internal | A defect in the backend | "The backend hit an unexpected error while answering, so this answer is incomplete. Request ID: {requestId}." |
 | `503`, busy | No permit free | "Another question is being answered. Try again when it finishes." |
 
-Unavailable servers are not a `message`: the browser app shows them from `Complete.unavailableServers` ("The {server} data server could not be reached, so this answer may be missing its data."), whatever the outcome.
+Unavailable servers are not a `message`: the browser app shows them from `Complete.unavailableServers` ("The {server} server could not be reached, so this answer may be missing its data."), whatever the outcome.
 
 ## Termination and cancellation
 
@@ -365,16 +354,16 @@ Citations are for the user: each claim points to the exact source, and the user 
 
 - **Servers** put the citations behind each result in the result's `structuredContent`, by the [citation convention](../domain-driven-design.md#conventions-between-servers-and-the-backend), declare them in the tool's `outputSchema`, and namespace their IDs with their short name, so IDs stay unique across servers without coordination. Servers import nothing from `protocol/`.
 - **The model** reads and writes citation keys, never full IDs. The loop gives each citation ID a key, `C1`, `C2`, …, in the order it first appears in a successful result's `citations` during the question (`loop/CitationKeys.ts`). The prompt for the next turn has every keyed ID replaced by its key, in the encoded result and in the text the provider sends in its place; an ID is replaced only whole, so `…#37.9(a)` never matches inside `…#37.9(a)(8)`. The model marks each claim with a key in square brackets (`[C3]`), as the system prompt tells it to.
-- **The loop expands keys** in the model's text before any `TextChunk` leaves it: `[C3]` becomes `[sf_data.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f]` (an illustrative query key), a list (`[C1, C3]`) becomes one marker per ID, and lenticular brackets (`【C3】`, which `gpt-oss` writes) become square ones. A key no result gave stays as written (`[C9]`), so the browser shows it as text and the evaluation reports it. A tail that may be a citation the next chunk completes (`… [C`) is held back, up to 64 characters, and sent before the turn ends. The browser, the trace's answer text and the evaluation see only full IDs.
+- **The loop expands keys** in the model's text before any `TextChunk` leaves it: `[C3]` becomes `[sf_data.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f]` (an illustrative query key), a list (`[C1, C3]`) becomes one marker per ID, and lenticular brackets (`【C3】`, which some models write) become square ones. A key no result gave stays as written (`[C9]`), so the browser shows it as text and the evaluation reports it. A tail that may be a citation the next chunk completes (`… [C`) is held back, up to 64 characters, and sent before the turn ends. The browser, the trace's answer text and the evaluation see only full IDs.
 - **The backend** reads each successful result's citations through its own schema of the convention (`loop/ToolResults.ts`), drops and logs any that break it, and sends the rest to the browser app in `Sources`. A `citationId` already sent in the question is not sent again; one returned with different content is logged, and the first is kept. The result itself, unchanged, is stored in the trace.
 - **The browser app** links each marker to the citation with that `citationId` among the `Sources` it received, groups citations by `sourceId`, and shows a marker that matches no citation as unlinked. It never reads citations from a result.
 - **The evaluation** checks citations offline, from the traces: whether each claim cites the right source and whether any marker matched nothing.
 
-**Why keys.** In the first evaluation runs, `gpt-oss:20b` often failed the check that every citation marker is an ID the backend sent: it wrote part-only IDs, IDs in lenticular brackets and IDs no result returned. So the model no longer copies full IDs. The tool results in the trace, and those the browser shows, are unchanged. The same rewrite could prefix IDs per server if namespaced IDs ever collided; that is not built.
+**Why keys.** Models copy a short key reliably where they mangle a long ID such as `sf_docs.rent_ordinance@2026-06-29#37.9(a)(8)`; the tool results in the trace, and those the browser shows, keep their full IDs.
 
 ### Call IDs
 
-Every tool call gets a UUID from the loop, which is the lookup ID the browser receives and the trace's key for the call. The provider's own ID for the call is not used for either: providers need not make it unique within a question (`@effect/ai-openai-compat` falls back to `<response id>_tool_<index>` when a server sends none, and some local servers number calls per response), and a repeated ID would merge two calls in the trace and break the `tool_calls` primary key. The provider's ID stays in the prompt, where the model needs it to match each result to its call, and is stored in the trace as `provider_call_id`.
+Every tool call gets a UUID from the loop, which is the lookup ID the browser receives and the trace's key for the call. The provider's own ID for the call is not used for either: providers need not make it unique within a question (`@effect/ai-openai-compat` falls back to `<response id>_tool_<index>` when a server sends none, and some servers number calls per response), and a repeated ID would merge two calls in the trace and break the `tool_calls` primary key. The provider's ID stays in the prompt, where the model needs it to match each result to its call, and is stored in the trace as `provider_call_id`.
 
 The UUID is a version 5 UUID (the `uuid` package) of the provider's ID within a UUID drawn for each turn. A call and its result, which carry the same provider ID in the same turn, always get the same UUID, with no map to keep; calls in different turns never share one.
 
@@ -382,7 +371,7 @@ The UUID is a version 5 UUID (the `uuid` package) of the provider's ID within a 
 
 `QuestionsApi` is an `HttpApiGroup` in `protocol/` with one endpoint, `POST /api/v1/questions`, whose success response is `HttpApiSchema.StreamSse` of `AgentStreamEvent`. Effect's HTTP API encodes each event as one server-sent event, and `HttpApiClient` in the browser app decodes them with the same schema. The handler returns the agent's stream as `AgentStreamEvent`s; internal events never leave the agent. When the stream ends, the trace write is forked into the agent's scope and the permit is released, so neither the response nor the next question waits for the `app` database (see [Traces](#traces)).
 
-**Keepalives.** A local model reading a long prompt can send nothing for a long time, and the path to the browser (Cloudflare Tunnel, proxies) may close a connection that stays quiet. Cloudflare's documented limit is 100 seconds for an origin's response before it returns `524` **(verify)** whether it also applies between bytes of a streaming response. The handler merges in a `Keepalive` event every `api.keepaliveInterval`, whether or not other events were sent, which is simpler than tracking idle time and costs a few bytes. It is an event rather than an SSE comment line because `HttpApiBuilder`'s SSE encoder writes events only (4.1.2); the browser app ignores it.
+**Keepalives.** A model reading a long prompt can send nothing for a long time, and the path to the browser (Cloudflare Tunnel, proxies) may close a connection that stays quiet. Cloudflare's documented limit is 100 seconds for an origin's response before it returns `524` **(verify)** whether it also applies between bytes of a streaming response. The handler merges in a `Keepalive` event every `api.keepaliveInterval`, whether or not other events were sent, which is simpler than tracking idle time and costs a few bytes. It is an event rather than an SSE comment line because `HttpApiBuilder`'s SSE encoder writes events only; the browser app ignores it.
 
 ## Traces
 
@@ -393,14 +382,14 @@ When the stream ends, `TraceStore` writes the `app.requests` row and its `app.to
 A versioned Markdown file (`backend/prompts/system.v3.md`) whose version is recorded in every trace; an earlier version stays in `backend/prompts/` so old traces can be read against it. The prompt names no city, dataset or tool, so the same prompt serves every deployment. It covers:
 
 - **Role and audience**: answer housing policy questions for policy makers and residents, in plain language, using the connected tools.
-- **Answer only from tool results**, and say when the tools cannot answer a question, including a question about a place no tool covers. Before declining, check each tool's description and call any that covers the topic, even when the question names no law or dataset (added in v2, after the model declined rent control questions without searching the Rent Ordinance).
-- **Citing**: mark every claim with the `citationId` of the result it rests on, in square brackets (`[C3]`); the model sees each citation's key as its `citationId` (see [Citations in answers](#citations-in-answers)). Changed in v3, from copying full IDs, which `gpt-oss:20b` mangled.
+- **Answer only from tool results**, and say when the tools cannot answer a question, including a question about a place no tool covers. Before declining, check each tool's description and call any that covers the topic, even when the question names no law or dataset.
+- **Citing**: mark every claim with the `citationId` of the result it rests on, in square brackets (`[C3]`); the model sees each citation's key as its `citationId` (see [Citations in answers](#citations-in-answers)).
 - **Reading results**: follow each tool's description on how to read its results; give the date or version of the data an answer uses; prefer a tool that returns totals over adding numbers up.
 - **Declines**: legal advice and causal claims, pointing to the right body.
 
 Rules about a city's data live in that server's tool descriptions. San Francisco's (name the pipeline snapshot, never call a project stalled, MOHCD dates are estimates, zones are never combined, quote the publisher's description when asked how current the data is) are in `sf-data`'s descriptions (see [Data server tools](sf-plan.md#data-server-tools)), so adding a city adds no prompt text.
 
-The prompt's exact wording is drafted with the evaluation questions and tested in spike S2.
+The prompt's wording is tested by the [evaluation](evaluation.md).
 
 ## Observability
 
@@ -417,7 +406,7 @@ Every function is an `Effect.fn` with a name, so each request produces a span tr
 | Admission | A second question while one is streaming returns `503`; a disconnected question frees its permit; a question is admitted while the previous question's trace write still hangs |
 | API | `QuestionsApi` through `HttpApiClient` against the running handler, checking the server-sent events decode and that `Keepalive` arrives during a stalled step |
 | Configuration | Decoding `agent.yaml` and `servers.yaml`, including the checked-in files and the prompt file they name; in `shared/node-config`, a group of `.env` variables read and a missing one reported as a `ConfigFileError`; in `BackendConfig.test.ts`, each variable read by its name in `.env.example` |
-| Traces | Against a Postgres testcontainer: two calls whose provider reused one call ID are both written; a write to an unreachable database fails with `TraceWriteFailed`. Rows for each outcome, including `cancelled`, are still to add |
+| Traces | Against a Postgres testcontainer: two calls whose provider reused one call ID are both written; a write to an unreachable database fails with `TraceWriteFailed` |
 
 ## API contract
 
@@ -448,160 +437,13 @@ event: message
 data: {"_tag":"TextChunk","text":"… [sf_data.development_pipeline@2026-08-28#3f9a1c0e7b2d4a6f]"}
 
 event: message
-data: {"_tag":"Complete","requestId":"…","outcome":"answered","message":null,"unavailableServers":[],"model":{"configuration":"local","modelId":"gpt-oss:20b"},"usage":{"inputTokens":9120,"outputTokens":410}}
+data: {"_tag":"Complete","requestId":"…","outcome":"answered","message":null,"unavailableServers":[],"model":{"configuration":"open_cloud","modelId":"qwen/qwen3.5-397b-a17b"},"usage":{"inputTokens":9120,"outputTokens":410}}
 ```
 
 The example's values are illustrative only, not data.
 
-```ts
-// protocol/src/QuestionsApi.ts
-import { Schema } from "effect"
-import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api"
+The schemas (`QuestionRequest`, every event, `Complete`, the error types and both groups) are defined in [`protocol/src/QuestionsApi.ts`](../../protocol/src/QuestionsApi.ts); every path is under `/api/v1`, so a later breaking change can live beside it as `/api/v2`.
 
-import { Citation } from "./Citation.ts"
-
-/**
- * One question. `model` names the model configuration to answer it, as `GET /api/v1/models` lists them; without it,
- * the backend's default answers. `evaluationRunId` marks the question as part of an evaluation run, and is written to
- * its trace.
- */
-export class QuestionRequest extends Schema.Class<QuestionRequest>("QuestionRequest")({
-  question: Schema.String.pipe(
-    Schema.check(
-      Schema.isMinLength(1, { message: "A question must not be empty" }),
-      Schema.isMaxLength(2000, { message: "A question must be at most 2,000 characters" })
-    )
-  ),
-  model: Schema.optionalKey(Schema.NonEmptyString),
-  evaluationRunId: Schema.optionalKey(Schema.String.pipe(Schema.check(Schema.isUUID())))
-}) {}
-
-/** The UUID the backend gives each lookup. */
-export const LookupId = Schema.String.pipe(Schema.check(Schema.isUUID()))
-
-export class TextChunk extends Schema.TaggedClass<TextChunk>()("TextChunk", {
-  text: Schema.String
-}) {}
-
-/** The server a lookup goes to: its name in the backend's server directory, and the label shown for it. */
-export const LookupSource = Schema.Struct({
-  name: Schema.String,
-  label: Schema.String
-})
-export type LookupSource = typeof LookupSource.Type
-
-/**
- * The agent consulting a server: one tool call the model made. `tool` is the name the model called, with its server's
- * prefix, and `title` the tool's title as its server publishes it. `source` is null when no connected server offers
- * that name, and the lookup fails.
- */
-export class LookupStarted extends Schema.TaggedClass<LookupStarted>()("LookupStarted", {
-  lookupId: LookupId,
-  source: Schema.NullOr(LookupSource),
-  tool: Schema.String,
-  title: Schema.String,
-  arguments: Schema.Unknown
-}) {}
-
-/**
- * How a lookup ended. `unavailable` means its server, or the server's own database, could not be reached; `failed`
- * means the call itself was wrong, such as an unknown value.
- */
-export const LookupOutcome = Schema.Literals(["succeeded", "failed", "unavailable"])
-export type LookupOutcome = typeof LookupOutcome.Type
-
-/**
- * A lookup's end. On success, `result` is the tool's `structuredContent`, unchanged, for display only: the browser
- * never reads citations from it, only from `Sources`. Otherwise `result` is null and `error` is the failure's type,
- * such as `UnknownValue` or `TransportError`; its details stay in the trace.
- */
-export class LookupEnded extends Schema.TaggedClass<LookupEnded>()("LookupEnded", {
-  lookupId: LookupId,
-  outcome: LookupOutcome,
-  result: Schema.Unknown,
-  error: Schema.NullOr(Schema.String)
-}) {}
-
-/** The citations the backend read from a lookup's result; each `citationId` is sent once per question. */
-export class Sources extends Schema.TaggedClass<Sources>()("Sources", {
-  lookupId: LookupId,
-  citations: Schema.Array(Citation)
-}) {}
-
-/** Sent when nothing else has been for `api.keepaliveInterval`, so the connection stays open; the browser app ignores it. */
-export class Keepalive extends Schema.TaggedClass<Keepalive>()("Keepalive", {}) {}
-
-/**
- * The last event of every stream that is not interrupted. `message` explains, for the user, why an answer is
- * incomplete, and is null when answered; `unavailableServers` names the data servers that could not be reached;
- * `model` is the model configuration that answered and its model ID; `usage` is the tokens the model read and wrote
- * over every step, thinking included.
- */
-export class Complete extends Schema.TaggedClass<Complete>()("Complete", {
-  requestId: Schema.String.pipe(Schema.check(Schema.isUUID())),
-  outcome: Schema.Literals(["answered", "step_limit", "context_limit", "truncated", "failed"]),
-  message: Schema.NullOr(Schema.String),
-  unavailableServers: Schema.Array(Schema.String),
-  model: Schema.Struct({ configuration: Schema.String, modelId: Schema.String }),
-  usage: Schema.Struct({ inputTokens: Schema.Int, outputTokens: Schema.Int })
-}) {}
-
-export const AgentStreamEvent = Schema.Union([TextChunk, LookupStarted, LookupEnded, Sources, Keepalive, Complete])
-export type AgentStreamEvent = typeof AgentStreamEvent.Type
-
-/** Returned as `503` before the stream starts, when the backend is already answering as many questions as it can. */
-export class AgentUnavailable extends Schema.TaggedError<AgentUnavailable>()(
-  "AgentUnavailable",
-  {
-    reason: Schema.Literals(["busy"]),
-    message: Schema.String
-  },
-  { httpApiStatus: 503 }
-) {}
-
-/** Returned as `400` before the stream starts, when a question names a model configuration the backend does not offer. */
-export class UnknownModel extends Schema.TaggedError<UnknownModel>()(
-  "UnknownModel",
-  {
-    model: Schema.String,
-    offered: Schema.Array(Schema.String),
-    message: Schema.String
-  },
-  { httpApiStatus: 400 }
-) {}
-
-/** `POST /api/v1/questions`: one question in, a stream of server-sent events out, always ending with `Complete`. */
-export const QuestionsApi = HttpApiGroup.make("questions").add(
-  HttpApiEndpoint.post("ask", "/questions", {
-    payload: QuestionRequest,
-    success: HttpApiSchema.StreamSse({ data: AgentStreamEvent }),
-    error: [AgentUnavailable, UnknownModel]
-  })
-)
-
-/** One model configuration a question may name: its key, the label to show for it, and its model ID. */
-export const OfferedModel = Schema.Struct({
-  configuration: Schema.String,
-  label: Schema.String,
-  modelId: Schema.String
-})
-export type OfferedModel = typeof OfferedModel.Type
-
-/** The model configurations a question may name, in the backend's order, and the one that answers when it names none. */
-export const OfferedModels = Schema.Struct({
-  default: Schema.String,
-  models: Schema.Array(OfferedModel)
-})
-export type OfferedModels = typeof OfferedModels.Type
-
-/** `GET /api/v1/models`: the model configurations a question may name. */
-export const ModelsApi = HttpApiGroup.make("models").add(
-  HttpApiEndpoint.get("list", "/models", { success: OfferedModels })
-)
-
-/** The backend's API; every path is under `/api/v1`, so a later breaking change can live beside it as `/api/v2`. */
-export const PolicyHuisApi = HttpApi.make("policyhuis").add(QuestionsApi).add(ModelsApi).prefix("/api/v1")
-```
 
 | `Complete.outcome` | Meaning |
 |---|---|
@@ -617,93 +459,15 @@ export const PolicyHuisApi = HttpApi.make("policyhuis").add(QuestionsApi).add(Mo
 
 ## The `app` schema
 
-The backend's own Neon project and schema, written by the backend and read by the evaluation reports. The tables are defined with Drizzle in `backend/src/db/schema.ts`; `yarn workspace @policyhuis/backend db:generate` (`drizzle-kit generate`) writes each change as a SQL migration to `backend/drizzle/`, and the backend applies pending migrations at startup. Migrations are append-only once applied, and never written or edited by hand: each is exactly what `drizzle-kit generate` writes. A generated migration that cannot run on Postgres is deleted before it is applied, and the database owner drops and recreates the schema. The schema's checks come from the domain's own lists (`OUTCOMES` and `TOOL_OUTCOMES` in `loop/Outcome.ts`, and `TRACE_OUTCOMES` in `trace/Trace.ts`, which adds `cancelled`), not from `protocol/`, so the API and the tables change separately. The generated SQL:
-
-```sql
--- backend/drizzle/0000_app.sql
-CREATE SCHEMA "app";
---> statement-breakpoint
-CREATE TABLE "app"."requests" (
-	"request_id" uuid PRIMARY KEY NOT NULL,
-	"received_at" timestamp with time zone NOT NULL,
-	"question" text NOT NULL,
-	"model_config" text NOT NULL,
-	"model_id" text NOT NULL,
-	"prompt_version" text NOT NULL,
-	"outcome" text NOT NULL,
-	"steps" integer NOT NULL,
-	"model_retries" integer NOT NULL,
-	"error_detail" text,
-	"unavailable_servers" text[] NOT NULL,
-	"input_tokens" integer NOT NULL,
-	"output_tokens" integer NOT NULL,
-	"latency_ms" integer NOT NULL,
-	"answer_text" text NOT NULL,
-	CONSTRAINT "requests_outcome_check" CHECK ("app"."requests"."outcome" IN ('answered', 'step_limit', 'context_limit', 'truncated', 'failed', 'cancelled'))
-);
---> statement-breakpoint
-CREATE TABLE "app"."tool_calls" (
-	"request_id" uuid NOT NULL,
-	"call_id" uuid NOT NULL,
-	"provider_call_id" text NOT NULL,
-	"step" integer NOT NULL,
-	"tool" text NOT NULL,
-	"arguments" jsonb NOT NULL,
-	"outcome" text NOT NULL,
-	"result" jsonb NOT NULL,
-	"latency_ms" integer,
-	CONSTRAINT "tool_calls_request_id_call_id_pk" PRIMARY KEY("request_id","call_id"),
-	CONSTRAINT "tool_calls_outcome_check" CHECK ("app"."tool_calls"."outcome" IN ('success', 'failure'))
-);
---> statement-breakpoint
-ALTER TABLE "app"."tool_calls" ADD CONSTRAINT "tool_calls_request_id_requests_request_id_fk" FOREIGN KEY ("request_id") REFERENCES "app"."requests"("request_id") ON DELETE no action ON UPDATE no action;
-```
-
-Migration `0001` adds `model_settings jsonb NOT NULL DEFAULT '{}'` (the configuration's effort or request options) and `evaluation_run_id uuid` (null for a question from a user). `model_config` names one of the model configurations in [Ubiquitous Language](../ubiquitous-language.md) (Local, Same model in the cloud, Open model in the cloud, Frontier); their keys are declared in `backend/config/agent.yaml`. The request row and its children are written in one transaction after `Complete`. Evaluation and energy tables are designed with the evaluation work (MVP plan, Evaluation and energy).
+The backend's own Neon project and schema, written by the backend and read by the evaluation reports. The tables are defined with Drizzle in `backend/src/db/schema.ts`; `yarn workspace @policyhuis/backend db:generate` (`drizzle-kit generate`) writes each change as a SQL migration to `backend/drizzle/`, and the backend applies pending migrations at startup. Migrations are append-only once applied, and never written or edited by hand: each is exactly what `drizzle-kit generate` writes. A generated migration that cannot run on Postgres is deleted before it is applied, and the database owner drops and recreates the schema. The schema's checks come from the domain's own lists (`OUTCOMES` and `TOOL_OUTCOMES` in `loop/Outcome.ts`, and `TRACE_OUTCOMES` in `trace/Trace.ts`, which adds `cancelled`), not from `protocol/`, so the API and the tables change separately. The tables are in [`backend/src/db/schema.ts`](../../backend/src/db/schema.ts) and the generated migrations in [`backend/drizzle/`](../../backend/drizzle/): `app.requests`, one row per question (the question, model configuration, model ID and settings, evaluation run ID, prompt version, outcome, steps, retries, raw error, unavailable servers, tokens, latency and answer text), and `app.tool_calls`, one row per tool call. The request row and its children are written in one transaction after `Complete`.
 
 Traces store each question as asked, so the web app tells users that questions are logged.
 
-## Decisions
-
-Reviewed November 5, 2026:
-
-1. **Outcome `cancelled`** for traces of disconnected requests.
-2. **A timed-out step fails** rather than retrying.
-3. **No queueing.** Questions beyond the model configuration's `maxConcurrentQuestions` get `503` with the `busy` message. The limit matches the model runtime's parallel requests, measured in S1 (see [Admission](#admission)).
-4. **At `maxSteps`**, one final turn without tools, then `step_limit` with a message that the answer is incomplete.
-5. **The messages' wording**, in [Messages for the user](#messages-for-the-user), as drafted.
-
-Reviewed November 5, 2026, after a design review:
-
-6. **An unreachable server degrades the answer instead of refusing it.** Its tools are left out or fail as tool results, and `Complete.unavailableServers` names it. `503` means busy only.
-7. **The loop is a native `Stream`**, with no queue or forked fiber, and the trace is a fold over its events; the per-request state service is removed. The admission permit is released by the response stream, not by the handler's effect.
-8. **MCP connections use the sessionless protocol `2026-07-28`**, so a server restart needs no client rebuild. Changed tools need a backend restart.
-9. **A context budget** (the model's `contextTokens` and `answerTokens`) is checked before each step, with outcome `context_limit`.
-10. **A request timeout, exponential backoff between model retries, keepalive events and a unique-prefix check** are added.
-11. **The model reads each tool result in full**, citations included. Slimming the model's copy is revisited only if traces show it would save meaningful tokens.
-12. **Evaluation runs never share the agent host with demo traffic**, and answer one question at a time, so each request's energy can be measured on its own (see the [MVP Technical Plan](mvp-technical-plan.md#evaluation-and-energy)).
-13. **Outcome `truncated`** for any model turn cut off at the model's `answerTokens`.
-14. **A server's tools stay listed after a transport error**, since such errors are usually brief; leaving them out is in [Next steps](#next-steps).
-15. **Model errors are retried by class** (see [Model errors and retries](#model-errors-and-retries)): transient errors after a backoff, invalid tool calls the model wrote with a correction message, and request, authentication, quota and policy errors not at all.
-16. **Server-sent events use `StreamSse`'s data mode**: every event is named `message`, with `_tag` in `data`.
-17. **No result guard for now.** Tool results reach the model unchanged; an oversized result ends as `context_limit` and a handler defect as `failed`. The guard is in [Next steps](#next-steps).
-18. **`maxConcurrentQuestions` and `outputTokensParameter` are set per model configuration**, since both depend on the model's runtime or provider.
-
-Reviewed November 5, 2026, after a code review:
-
-19. **The final turn has no toolkit**, rather than relying on `toolChoice: "none"`.
-20. **Only `stop` finishes an answer.** `length` is `truncated`, `content-filter` a refusal, and any other finish reason, or none, `failed`; a turn with tool calls continues whatever its finish reason.
-21. **One system message**, with the unavailable-servers notice appended.
-22. **Narration is never sent**: a turn that may call tools holds its text until it ends, the same for every model.
-23. **An `Agent` service owns the question** (admission, prompt, toolkit, observation, trace); the HTTP handler only translates.
-24. **Each tool call's ID is a UUID**, a version 5 UUID of the provider's ID within the turn; the provider's ID is kept as `provider_call_id`.
-25. **The `app` schema is derived from the domain**, not from `protocol/`, and its migrations are only ever generated.
-26. **Trace writes run in the background**, bounded by `trace.writeTimeout`, so neither the response nor admission waits for the `app` database.
-27. **Missing configuration is a `ConfigFileError`**, read through `@policyhuis/node-config`, never a defect.
-
 ## Next steps
 
-To make the system more robust once it works end to end:
+To make the system more robust:
+
+- **Trace tests for every outcome.** Rows for each outcome, including `cancelled`, against the Postgres testcontainer.
 
 - **Scheduled re-list.** `McpConnections` re-lists each server's tools on a fixed interval, so changed tools are picked up without restarting the backend, and a server whose re-list fails is treated like one never reached: its tools are left out and the prompt names it, until a re-list succeeds. This replaces the restart in [MCP connections](#mcp-connections) and keeps a server that is down from costing the model steps on calls that fail.
 - **Startup context check.** Check at startup that the system prompt and the longest allowed question fit the model's `contextTokens − answerTokens`, so a configuration too small for the first step fails at startup rather than on every question.

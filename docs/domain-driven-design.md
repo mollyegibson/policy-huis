@@ -32,7 +32,7 @@ graph LR
   end
 
   subgraph Systems["Outside · systems"]
-    RT(["Local runtime or cloud model"])
+    RT(["Model providers<br/>OpenRouter · Anthropic · a local runtime"])
     PG[("Postgres<br/>one schema per server")]
     S3[("Object storage")]
     UP(["Public sources"])
@@ -61,7 +61,7 @@ The MCP client is the one place the picture folds: to the agent, an MCP server i
 The acceptance test comes from Alistair Cockburn's [Ports and Adapters](https://alistair.cockburn.us/hexagonal-architecture/): the application should be equally drivable by a user, a test, or a script, and equally able to run against real infrastructure or a stub. For us that means:
 
 - **The agent loop runs against a stub model and stub tools** in a test, with no runtime, network or database.
-- **Every configuration (local, same model in the cloud, frontier) is one layer swap.** The loop, prompts and tools don't change; only the layer that provides `LanguageModel` does.
+- **Every model configuration (the open-weight model in the cloud, the frontier model, a local model) is one layer swap.** The loop, prompts and tools don't change; only the layer that provides `LanguageModel` does.
 - **An MCP server's tool handlers run against a test database** without the agent, so each tool's numbers are tested on their own.
 - **Loaders are testable with an in-memory archive and recorded HTTP responses.**
 
@@ -98,9 +98,9 @@ A bounded context is a boundary within which a term means exactly one thing. The
 | **Data servers** (`san-francisco/mcp-servers/data/`, and the Dutch one) | TypeScript, Effect | Nothing | Its city's data schema (`sf_data`) | Its MCP tools |
 | **Docs servers** (`san-francisco/mcp-servers/documents/`, and the Dutch one) | TypeScript, Effect | Nothing | Its city's documents schema (`sf_docs`) | Its MCP tools |
 | **Backend** (`backend/`) | TypeScript, Effect | `app` | MCP tools only | The backend API |
-| **Evaluation** (`evaluation/`) | YAML, Python | Results through the backend | `app` | The question-set file format |
+| **Evaluation** (`evaluation/`) | TypeScript, YAML | Its own run results (`evaluation/results/`) | The backend API | The question-set file format |
 
-A server and the ingestion project that builds its schema share a short name (`sf_data`, `sf_docs`) in every identifier: server, tool prefix, citation namespace, schemas, reader role, environment variables and packages.
+A server and the ingestion project that builds its schema share a short name (`sf_data`, `sf_docs`) in every identifier: server, tool prefix, citation namespace, schemas, reader role, environment variables and packages. Directories use the full words (`ingest/documents/`, since `ingest/docs/` would read as a documentation folder), and so do the labels users see ("SF Data", "SF Documents"). The Dutch nodes are `nl-data` and `nl-docs`.
 
 **Contexts communicate through published contracts, never by importing each other's code.** The agent doesn't read `sf_docs`; it calls the docs server's tools. A data server doesn't read another city's schema. Python and TypeScript share only database schemas. A change to a published contract (a schema another context reads, an MCP tool's input or output, the backend API) is a contract change and gets reviewed as one.
 
@@ -117,10 +117,12 @@ MCP servers share nothing with the backend but MCP itself (their tool definition
 | `citationId` | `<sourceId>#<part>`, where `<part>` is letters, digits and `_ . ( ) -`; how a server builds the part is its own choice |
 | `sourceId` | `<namespace>.<key>@<version>`, where the namespace is the server's short name (`sf_data`, `sf_docs`), so IDs stay unique without coordination |
 | `title`, `publisher`, `sourceUrl`, `version` | The source, as shown to the user |
-| `locator` | Optional. Which part of the source, in words: a provision ("Sec. 37.9(a)(8)") or the data selected ("Planning pipeline projects, with status BP Filed") |
+| `locator` | Optional. Which part of the source, in words: a provision ("Sec. 37.9(a)(8)") or the data selected ("Planning pipeline projects, with status BP Filed"). Built only from the source's fields and the tool's arguments, so the same query always gets the same locator |
 | `quote` | Optional. The cited text, verbatim |
 
-A server may add fields of its own (the docs server adds `documentType` for the model); the backend ignores them. Each server's tests decode every citation its tools return against the convention.
+A server may add fields of its own (the docs server adds `documentType` for the model); the backend ignores them. Each server's tests decode every citation its tools return against the convention. The tool's name and arguments behind a citation are not part of it: they stay in the trace and in the lookup the browser shows.
+
+**Tool titles.** Each tool carries a `Tool.Title` annotation, which `McpServer` publishes as the MCP tool's `annotations.title`; the backend shows it as the lookup's title.
 
 **Tool errors.** Errors are returned as tool results (`failureMode: "return"`), with the error's `_tag` in the JSON text content. One tag has a meaning outside its server: `DatabaseUnavailable`, for a server that cannot reach its own database. The backend treats it, like a transport failure, as the server being unavailable.
 
@@ -136,13 +138,13 @@ An anti-corruption layer stops another system's model from leaking into ours. We
 
 - **Source loaders.** Each loader maps a source's columns, by name, into typed rows and fails the load on a value it can't parse. DataSF can add a column or the BWB can change its XML; the blast radius is one parser.
 - **Model output.** Tool-call arguments from the model are decoded through the tool's input schema before a handler runs. A small model can produce malformed arguments; they fail at the boundary and go back to the model as a typed error.
-- **Tool results.** The model receives each result as the server sent it. The backend reads each result's citations through its own schema of the citation convention, drops any that break it (logging them), and sends the rest to the browser app as `Sources`; the browser decodes them through `protocol/`'s schema and never reads citations from a result itself.
+- **Tool results.** The model receives each result as the server sent it, except that each citation ID is replaced by a short key (`C1`, `C2`, …) that the backend expands back to the full ID in the answer it streams; the trace keeps results as the servers sent them. The backend reads each result's citations through its own schema of the citation convention, drops any that break it (logging them), and sends the rest to the browser app as `Sources`; the browser decodes them through `protocol/`'s schema and never reads citations from a result itself.
 
 **Rule:** every upstream response is decoded through a parser or schema we own. Raw JSON never crosses into domain code. In Python that's typed parsing (pydantic, explicit conversion); in TypeScript it's Effect `Schema`.
 
 ### Numbers come from data, not from the model
 
-Every number in an answer comes from a tool result, and every tool result comes from a tested query over loaded data. The model chooses tools and writes the explanation; it never computes a count, share or trend itself. If an answer needs a number no tool returns, add or extend a tool on the data server, with a test pinning it to known cases. Letting the model do arithmetic over tool output creates a second, untested answer to one question.
+Every number in an answer comes from a tool result, and every tool result comes from a tested query over loaded data. The model chooses tools and writes the explanation. Tools return the totals, shares and trends a question needs, and the model uses them rather than computing its own; a figure it rounds or derives from cited ones is stated as approximate ("about", "roughly") and cites the figures it came from. If answers keep needing a number no tool returns, add or extend a tool on the data server, with a test pinning it to known cases, rather than relying on the model's arithmetic.
 
 ### Citations are part of the result, not decoration
 
@@ -179,7 +181,7 @@ The vocabulary lives in [Ubiquitous Language](./ubiquitous-language.md). If a te
 **Fix:** Those are business rules. Move them into the domain call; the adapter only translates.
 
 **Symptom:** The agent needs a number no tool returns.
-**Fix:** Add or extend a tool on the city's data server, backed by a tested query. Don't compute it in the agent or ask the model to.
+**Fix:** Add or extend a tool on the city's data server, backed by a tested query. Don't compute it in the agent; a model's rounded or derived figure is acceptable only when stated as approximate.
 
 **Symptom:** A server wants to read another server's schema, or the agent wants to query a schema directly.
 **Fix:** Call that server's tool instead. If no tool fits, the tool design is incomplete.
