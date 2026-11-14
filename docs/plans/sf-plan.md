@@ -100,7 +100,7 @@ The docs server's corpus holds laws and the analysis reports that explain them. 
 
 | Document | Publisher | Access | Type | As of | Notes |
 |---|---|---|---|---|---|
-| Inclusionary Housing Program updates and impact fee reductions (Board File 260538) | Board of Supervisors, [Legistar](https://sfgov.legistar.com/View.ashx?GUID=40004122-9FEB-4E0C-A67B-2126814C08E5&ID=15691706&M=F) | PDF, 195 pages | Law | Amended in Board July 14, 2026 | Amends the Planning Code, including Section 415. **Not loaded:** the enacted text and ordinance number are unconfirmed (see [Open questions](#open-questions)), and as an amending ordinance it marks deletions only by strikethrough, which text extraction cannot detect, so it would index repealed wording as law and still miss the unchanged subsections it omits. |
+| Inclusionary Housing Program updates and impact fee reductions (Board File 260538, `inclusionary_ordinance`) | Board of Supervisors, [Legistar](https://sfgov.legistar.com/View.ashx?GUID=40004122-9FEB-4E0C-A67B-2126814C08E5&ID=15691706&M=F) | PDF, 195 pages | Law | Amended in Board July 14, 2026; enacted as Ordinance No. 136-26, effective August 22, 2026, per Planning's [legislation tracker](https://sfplanning.org/resource/legislation-tracker) | Loaded: Planning Code Section 415 and its subsections 415.1 to 415.10, which the ordinance restates in full, as the scope in `corpus.yaml` names. Legistar's copy is a digital original whose deletions are struck through with drawn lines, which the loader marks (`strikethrough: marked`) and the passage pipeline drops; the signed copy ([o0136-26.pdf](https://media.api.sf.gov/documents/o0136-26.pdf)) is a scan whose text layer misreads words and struck text. The ordinance deletes Sections 415A and 415B (the temporary reductions) and 415.7-1 (the small sites alternative), so they have no passages. Its other amendments (Sections 102, 401, 413, 414A, 416 to 428, and the Administrative and Building Codes) are not loaded. |
 | All-electric major renovations (Ordinance 174-25) | Board of Supervisors, [sfbos.org](https://www.sfbos.org/sites/default/files/o0174-25.pdf) | PDF | Law | 2025 | 100% affordable projects are exempt until July 1, 2027, per the research. **Not loaded:** an amending ordinance whose strikethrough deletions cannot be told from current text in its OCR layer; it prints a passage date but no effective date. |
 | Article 38 enhanced ventilation amendments (Ordinance 186-25) | Board of Supervisors, [sfbos.org](https://www.sfbos.org/sites/default/files/o0186-25.pdf) | PDF | Law | 2025 | Effective date unconfirmed. **Not loaded:** an amending ordinance, as for Ordinance 174-25. |
 | Funding and Incentivizing Affordable Housing in San Francisco (`bla_affordable_housing`) | San Francisco Board of Supervisors, Budget and Legislative Analyst, [sf.gov](https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf) | PDF, 132 pages | Report | June 5, 2026, printed as "Date:  June 5,2026" | Costs per unit, funding sources and the funding gap; the impacts of the temporary fee reduction; ten financing strategies; equity gaps. Loaded: split by the headings on its contents page (page 27), then by page (see [Ingestion for San Francisco](#ingestion-for-san-francisco)). |
@@ -349,11 +349,11 @@ The browser app is the same for every city; its plan, including how tool calls a
 
 ## Milestones
 
-Phase 1, the eviction and rent-increase tools, and the docs server over Chapter 37 and the Budget and Legislative Analyst's report are built. What remains:
+Phase 1, the eviction and rent-increase tools, and the docs server over Chapter 37, the Budget and Legislative Analyst's report and the inclusionary ordinance's Section 415 are built. What remains:
 
 | Phase | Milestone | Done when |
 |---|---|---|
-| 2 | P2.1 Ordinances | The inclusionary, all-electric and Article 38 ordinances and the pipeline data dictionary loaded into `sf-docs`, once their enacted text can be extracted without repealed wording. |
+| 2 | P2.1 Ordinances | The all-electric and Article 38 ordinances and the pipeline data dictionary loaded into `sf-docs`; the inclusionary ordinance's Section 415 has its loader and rules. The two ordinances wait for a digital copy whose struck-through deletions can be marked, as Legistar's copy of the inclusionary ordinance has. |
 | 2 | P2.2 State statutes | The California Tenant Protection Act and Costa-Hawkins sections loaded from the Legislature's bulk download. |
 | 3 | P3.1 Evaluation | The San Francisco questions run against `open_cloud` and `frontier`, with answers checked by the San Francisco reviewer. |
 
@@ -365,8 +365,7 @@ Phase 1, the eviction and rent-increase tools, and the docs server over Chapter 
 
 1. **Who checks San Francisco answers?** The research team is focused on the Netherlands. A reviewer with San Francisco housing knowledge is needed for the evaluation set, ideally from a policy office or a tenant organization.
 2. **Past pipeline quarters.** Planning retired its earlier quarterly snapshots from DataSF as of 2024 Q3; the dataset's description says to ask the dataset owner for them. Until they arrive, the plan uses the current public quarter.
-3. **Enacted inclusionary text.** Confirm the enacted ordinance number and final text for Board File 260538 before loading it.
-4. **Rent Board Housing Inventory.** Add it after Phase 2, for "is my unit covered" and rent-band questions?
+3. **Rent Board Housing Inventory.** Add it after Phase 2, for "is my unit covered" and rent-band questions?
 
 ## References
 

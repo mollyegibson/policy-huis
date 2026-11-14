@@ -8,10 +8,12 @@ import zipfile
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Annotated, Literal, Protocol
 from urllib.parse import quote
+from typing import Annotated, Any, Literal, Protocol
 
+import pdfplumber
 import yaml
+from pdfplumber.utils import cluster_objects
 from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
 from pypdf import PdfReader
 
@@ -47,6 +49,10 @@ class PdfSource(BaseModel):
     `version_from: pdf_mod_date` instead: its version is the date of the `/ModDate` in its own info record, in the time
     zone written there, and a document without one fails to load. `raw_table` names the raw table its pages load into
     when several documents share one; each load's document is then its manifest row's `source_key`.
+
+    A document that marks deletions by striking text through, as amending ordinances do, declares
+    `strikethrough: marked`: each page row then also holds its `lines`, with every struck run of text flagged (see
+    `pdf_marked_lines`), beside the text pypdf extracts.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -60,6 +66,7 @@ class PdfSource(BaseModel):
     version_format: str | None = None
     format: Literal["pdf"]
     raw_table: str | None = None
+    strikethrough: Literal["ignored", "marked"] = "ignored"
 
     @model_validator(mode="after")
     def _one_way_to_the_version(self) -> PdfSource:
@@ -231,6 +238,80 @@ def pdf_pages(data: bytes) -> list[str]:
         return [page.extract_text() for page in PdfReader(io.BytesIO(data)).pages]
     finally:
         pypdf_logger.setLevel(level)
+
+
+_STRIKE_BAND = (0.35, 0.75)
+"""Where a drawn line must cross a character, as a share of its height from the top, to strike it: a strikethrough
+crosses near the middle (0.55 in the ordinances measured), an underline near the baseline or below it (0.87 to 1.2), and
+a table's border above the text."""
+
+_MAX_RULE_HEIGHT = 1.5
+_ROW_TOLERANCE = 2
+_COLUMN_GAP = 18
+"""Points of space between two words on one row that start a new line: wider than any gap between words of justified
+text, narrower than the margin between a pleading-paper line number and its line."""
+
+
+def _struck(rules: list[tuple[float, float, float]], char: dict[str, Any]) -> bool:
+    """Whether one of `rules` (a drawn line's left, right and height on the page) crosses `char`, a pdfplumber
+    character."""
+    top, bottom = char["top"], char["bottom"]
+    middle = (char["x0"] + char["x1"]) / 2
+    low, high = top + _STRIKE_BAND[0] * (bottom - top), top + _STRIKE_BAND[1] * (bottom - top)
+    return any(x0 <= middle <= x1 and low <= y <= high for x0, x1, y in rules)
+
+
+def _spans(words: list[dict[str, Any]], rules: list[tuple[float, float, float]]) -> list[dict[str, object]]:
+    """One line's text as runs that are all struck or all not; the space between two words is struck when both
+    characters beside it are."""
+    spans: list[dict[str, object]] = []
+    previous: bool | None = None
+
+    def add(text: str, struck: bool) -> None:
+        if spans and spans[-1]["struck"] == struck:
+            spans[-1]["text"] = f"{spans[-1]['text']}{text}"
+        else:
+            spans.append({"text": text, "struck": struck})
+
+    for word in words:
+        chars = word["chars"]
+        flags = [_struck(rules, char) for char in chars]
+        if previous is not None:
+            add(" ", previous and flags[0])
+        for char, flag in zip(chars, flags, strict=True):
+            add(str(char["text"]), flag)
+        previous = flags[-1]
+    return spans
+
+
+def pdf_marked_lines(data: bytes) -> list[list[list[dict[str, object]]]]:
+    """Each page's lines of text, top to bottom, as runs of `{"text", "struck"}`.
+
+    A character is struck when a thin drawn line (a line, or a rectangle under 1.5 points high) crosses it within
+    `_STRIKE_BAND` of its height. Words are grouped into rows by their top, and a row is split into separate lines
+    where words are more than `_COLUMN_GAP` points apart, so a margin line number is a line of its own.
+    """
+    pages: list[list[list[dict[str, object]]]] = []
+    with pdfplumber.open(io.BytesIO(data)) as document:
+        for page in document.pages:
+            rules = [
+                (min(o["x0"], o["x1"]), max(o["x0"], o["x1"]), (o["top"] + o["bottom"]) / 2)
+                for o in [*page.lines, *page.rects]
+                if o["bottom"] - o["top"] < _MAX_RULE_HEIGHT
+            ]
+            words = page.extract_words(return_chars=True, x_tolerance=1.5)
+            lines: list[list[dict[str, object]]] = []
+            for row in cluster_objects(words, "top", _ROW_TOLERANCE):
+                row.sort(key=lambda word: word["x0"])
+                current: list[dict[str, object]] = []
+                for word in row:
+                    if current and word["x0"] - current[-1]["x1"] > _COLUMN_GAP:
+                        lines.append(_spans(current, rules))
+                        current = []
+                    current.append(word)
+                lines.append(_spans(current, rules))
+            pages.append(lines)
+    return pages
 
 
 def _printed_version(source: PdfSource, pattern: str, pages: list[str]) -> str:
@@ -457,7 +538,8 @@ class RawRow:
 
 def parse_rows(source: Source, data: bytes) -> list[RawRow]:
     """Split a source's data into rows: properties as the record, and the geometry when the format has one. A PDF
-    gives one row per page, with its page number and text."""
+    gives one row per page, with its page number and text, and its marked lines when it declares
+    `strikethrough: marked`."""
     if source.format == "pdf":
         return [RawRow(record={"page": n, "text": text}, geometry=None) for n, text in enumerate(pdf_pages(data), 1)]
     if isinstance(source, EpOnlineSource):
@@ -480,6 +562,14 @@ def parse_rows(source: Source, data: bytes) -> list[RawRow]:
                     geometry = {"type": "Point", "coordinates": [float(longitude), float(latitude)]}
             rows.append(RawRow(record=dict(row), geometry=geometry))
         return rows
+        texts = pdf_pages(data)
+        if isinstance(source, PdfSource) and source.strikethrough == "marked":
+            marked = pdf_marked_lines(data)
+            return [
+                RawRow(record={"page": n, "text": text, "lines": lines}, geometry=None)
+                for n, (text, lines) in enumerate(zip(texts, marked, strict=True), 1)
+            ]
+        return [RawRow(record={"page": n, "text": text}, geometry=None) for n, text in enumerate(texts, 1)]
     doc = json.loads(data)
     if isinstance(source, HalJsonApiSource):
         return [

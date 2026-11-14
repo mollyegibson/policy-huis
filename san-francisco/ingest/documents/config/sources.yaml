@@ -21,3 +21,16 @@ bla_affordable_housing:
   version_format: '%B %d,%Y'
   format: pdf
   raw_table: document_pages
+
+inclusionary_ordinance:
+  kind: pdf
+  # Legistar's copy of the ordinance as amended in Board: a digital original, whose struck-through deletions the loader
+  # marks. The signed copy (Ordinance No. 136-26) is a scan whose text layer misreads words and struck text.
+  url: https://sfgov.legistar.com/View.ashx?GUID=40004122-9FEB-4E0C-A67B-2126814C08E5&ID=15691706&M=F
+  title: "Planning, Administrative, Building Codes - Inclusionary Housing Program Updates and Reductions; Development Impact Fee Reductions" # the bracketed title on page 1
+  publisher: San Francisco Board of Supervisors # "BOARD OF SUPERVISORS" at the foot of every page
+  version_pattern: '^FILE NO\.\s+\d+ (\d{1,2}/\d{1,2}/\d{4}) ORDINANCE NO\.$' # "FILE NO.  260538 7/14/2026 ORDINANCE NO." on page 1, the date it was amended in Board
+  version_format: '%m/%d/%Y'
+  format: pdf
+  raw_table: document_pages
+  strikethrough: marked

@@ -10,7 +10,7 @@ from policyhuis_ingest.source_types import load_sources
 from policyhuis_ingest.testing import FakeFetcher, pdf
 from pydantic import ValidationError
 
-from sf_docs_ingest.corpus import CorpusEntry, build_passages, load_corpus, load_search_config
+from sf_docs_ingest.corpus import SPLITTERS, CorpusEntry, build_passages, load_corpus, load_search_config, page_texts
 from sf_docs_ingest.settings import CORPUS_FILE, CORPUS_SCHEMA, RAW_SCHEMA, SEARCH_FILE, SOURCES_FILE
 from tests.fixtures import pages
 
@@ -136,3 +136,17 @@ def test_reader_role_can_read_passages_and_search_entries_but_not_raw_pages(migr
 def test_a_corpus_description_with_a_digit_is_rejected() -> None:
     with pytest.raises(ValidationError, match="holds no digits; found 37"):
         CorpusEntry(document_type="law", description="The Chapter 37 rent law.", splitter="rent_ordinance")
+
+
+def test_a_rule_reading_struck_through_text_needs_marked_lines() -> None:
+    marked = [[{"text": "old ", "struck": True}, {"text": "new", "struck": False}]]
+    assert page_texts([("old new", marked)], "marked") == ["new"]
+    assert page_texts([("old new", None)], "text") == ["old new"]
+    with pytest.raises(ValueError, match="load it with strikethrough: marked"):
+        page_texts([("old new", None)], "marked")
+
+
+def test_the_inclusionary_rule_needs_its_sections() -> None:
+    entry = CorpusEntry(document_type="law", description="Inclusionary housing.", splitter="inclusionary_ordinance")
+    with pytest.raises(ValueError, match="needs the sections"):
+        SPLITTERS["inclusionary_ordinance"].split([], entry)

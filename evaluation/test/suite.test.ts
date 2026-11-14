@@ -15,10 +15,10 @@ import { answer, ordinance } from "./fixtures.ts"
 const QUESTIONS = fileURLToPath(new URL("../questions/sf.yaml", import.meta.url))
 
 describe("the question file", () => {
-  it.effect("decodes, with 75 questions", () =>
+  it.effect("decodes, with 77 questions", () =>
     Effect.gen(function* () {
       const { questions } = yield* loadQuestions(QUESTIONS)
-      expect(questions).toHaveLength(75)
+      expect(questions).toHaveLength(77)
     }).pipe(Effect.provide(NodeServices.layer))
   )
 
