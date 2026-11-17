@@ -1,4 +1,7 @@
+import gzip
+import io
 import json
+import zipfile
 from datetime import date
 from pathlib import Path
 
@@ -6,6 +9,9 @@ import pytest
 
 from policyhuis_ingest.source_types import (
     ArcGisLayerSource,
+    CsvDownloadSource,
+    EpOnlineSource,
+    HalJsonApiSource,
     PdfSource,
     SocrataSource,
     download,
@@ -163,3 +169,139 @@ def test_raw_table_is_the_source_key_unless_a_pdf_names_a_shared_one() -> None:
     assert raw_table("rent_ordinance", REPORT.model_copy(update={"raw_table": "document_pages"})) == "document_pages"
     zones = ArcGisLayerSource(kind="arcgis_layer", layer_url=LAYER, format="geojson")
     assert raw_table("zones", zones) == "zones"
+
+
+AMSTERDAM_API = "https://api.data.example.org/v1/plannen/woningbouwplannen_openbaar"
+PLANNEN = HalJsonApiSource(
+    kind="hal_json_api",
+    url=AMSTERDAM_API,
+    title="Woningbouwplannen Openbaar",
+    publisher="Gemeente Amsterdam",
+    format="json",
+    version_field="peildatum",
+    page_size=1,
+)
+
+
+def test_hal_json_api_download_follows_pagination_and_takes_the_latest_version() -> None:
+    page_one = json.dumps(
+        {
+            "_embedded": {
+                "woningbouwplannen_openbaar": [{"id": 1, "peildatum": "2026-07-01", "_links": {"self": {"href": "x"}}}]
+            },
+            "_links": {"next": {"href": f"{AMSTERDAM_API}?_pageSize=1&page=2"}},
+        }
+    ).encode()
+    page_two = json.dumps(
+        {
+            "_embedded": {"woningbouwplannen_openbaar": [{"id": 2, "peildatum": "2026-04-01"}]},
+            "_links": {},
+        }
+    ).encode()
+    downloaded = download(
+        PLANNEN,
+        FakeFetcher({f"{AMSTERDAM_API}?_pageSize=1&page=1": page_one, f"{AMSTERDAM_API}?_pageSize=1&page=2": page_two}),
+    )
+    rows = parse_rows(PLANNEN, downloaded.data)
+    assert [row.record["id"] for row in rows] == [1, 2]
+    assert all("_links" not in row.record for row in rows)
+    meta = parse_metadata(PLANNEN, downloaded.metadata)
+    assert meta.source_version == date(2026, 7, 1)
+    assert (meta.title, meta.publisher, meta.source_url) == (
+        "Woningbouwplannen Openbaar",
+        "Gemeente Amsterdam",
+        AMSTERDAM_API,
+    )
+
+
+LISTINGS = CsvDownloadSource(
+    kind="csv_download",
+    url="https://data.example.org/amsterdam/2026-09-16/data/listings.csv.gz",
+    title="Inside Airbnb Amsterdam listings",
+    publisher="Inside Airbnb",
+    version_pattern=r"/(\d{4}-\d{2}-\d{2})/",
+    version_format="%Y-%m-%d",
+    format="csv",
+    latitude_field="latitude",
+    longitude_field="longitude",
+)
+
+
+def test_csv_download_reads_the_version_from_the_url_and_builds_points() -> None:
+    csv_bytes = b"id,latitude,longitude\n1,52.37,4.90\n"
+    downloaded = download(LISTINGS, FakeFetcher({LISTINGS.url: gzip.compress(csv_bytes)}))
+    assert downloaded.data == csv_bytes
+    assert downloaded.data_extension == "csv"
+    meta = parse_metadata(LISTINGS, downloaded.metadata)
+    assert meta.source_version == date(2026, 9, 16)
+    rows = parse_rows(LISTINGS, downloaded.data)
+    assert rows[0].record["id"] == "1"
+    assert rows[0].geometry == {"type": "Point", "coordinates": [4.9, 52.37]}
+
+
+def test_csv_download_fails_when_the_url_holds_no_version() -> None:
+    source = LISTINGS.model_copy(update={"url": "https://data.example.org/amsterdam/listings.csv"})
+    with pytest.raises(ValueError, match="version_pattern matched no date"):
+        download(source, FakeFetcher({source.url: b"id\n"}))
+
+
+def ep_online_zip() -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(
+            "v20261101_v4_csv.csv",
+            "\n".join(
+                [
+                    "PublicatieDatum;01-11-2026",
+                    "LaatstVerwerkteMutatievolgnummer;42",
+                    "Registratiedatum;Postcode;Energieklasse",
+                    "20261031;1017ND;G",
+                    "20261030;1018AB;A",
+                ]
+            ),
+        )
+    return buffer.getvalue()
+
+
+DOWNLOAD_INFO = "https://public.ep-online.example.org/api/v5/Mutatiebestand/DownloadInfo?fileType=csv&xmlVersion=4"
+LABELS = EpOnlineSource(
+    kind="ep_online",
+    url=DOWNLOAD_INFO,
+    title="EP-Online energielabels",
+    publisher="RVO",
+    format="zip",
+)
+ENVELOPE = json.dumps(
+    {
+        "bestandsnaam": "v20261101_v4_csv.zip",
+        "downloadUrl": "https://www.ep-online.example.org/Download/MutationFile?token=secret",
+        "geldigTotEnMet": "2026-11-18T03:26:29.7679056+01:00",
+    }
+).encode()
+
+
+def test_ep_online_downloads_the_envelope_then_the_zip_and_never_records_the_token() -> None:
+    fetcher = FakeFetcher({DOWNLOAD_INFO: ENVELOPE, "https://www.ep-online.example.org/Download/": ep_online_zip()})
+    downloaded = download(LABELS, fetcher, api_key="ep-online-key")
+    assert downloaded.data_extension == "zip"
+    assert fetcher.headers_sent[DOWNLOAD_INFO] == {"Authorization": "ep-online-key", "accept": "text/plain"}
+    meta = parse_metadata(LABELS, downloaded.metadata)
+    assert meta.source_version == date(2026, 11, 1)
+    assert (meta.title, meta.publisher, meta.source_url) == ("EP-Online energielabels", "RVO", DOWNLOAD_INFO)
+    assert meta.license == "EP-Online gebruiksvoorwaarden"
+    assert "secret" not in downloaded.metadata.decode()
+    assert downloaded.data_url == DOWNLOAD_INFO
+    rows = parse_rows(LABELS, downloaded.data)
+    assert [row.record["Postcode"] for row in rows] == ["1017ND", "1018AB"]
+    assert [row.record["Energieklasse"] for row in rows] == ["G", "A"]
+
+
+def test_ep_online_needs_an_api_key() -> None:
+    with pytest.raises(ValueError, match="needs an EP-Online API key"):
+        download(LABELS, FakeFetcher({DOWNLOAD_INFO: ENVELOPE}))
+
+
+def test_ep_online_fails_when_the_file_name_holds_no_version() -> None:
+    envelope = json.dumps({"bestandsnaam": "onleesbaar.zip", "downloadUrl": "https://x/Download"}).encode()
+    with pytest.raises(ValueError, match="holds no version date"):
+        download(LABELS, FakeFetcher({DOWNLOAD_INFO: envelope}), api_key="k")

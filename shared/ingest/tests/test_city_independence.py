@@ -12,5 +12,5 @@ def test_shared_code_names_no_city() -> None:
     """City-specific values (portals, schemas, place names) belong in each city's project, never here."""
     for path in SHARED_FILES:
         text = path.read_text().lower()
-        for marker in ("sf.gov", "sfgov", "raw_sf", "san francisco", "sfpuc", "raw_nl", "amsterdam"):
+        for marker in ("sf.gov", "sfgov", "raw_sf", "san francisco", "sfpuc", "ams_", "amsterdam"):
             assert marker not in text, f"{path.name} mentions {marker!r}"

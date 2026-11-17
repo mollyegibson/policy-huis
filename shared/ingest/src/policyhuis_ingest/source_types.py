@@ -1,7 +1,10 @@
+import csv
+import gzip
 import io
 import json
 import logging
 import re
+import zipfile
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -68,11 +71,72 @@ class PdfSource(BaseModel):
         return self
 
 
-type Source = SocrataSource | ArcGisLayerSource | PdfSource
+class HalJsonApiSource(BaseModel):
+    """A dataset on a HAL+JSON API, served as pages of records.
+
+    The endpoint returns one page of records under `_embedded` and a `_links.next` until the last page. `version_field`
+    names the record field that carries the source version; the version is the latest value found.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["hal_json_api"]
+    url: str
+    title: str
+    publisher: str
+    format: Literal["json"]
+    version_field: str
+    page_size: int = 1000
+
+
+class CsvDownloadSource(BaseModel):
+    """A CSV file downloaded from a URL, with its version read from the URL.
+
+    `version_pattern` is a regular expression with one group capturing the version in the URL, and `version_format` is
+    the group's `strptime` format. `latitude_field` and `longitude_field`, when both are given, build a point geometry
+    for each row.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["csv_download"]
+    url: str
+    title: str
+    publisher: str
+    version_pattern: str
+    version_format: str
+    format: Literal["csv"]
+    latitude_field: str | None = None
+    longitude_field: str | None = None
+
+
+class EpOnlineSource(BaseModel):
+    """A file from RVO's EP-Online public API for the Dutch energy label register.
+
+    `url` is a `DownloadInfo` endpoint, such as the monthly register file with its query parameters. The API answers
+    with a JSON envelope naming the current file (`bestandsnaam`, holding the version as `vYYYYMMDD`) and a tokenized
+    `downloadUrl` for the ZIP of the file itself; the token is never stored. The API key is a secret: it is passed to
+    `download` by the caller, from settings, and must not appear in config files. The file is one ZIP holding one CSV
+    whose first lines are metadata records; the rows follow the header line that starts with `Registratiedatum;`.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["ep_online"]
+    url: str
+    title: str
+    publisher: str
+    format: Literal["zip"]
+
+
+type Source = SocrataSource | ArcGisLayerSource | PdfSource | HalJsonApiSource | CsvDownloadSource | EpOnlineSource
 
 
 class _SourcesFile(BaseModel):
-    sources: dict[str, SocrataSource | ArcGisLayerSource | PdfSource]
+    sources: dict[
+        str,
+        SocrataSource | ArcGisLayerSource | PdfSource | HalJsonApiSource | CsvDownloadSource | EpOnlineSource,
+    ]
 
 
 def load_sources(path: Path) -> dict[str, Source]:
@@ -82,7 +146,7 @@ def load_sources(path: Path) -> dict[str, Source]:
 
 
 class Fetcher(Protocol):
-    def get(self, url: str) -> bytes: ...
+    def get(self, url: str, headers: dict[str, str] | None = None) -> bytes: ...
 
 
 @dataclass(frozen=True)
@@ -149,8 +213,9 @@ def _version_fields(source: PdfSource, reader: PdfReader, data: bytes) -> dict[s
     return {"printed_version": _printed_version(source, source.version_pattern, pdf_pages(data))}
 
 
-def download(source: Source, fetcher: Fetcher) -> Download:
-    """Fetch a source's full data and its metadata."""
+def download(source: Source, fetcher: Fetcher, api_key: str | None = None) -> Download:
+    """Fetch a source's full data and its metadata. `api_key` carries a source's secret, from settings, for the source
+    kinds that authenticate; it must never be a value from a config file."""
     match source:
         case SocrataSource(domain=domain, dataset_id=dataset_id, format=fmt):
             base = f"https://{domain}/resource/{dataset_id}"
@@ -177,6 +242,58 @@ def download(source: Source, fetcher: Fetcher) -> Download:
                 }
             ).encode()
             return Download(data=data, data_extension="pdf", metadata=metadata, data_url=url)
+        case HalJsonApiSource(
+            url=url, title=title, publisher=publisher, version_field=version_field, page_size=page_size
+        ):
+            records: list[dict[str, object]] = []
+            next_url: str | None = f"{url}?_pageSize={page_size}&page=1"
+            while next_url is not None:
+                document = json.loads(fetcher.get(next_url))
+                embedded = document.get("_embedded") or {}
+                records.extend(next(iter(embedded.values()), []))
+                following = document.get("_links") or {}
+                next_url = (following.get("next") or {}).get("href")
+            versions = [str(record.get(version_field)) for record in records if record.get(version_field)]
+            version = max(versions) if versions else date.today().isoformat()
+            metadata = json.dumps(
+                {"title": title, "publisher": publisher, "source_version": version, "source_url": url}
+            ).encode()
+            return Download(data=json.dumps(records).encode(), data_extension="json", metadata=metadata, data_url=url)
+        case CsvDownloadSource(
+            url=url, title=title, publisher=publisher, version_pattern=version_pattern, version_format=version_format
+        ):
+            downloaded = fetcher.get(url)
+            data = gzip.decompress(downloaded) if url.endswith(".gz") else downloaded
+            match = re.search(version_pattern, url)
+            if match is None:
+                raise ValueError(f"{url}: version_pattern matched no date in the URL")
+            version = datetime.strptime(match.group(1), version_format).date().isoformat()
+            metadata = json.dumps(
+                {"title": title, "publisher": publisher, "source_version": version, "source_url": url}
+            ).encode()
+            return Download(data=data, data_extension="csv", metadata=metadata, data_url=url)
+        case EpOnlineSource(url=url, title=title, publisher=publisher):
+            if api_key is None:
+                raise ValueError(f"{url}: this source needs an EP-Online API key, read from settings")
+            info = json.loads(fetcher.get(url, {"Authorization": api_key, "accept": "text/plain"}))
+            match = re.search(r"v(\d{8})", str(info.get("bestandsnaam", "")))
+            if match is None:
+                raise ValueError(f"{url}: bestandsnaam {info.get('bestandsnaam')!r} holds no version date")
+            version = datetime.strptime(match.group(1), "%Y%m%d").date().isoformat()
+            metadata = json.dumps(
+                {
+                    "title": title,
+                    "publisher": publisher,
+                    "source_version": version,
+                    "source_url": url,
+                    "license": "EP-Online gebruiksvoorwaarden",
+                    "bestandsnaam": info.get("bestandsnaam"),
+                }
+            ).encode()
+            # The envelope's tokenized downloadUrl grants access and is never archived or recorded.
+            return Download(
+                data=fetcher.get(info["downloadUrl"]), data_extension="zip", metadata=metadata, data_url=url
+            )
 
 
 def parse_metadata(source: Source, metadata: bytes) -> SourceMetadata:
@@ -211,6 +328,33 @@ def parse_metadata(source: Source, metadata: bytes) -> SourceMetadata:
                 source_version=_pdf_version(source, doc),
                 source_url=url,
             )
+        case HalJsonApiSource():
+            return SourceMetadata(
+                title=doc["title"],
+                publisher=doc["publisher"],
+                description=None,
+                license=None,
+                source_version=date.fromisoformat(doc["source_version"]),
+                source_url=doc["source_url"],
+            )
+        case CsvDownloadSource():
+            return SourceMetadata(
+                title=doc["title"],
+                publisher=doc["publisher"],
+                description=None,
+                license=None,
+                source_version=date.fromisoformat(doc["source_version"]),
+                source_url=doc["source_url"],
+            )
+        case EpOnlineSource():
+            return SourceMetadata(
+                title=doc["title"],
+                publisher=doc["publisher"],
+                description=None,
+                license=_blank_to_none(doc.get("license")),
+                source_version=date.fromisoformat(doc["source_version"]),
+                source_url=doc["source_url"],
+            )
 
 
 def _pdf_version(source: PdfSource, doc: dict[str, str]) -> date:
@@ -232,7 +376,32 @@ def parse_rows(source: Source, data: bytes) -> list[RawRow]:
     gives one row per page, with its page number and text."""
     if source.format == "pdf":
         return [RawRow(record={"page": n, "text": text}, geometry=None) for n, text in enumerate(pdf_pages(data), 1)]
+    if isinstance(source, EpOnlineSource):
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            csv_name = next(name for name in archive.namelist() if name.lower().endswith(".csv"))
+            with archive.open(csv_name) as raw:
+                lines = csv.reader(io.TextIOWrapper(raw, encoding="utf-8"), delimiter=";")
+                header = next((line for line in lines if line and line[0].strip() == "Registratiedatum"), None)
+                if header is None:
+                    raise ValueError(f"{csv_name}: no Registratiedatum header row")
+                return [RawRow(record=dict(zip(header, line, strict=False)), geometry=None) for line in lines]
+    if isinstance(source, CsvDownloadSource):
+        rows: list[RawRow] = []
+        for row in csv.DictReader(io.StringIO(data.decode("utf-8"))):
+            geometry = None
+            if source.latitude_field is not None and source.longitude_field is not None:
+                latitude = row.get(source.latitude_field)
+                longitude = row.get(source.longitude_field)
+                if latitude and longitude:
+                    geometry = {"type": "Point", "coordinates": [float(longitude), float(latitude)]}
+            rows.append(RawRow(record=dict(row), geometry=geometry))
+        return rows
     doc = json.loads(data)
+    if isinstance(source, HalJsonApiSource):
+        return [
+            RawRow(record={key: value for key, value in row.items() if key != "_links"}, geometry=row.get("geometrie"))
+            for row in doc
+        ]
     if source.format == "geojson":
         return [RawRow(record=f["properties"], geometry=f["geometry"]) for f in doc["features"]]
     return [RawRow(record=row, geometry=None) for row in doc]

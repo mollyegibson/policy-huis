@@ -7,9 +7,12 @@ class FakeFetcher:
     def __init__(self, responses: dict[str, bytes]) -> None:
         self._responses = responses
         self.requested: list[str] = []
+        self.headers_sent: dict[str, dict[str, str]] = {}
 
-    def get(self, url: str) -> bytes:
+    def get(self, url: str, headers: dict[str, str] | None = None) -> bytes:
         self.requested.append(url)
+        if headers:
+            self.headers_sent[url] = headers
         for prefix, body in self._responses.items():
             if url.startswith(prefix):
                 return body

@@ -39,15 +39,17 @@ def ingest(
     conn: psycopg.Connection,
     raw_schema: str,
     version: str,
+    api_key: str | None = None,
 ) -> LoadResult:
     """Download a source, archive it, then load the archived bytes into `raw_schema` in one transaction.
 
     The schema holds a `load_manifest` table and one table per source key, or the shared table a source names (see
     `raw_table`), with the columns `load_id`, `row_number`, `record` (jsonb) and `geom` (PostGIS geometry). A
-    download whose data hash matches an earlier load of the same source is not loaded again.
+    download whose data hash matches an earlier load of the same source is not loaded again. `api_key` is a source's
+    secret, from settings, for the kinds that authenticate.
     """
     manifest = sql.Identifier(raw_schema, "load_manifest")
-    downloaded = download(source, fetcher)
+    downloaded = download(source, fetcher, api_key)
     data_hash = sha256(downloaded.data)
     already = conn.execute(
         sql.SQL("SELECT 1 FROM {} WHERE source_key = %s AND archive_sha256 = %s").format(manifest),
