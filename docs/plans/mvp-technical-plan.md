@@ -8,8 +8,8 @@ This plan covers the backend: the agent, its tools, the data layer, the network 
 
 The MVP is one AI agent that answers questions about housing policy in San Francisco and Amsterdam in plain language, citing the law, policy or dataset behind every claim. The agent answers with an open-weight model hosted in the cloud (see [Model hosting](#model-hosting)) and reaches its knowledge through independent [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) servers:
 
-- one **docs server per city** (`sf-docs`, `nl-docs`), for laws, ordinances and policy documents;
-- one **data server per city** (`sf-data`, `nl-data`), for housing, demographic and climate data, queried with code so numbers come from data, not from the model.
+- one **docs server per city** (`sf-docs`, `ams-docs`), for laws, ordinances and policy documents;
+- one **data server per city** (`sf-data`, `ams-data`), for housing, demographic and climate data, queried with code so numbers come from data, not from the model.
 
 The same agent can answer with a frontier model instead, so accuracy, latency and energy per answer can be compared directly.
 
@@ -57,9 +57,9 @@ flowchart LR
 
     subgraph mesh["Private network (Tailscale)"]
         lt_sf["sf-docs MCP<br/>SF documents"]
-        lt_ams["nl-docs MCP<br/>Amsterdam documents"]
+        lt_ams["ams-docs MCP<br/>Amsterdam documents"]
         d_sf["sf-data MCP"]
-        d_ams["nl-data MCP"]
+        d_ams["ams-data MCP"]
     end
 
     subgraph neon["Neon (Postgres + object storage)"]
@@ -120,7 +120,7 @@ One TypeScript service is both the backend API the web app calls and the agent l
 
 All servers are TypeScript, built with Effect's MCP server (`effect/ai/McpServer`, served over Streamable HTTP with `McpServer.layerHttp`). Each tool is an `effect/ai` `Tool` with Effect `Schema` input and output, registered through a `Toolkit`, and returns its result as MCP `structuredContent` described by the tool's `outputSchema`. Servers share nothing with the backend but MCP itself, plus these conventions, which each server implements in its own code (see [Domain-Driven Design](../domain-driven-design.md#conventions-between-servers-and-the-backend)):
 
-- **Tool naming.** Each tool is prefixed with its server's short name (for example `sf_docs_search_policy`, `nl_data_social_rent_pipeline`), so the model can tell same-purpose tools apart across cities. The prefix comes from the backend's directory file; servers name tools without it.
+- **Tool naming.** Each tool is prefixed with its server's short name (for example `sf_docs_search_policy`, `ams_data_social_rent_pipeline`), so the model can tell same-purpose tools apart across cities. The prefix comes from the backend's directory file; servers name tools without it.
 - **Citation object.** Every result carries the citations behind it, by the citation convention: stable source and citation IDs namespaced by the server, the source's title, publisher, URL and version, and optionally a locator (the provision or the data selected, in words) and a quote. The backend reads them from results and streams them to the browser app; the browser shows them, and the evaluation checks them from traces. The archived file's hash stays in the load record, reached through the source ID.
 - **Errors.** Typed and returned to the model as tool results (`failureMode: "return"`), never thrown as transport failures, so the model can say "no data" rather than guess. A server that cannot reach its own database returns `DatabaseUnavailable`, which the backend treats as the server being unavailable.
 - **Sessionless MCP.** Servers and the backend's client use MCP protocol version `2026-07-28`, which has no session, so a server can restart without breaking the backend's connection (see [MCP connections](agent-loop.md#mcp-connections)). If a server is down, the agent answers with the others and says which could not be reached.
@@ -163,7 +163,7 @@ The costs are about 2 KB more storage per Amsterdam passage, and translating the
 
 #### City data servers
 
-One per city (`sf-data` for San Francisco, `nl-data` for the Netherlands). Their tools are specific to each city's datasets and include its climate data (flood and sea-level-rise zones, heat stress, energy labels, building age).
+One per city (`sf-data` for San Francisco, `ams-data` for the Netherlands). Their tools are specific to each city's datasets and include its climate data (flood and sea-level-rise zones, heat stress, energy labels, building age).
 
 Climate data sits inside each city's server because the MVP sources are city-specific. A separate climate server becomes worthwhile when one source covers many places (for example FEMA's national flood maps for several US cities); it would answer by location, not by city.
 
@@ -190,10 +190,10 @@ A Python package (uv, ruff, pytest) owns everything that loads or transforms dat
 
 | Schema | Written by | Migrations | Read by |
 |---|---|---|---|
-| `raw_sf_data`, `raw_nl_data` | Data ingestion loaders | Alembic (raw SQL) | dbt |
-| `sf_data`, `nl_data` | dbt | dbt | The city's data server |
-| `raw_sf_docs`, `raw_nl_docs` | Documents ingestion loaders | Alembic (raw SQL) | The passage pipeline |
-| `sf_docs`, `nl_docs` | The city's passage pipeline | Alembic | The city's docs server |
+| `raw_sf_data`, `raw_ams_data` | Data ingestion loaders | Alembic (raw SQL) | dbt |
+| `sf_data`, `ams_data` | dbt | dbt | The city's data server |
+| `raw_sf_docs`, `raw_ams_docs` | Documents ingestion loaders | Alembic (raw SQL) | The passage pipeline |
+| `sf_docs`, `ams_docs` | The city's passage pipeline | Alembic | The city's docs server |
 | `app` | Backend | Drizzle (`backend/drizzle/`) | Backend, evaluation reports |
 
 No server reads another server's schema. Moving a server to its own database later is then a connection-string change.
@@ -320,7 +320,7 @@ Loading one complete pair per city before the remaining sources tests both pipel
 
 Amsterdam's M2 depends on spike S3, because loading Dutch legal text means translating it.
 
-San Francisco work (source proposal, ingestion, corpus, `sf-data` and `sf-docs`) is owned by Molly. Amsterdam work (source proposal, pipelines, corpus, `nl-data` and `nl-docs`) is owned by Martin. Ownership of shared pieces is an open question.
+San Francisco work (source proposal, ingestion, corpus, `sf-data` and `sf-docs`) is owned by Molly. Amsterdam work (source proposal, pipelines, corpus, `ams-data` and `ams-docs`) is owned by Martin. Ownership of shared pieces is an open question.
 
 ## Deferred options
 

@@ -3236,6 +3236,38 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@policyhuis/ams-data-server@workspace:amsterdam/mcp-servers/data":
+  version: 0.0.0-use.local
+  resolution: "@policyhuis/ams-data-server@workspace:amsterdam/mcp-servers/data"
+  dependencies:
+    "@effect/platform-node": "npm:4.1.4"
+    "@effect/sql-pg": "npm:4.1.4"
+    "@effect/vitest": "npm:4.1.4"
+    "@policyhuis/node-config": "workspace:*"
+    "@testcontainers/postgresql": "npm:12.2.1"
+    "@types/node": "npm:26.6.6"
+    effect: "npm:4.1.4"
+    typescript: "npm:5.9.3"
+    vitest: "npm:5.1.0"
+  languageName: unknown
+  linkType: soft
+
+"@policyhuis/ams-docs-server@workspace:amsterdam/mcp-servers/documents":
+  version: 0.0.0-use.local
+  resolution: "@policyhuis/ams-docs-server@workspace:amsterdam/mcp-servers/documents"
+  dependencies:
+    "@effect/platform-node": "npm:4.1.4"
+    "@effect/sql-pg": "npm:4.1.4"
+    "@effect/vitest": "npm:4.1.4"
+    "@policyhuis/node-config": "workspace:*"
+    "@testcontainers/postgresql": "npm:12.2.1"
+    "@types/node": "npm:26.6.6"
+    effect: "npm:4.1.4"
+    typescript: "npm:5.9.3"
+    vitest: "npm:5.1.0"
+  languageName: unknown
+  linkType: soft
+
 "@policyhuis/backend@workspace:backend":
   version: 0.0.0-use.local
   resolution: "@policyhuis/backend@workspace:backend"

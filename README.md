@@ -35,9 +35,9 @@ flowchart LR
 
     subgraph mesh["Private network (Tailscale)"]
         lt_sf["sf-docs MCP<br/>SF documents"]
-        lt_ams["nl-docs MCP<br/>Amsterdam documents"]
+        lt_ams["ams-docs MCP<br/>Amsterdam documents"]
         d_sf["sf-data MCP"]
-        d_ams["nl-data MCP"]
+        d_ams["ams-data MCP"]
     end
 
     subgraph neon["Neon (Postgres + object storage)"]
@@ -84,7 +84,7 @@ san-francisco/ingest/data/          SF data sources, raw_sf_data migrations, sf_
 san-francisco/ingest/documents/     SF documents, passage pipeline, raw_sf_docs and sf_docs migrations
 san-francisco/mcp-servers/data/     sf-data MCP server
 san-francisco/mcp-servers/documents/   sf-docs MCP server
-netherlands/                        the Dutch nodes, same shape (not started)
+amsterdam/                        the Dutch nodes, same shape (scaffolded)
 evaluation/                         question set and expected answers
 scripts/                            repo tooling: yarn dev
 docs/                               plans, architecture and style guides
@@ -111,7 +111,7 @@ San Francisco's two MCP servers (`sf-data` and `sf-docs`), the backend and the b
    3. Check it answers: `ollama run gpt-oss:20b "hello"`. The backend calls it at `http://localhost:11434/v1`. Ollama answers one request at a time by default (`OLLAMA_NUM_PARALLEL`), which is why the configuration's `maxConcurrentQuestions` is 1; raise both together.
 5. **Configure the browser app:** `cp browser-app/.env.example browser-app/.env`, then set `BACKEND_URL` to the backend's address (for example `http://localhost:8080`). The app's dev server proxies `/api` to it.
 6. **Start everything**, from the repo root:
-   - `yarn dev --include san-francisco` runs San Francisco's two MCP servers, the backend and the browser app in one terminal, with their logs interleaved. `yarn dev` alone runs only the backend and the browser app; `--include` takes one or more groups (`--include san-francisco netherlands`), and `--all` starts every group. A group is a top-level directory, other than `shared/`, holding a workspace with a `start` script; an unknown group is refused with the list of groups;
+   - `yarn dev --include san-francisco` runs San Francisco's two MCP servers, the backend and the browser app in one terminal, with their logs interleaved. `yarn dev` alone runs only the backend and the browser app; `--include` takes one or more groups (`--include san-francisco amsterdam`), and `--all` starts every group. A group is a top-level directory, other than `shared/`, holding a workspace with a `start` script; an unknown group is refused with the list of groups;
    - or each in its own terminal: `yarn workspace @policyhuis/sf-data-server start`, `yarn workspace @policyhuis/sf-docs-server start`, `yarn workspace @policyhuis/backend start` and `yarn workspace @policyhuis/browser-app start`.
 
    They can start in any order: the backend retries a server it cannot reach and offers its tools once it connects, and the browser app shows the agent host as offline until the backend is up.
@@ -137,7 +137,7 @@ San Francisco's two MCP servers (`sf-data` and `sf-docs`), the backend and the b
 
 ## Team
 
-San Francisco work (sources, ingestion, corpus, `sf-data` and `sf-docs`) is owned by Molly; Amsterdam work (sources, pipelines, corpus, `nl-data` and `nl-docs`) by Martin. A research team, including a policy expert, checks the evaluation answers.
+San Francisco work (sources, ingestion, corpus, `sf-data` and `sf-docs`) is owned by Molly; Amsterdam work (sources, pipelines, corpus, `ams-data` and `ams-docs`) by Martin. A research team, including a policy expert, checks the evaluation answers.
 
 ## Documentation
 

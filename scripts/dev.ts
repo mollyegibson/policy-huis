@@ -5,7 +5,7 @@
  *
  *     yarn dev
  *     yarn dev --include san-francisco
- *     yarn dev --include san-francisco netherlands
+ *     yarn dev --include san-francisco amsterdam
  *     yarn dev --all
  */
 import { spawn } from "node:child_process"

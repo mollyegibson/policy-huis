@@ -1,0 +1,140 @@
+import { Effect } from "effect"
+
+import { provisionCitation } from "./Citations.ts"
+import { DataUnavailable, UnknownValue, withDataErrors } from "./ToolErrors.ts"
+import type { DocumentRow, PassageRow } from "./PassageRepo.ts"
+import { PassageRepo } from "./PassageRepo.ts"
+import { QueryEmbedder } from "./QueryEmbedder.ts"
+import type { AmsDocsToolkit } from "./Tools.ts"
+import { ProvisionNotFound } from "./Tools.ts"
+
+/** Search returns this many provisions when the caller gives no limit: the depth spike S4 set its threshold at. */
+const DEFAULT_LIMIT = 10
+
+const toPassage = (document: DocumentRow, row: PassageRow) => ({
+  documentId: row.documentId,
+  provision: row.provision,
+  parentProvision: row.parentProvision,
+  childCount: row.childCount,
+  heading: row.heading,
+  context: row.context,
+  text: row.textNl,
+  textEn: row.textEn,
+  translationModel: row.translationModel,
+  versionDate: document.versionDate
+})
+
+const toOutlineEntry = (row: PassageRow) => ({
+  provision: row.provision,
+  summary: row.summary,
+  childCount: row.childCount
+})
+
+/** The handlers of `toolkit`, whichever documents its descriptions list; a tool's handler is found by its name. */
+export const AmsDocsHandlers = (toolkit: AmsDocsToolkit) =>
+  toolkit.toLayer(
+    Effect.gen(function* () {
+      const repo = yield* PassageRepo
+      const embedder = yield* QueryEmbedder
+
+      /** The loaded document `documentId`, or `UnknownValue` listing the loaded documents. */
+      const document = Effect.fn("AmsDocs.document")(function* (documentId: string) {
+        const documents = yield* repo.documents()
+        const found = documents.find((d) => d.documentId === documentId)
+        if (found === undefined) {
+          return yield* new UnknownValue({
+            field: "documentId",
+            value: documentId,
+            validValues: documents.map((d) => d.documentId)
+          })
+        }
+        return found
+      })
+
+      /** Each row with its document, which every passage has, since `passages.document_id` references it. */
+      const withDocuments = Effect.fn("AmsDocs.withDocuments")(function* (
+        documents: ReadonlyArray<DocumentRow>,
+        rows: ReadonlyArray<PassageRow>
+      ) {
+        const byId = new Map(documents.map((d) => [d.documentId, d]))
+        const pairs: Array<{ readonly row: PassageRow; readonly document: DocumentRow }> = []
+        for (const row of rows) {
+          const owner = byId.get(row.documentId)
+          if (owner === undefined)
+            return yield* Effect.die(new Error(`A passage of unknown document ${row.documentId}`))
+          pairs.push({ row, document: owner })
+        }
+        return pairs
+      })
+
+      /**
+       * A provision's own text and an outline of its children, each child cited by its summary, so the model can
+       * cite a child it read only in the outline.
+       */
+      const withChildren = Effect.fn("AmsDocs.withChildren")(function* (doc: DocumentRow, parent: PassageRow) {
+        const listed = yield* repo.children(doc.documentId, parent.provision)
+        return {
+          outline: listed.map(toOutlineEntry),
+          citations: [
+            provisionCitation(doc, parent, parent.textNl, false),
+            ...listed.map((row) => provisionCitation(doc, row, row.summary, row.translationModel !== null))
+          ]
+        }
+      })
+
+      return {
+        search_policy: Effect.fn("AmsDocs.search_policy")(
+          function* (params) {
+            const documents = yield* repo.documents()
+            if (documents.length === 0) return yield* new DataUnavailable({ datasets: [] })
+            if (params.documentId !== undefined) yield* document(params.documentId)
+            const vector = yield* embedder.embed(params.query)
+            const found = yield* withDocuments(
+              documents,
+              yield* repo.search(vector, params.documentId, params.limit ?? DEFAULT_LIMIT)
+            )
+            return {
+              passages: found.map(({ row, document: owner }) => toPassage(owner, row)),
+              citations: found.map(({ row, document: owner }) => provisionCitation(owner, row, row.textNl, false))
+            }
+          },
+          withDataErrors((params) => (params.documentId === undefined ? [] : [params.documentId]))
+        ),
+
+        get_provision: Effect.fn("AmsDocs.get_provision")(
+          function* (params) {
+            const doc = yield* document(params.documentId)
+            const found = yield* repo.provision(params.documentId, params.provision)
+            if (found === null) {
+              return yield* new ProvisionNotFound({ documentId: params.documentId, provision: params.provision })
+            }
+            return { passages: [toPassage(doc, found)], ...(yield* withChildren(doc, found)) }
+          },
+          withDataErrors((params) => [params.documentId])
+        ),
+
+        list_provisions: Effect.fn("AmsDocs.list_provisions")(
+          function* (params) {
+            const doc = yield* document(params.documentId)
+            let parent: PassageRow | null = null
+            if (params.provision !== undefined) {
+              parent = yield* repo.provision(params.documentId, params.provision)
+              if (parent === null) {
+                return yield* new ProvisionNotFound({ documentId: params.documentId, provision: params.provision })
+              }
+            }
+            const listed = yield* repo.children(params.documentId, parent?.provision ?? null)
+            return {
+              parent: parent === null ? null : toPassage(doc, parent),
+              outline: listed.map(toOutlineEntry),
+              citations: [
+                ...(parent === null ? [] : [provisionCitation(doc, parent, parent.textNl, false)]),
+                ...listed.map((row) => provisionCitation(doc, row, row.summary, row.translationModel !== null))
+              ]
+            }
+          },
+          withDataErrors((params) => [params.documentId])
+        )
+      }
+    })
+  )

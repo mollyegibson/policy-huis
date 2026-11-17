@@ -90,7 +90,7 @@ PolicyHuis is a monorepo: a single agent that answers housing-policy questions f
 | `san-francisco/ingest/documents/` | Python (uv), YAML | San Francisco's documents, the passage pipeline and its rules for each document, the `raw_sf_docs` and `sf_docs` migrations and the `sf-docs-ingest` command |
 | `san-francisco/mcp-servers/data/` | TypeScript | The `sf-data` MCP server: San Francisco's housing pipeline, climate-zone and eviction tools over `sf_data` |
 | `san-francisco/mcp-servers/documents/` | TypeScript | The `sf-docs` MCP server: search, provisions and outlines over `sf_docs` |
-| `netherlands/` | | The Dutch nodes, in the same shape |
+| `amsterdam/` | Python (uv), dbt, TypeScript | The Dutch nodes, in the same shape: the `ams-data-ingest` and `ams-docs-ingest` commands and the `ams-data` and `ams-docs` MCP servers |
 | `evaluation/` | TypeScript, YAML | The question set, its expected answers and checks, and the promptfoo evaluation that asks the running backend |
 | `scripts/` | TypeScript | Repo tooling: `yarn dev` and its `--include <group>` selection of each city's servers |
 | `docs/plans/` | Markdown | Technical designs. Read the relevant plan before changing a component. |

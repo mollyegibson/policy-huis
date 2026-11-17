@@ -1,0 +1,14 @@
+# Connection values come from the environment; `uv run ams-data-ingest dbt …` sets them from AMS_DATA_DATABASE_URL.
+policyhuis_ams:
+  target: ams_data
+  outputs:
+    ams_data:
+      type: postgres
+      host: "{{ env_var('DBT_HOST') }}"
+      port: "{{ env_var('DBT_PORT') | int }}"
+      user: "{{ env_var('DBT_USER') }}"
+      password: "{{ env_var('DBT_PASSWORD') }}"
+      dbname: "{{ env_var('DBT_DBNAME') }}"
+      sslmode: "{{ env_var('DBT_SSLMODE') }}"
+      schema: ams_data
+      threads: 4

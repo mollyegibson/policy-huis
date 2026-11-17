@@ -100,7 +100,7 @@ A bounded context is a boundary within which a term means exactly one thing. The
 | **Backend** (`backend/`) | TypeScript, Effect | `app` | MCP tools only | The backend API |
 | **Evaluation** (`evaluation/`) | TypeScript, YAML | Its own run results (`evaluation/results/`) | The backend API | The question-set file format |
 
-A server and the ingestion project that builds its schema share a short name (`sf_data`, `sf_docs`) in every identifier: server, tool prefix, citation namespace, schemas, reader role, environment variables and packages. Directories use the full words (`ingest/documents/`, since `ingest/docs/` would read as a documentation folder), and so do the labels users see ("SF Data", "SF Documents"). The Dutch nodes are `nl-data` and `nl-docs`.
+A server and the ingestion project that builds its schema share a short name (`sf_data`, `sf_docs`) in every identifier: server, tool prefix, citation namespace, schemas, reader role, environment variables and packages. Directories use the full words (`ingest/documents/`, since `ingest/docs/` would read as a documentation folder), and so do the labels users see ("SF Data", "SF Documents"). The Dutch nodes are `ams-data` and `ams-docs`.
 
 **Contexts communicate through published contracts, never by importing each other's code.** The agent doesn't read `sf_docs`; it calls the docs server's tools. A data server doesn't read another city's schema. Python and TypeScript share only database schemas. A change to a published contract (a schema another context reads, an MCP tool's input or output, the backend API) is a contract change and gets reviewed as one.
 

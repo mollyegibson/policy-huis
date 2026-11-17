@@ -1,0 +1,9 @@
+# Documents loaded into raw_ams_docs.document_pages, one row per page of text. Each key is the document's ID in the
+# corpus. The fields are those of the pdf source type in shared/ingest: title and publisher as printed in the
+# document, and its version as the date printed in it, matched exactly once by version_pattern.
+#
+# Candidates from docs/plans/amsterdam-implementation.md: the Huisvestingsverordening Amsterdam 2024, the
+# Woningbouwplan, Wonen in Amsterdam reports, council documents and Huurcommissie guidance. Each needs its access
+# method, format, license and size checked before it is declared here.
+
+{}

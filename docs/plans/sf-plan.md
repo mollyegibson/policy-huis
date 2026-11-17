@@ -339,7 +339,7 @@ The San Francisco build sets patterns that the Dutch product reuses unchanged:
 
 - **Stable source and citation IDs**, built from each citation's own fields, work unchanged for Dutch sources.
 - **Added when the Netherlands needs them:** a jurisdiction on citations and tool inputs (for a server covering several municipalities), and a language and machine-translation label on document citations. Both are additive.
-- **Each city's documents are its own.** The Dutch corpus gets its own documents ingestion, with a translation step, and its own docs server, `nl-docs`, with a schema and tools fitted to Dutch documents. San Francisco's passage pipeline follows American legal numbering and is not shared; what carries over is the citation convention and the patterns in this plan.
+- **Each city's documents are its own.** The Dutch corpus gets its own documents ingestion, with a translation step, and its own docs server, `ams-docs`, with a schema and tools fitted to Dutch documents. San Francisco's passage pipeline follows American legal numbering and is not shared; what carries over is the citation convention and the patterns in this plan.
 - **Data servers by source, with the place as a parameter**, rather than one server per city, once more than one place shares a source.
 - **The agent loop and API are place-independent.** Adding the Netherlands adds servers to the directory file.
 

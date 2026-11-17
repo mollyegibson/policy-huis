@@ -1,0 +1,17 @@
+# How the passage pipeline builds the corpus's search entries, and how the docs server embeds queries. The docs
+# server refuses to start unless its own config/search.yaml matches the model and host stored with every entry.
+#
+# Provisional: the embedding model and host are the ones spike S4 chose for San Francisco; the Dutch run of spike
+# S4 decides whether they suit Dutch text, and whether to embed the Dutch original or its English translation.
+# The translation model is chosen in spike S3.
+
+# OpenRouter's OpenAI-compatible API, which embeds the search entries.
+embedding_api: https://openrouter.ai/api/v1
+# The model, and the one OpenRouter host (its provider slug) allowed to serve it.
+embedding_model: qwen/qwen3-embedding-4b
+embedding_host: deepinfra
+# A provision with children is searched with all its descendants' text up to this many characters, and with an
+# outline of its children above it.
+subtree_chars: 10000
+# The model that translates Dutch passages to English once, at load time. Chosen in spike S3.
+translation_model: null

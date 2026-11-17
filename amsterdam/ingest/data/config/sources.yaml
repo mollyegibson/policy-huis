@@ -1,0 +1,39 @@
+# Sources loaded into raw_ams_data. Each key is also the raw table's name.
+#
+# kind: socrata reads a dataset from a Socrata portal; arcgis_layer reads an ArcGIS FeatureServer layer; pdf reads
+# a document, one row per page of text; hal_json_api reads a dataset on a HAL+JSON API (paginated); csv_download
+# reads a gzipped CSV file, with its version read from the URL.
+#
+# Each source's access method, format, license and size was checked at the publisher; see
+# docs/plans/amsterdam-implementation.md. A national source declares its Amsterdam filter here so the request
+# recorded in the load manifest shows exactly what was filtered.
+
+nieuwbouwplannen:
+  kind: hal_json_api
+  url: https://api.data.amsterdam.nl/v1/nieuwbouwplannen/woningbouwplannen_openbaar
+  title: Woningbouwplannen Openbaar
+  publisher: Gemeente Amsterdam
+  format: json
+  version_field: peildatum
+  page_size: 1000
+
+inside_airbnb_listings:
+  kind: csv_download
+  url: https://data.insideairbnb.com/the-amsterdam/north-holland/amsterdam/2026-09-16/data/listings.csv.gz
+  title: Inside Airbnb Amsterdam listings
+  publisher: Inside Airbnb
+  version_pattern: '/(\d{4}-\d{2}-\d{2})/'
+  version_format: '%Y-%m-%d'
+  format: csv
+  latitude_field: latitude
+  longitude_field: longitude
+
+# RVO's EP-Online register: the monthly file with every currently valid energy label in the Netherlands, filtered to
+# Amsterdam in dbt. The API key is a secret; it lives in this project's .env as EP_ONLINE_API_KEY and is never
+# recorded in the manifest or the archive.
+ep_online_energielabels:
+  kind: ep_online
+  url: https://public.ep-online.nl/api/v5/Mutatiebestand/DownloadInfo?fileType=csv&xmlVersion=4
+  title: EP-Online energielabels
+  publisher: RVO
+  format: zip

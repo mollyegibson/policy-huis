@@ -1,0 +1,11 @@
+version: 2
+
+# One source table per confirmed entry in config/sources.yml is added here as the sources are checked.
+sources:
+  - name: raw_ams_data
+    schema: raw_ams_data
+    tables:
+      - name: load_manifest
+      - name: nieuwbouwplannen
+      - name: inside_airbnb_listings
+      - name: ep_online_energielabels

@@ -1,0 +1,9 @@
+# Corpus membership: each document in config/sources.yaml that the docs server answers from, its type, what it
+# covers, and the rule in ams_docs_ingest that splits it into passages.
+# document_type: law, report or reference; answers label reports as analysis, not rules.
+# description: what the document covers, in words a reader asking a question would use, worded from the document
+# itself and holding no digits, since the model repeats a tool description without a citation.
+#
+# Add each confirmed document as a key with its entry.
+
+{}

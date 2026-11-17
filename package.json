@@ -11,6 +11,8 @@
     "shared/node-config",
     "san-francisco/mcp-servers/data",
     "san-francisco/mcp-servers/documents",
+    "amsterdam/mcp-servers/data",
+    "amsterdam/mcp-servers/documents",
     "scripts"
   ],
   "scripts": {
