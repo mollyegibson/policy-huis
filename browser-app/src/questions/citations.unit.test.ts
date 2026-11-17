@@ -3,7 +3,7 @@ import { Schema } from "effect"
 
 import { Citation } from "@policyhuis/protocol/Citation"
 
-import { groupSources, linkCitations, sourceNumbers } from "./citations.ts"
+import { groupSources, linkCitations, sourceNumbers, translationNote } from "./citations.ts"
 import { datasetCitation, QUERY_1, QUERY_2 } from "./fixtures.ts"
 
 const first = Schema.decodeUnknownSync(Citation)(datasetCitation(QUERY_1))
@@ -64,5 +64,31 @@ describe("groupSources", () => {
 
   it("leaves out sources received but never cited", () => {
     expect(groupSources(citations, sourceNumbers("No markers.", citations))).toEqual([])
+  })
+})
+
+describe("translationNote", () => {
+  const quoted = (fields: Partial<Citation>) => ({ ...first, quote: "Deze verordening.", ...fields })
+
+  it("names the original language of a machine translation", () => {
+    expect(translationNote(quoted({ language: "nl", machineTranslated: true }))).toBe(
+      "machine-translated from the Dutch original"
+    )
+  })
+
+  it("says machine translation when the original language is unknown", () => {
+    expect(translationNote(quoted({ language: null, machineTranslated: true }))).toBe("machine translation")
+    expect(translationNote(quoted({ machineTranslated: true }))).toBe("machine translation")
+  })
+
+  it("says a quote left in its own language is untranslated", () => {
+    expect(translationNote(quoted({ language: "nl", machineTranslated: false }))).toBe("quoted in Dutch")
+    expect(translationNote(quoted({ language: "nl" }))).toBe("quoted in Dutch")
+  })
+
+  it("gives no note for an English quote or for a citation without language fields", () => {
+    expect(translationNote(quoted({ language: "en", machineTranslated: false }))).toBeNull()
+    expect(translationNote(quoted({ jurisdiction: null, language: null, machineTranslated: null }))).toBeNull()
+    expect(translationNote(quoted({}))).toBeNull()
   })
 })

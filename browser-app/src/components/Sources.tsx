@@ -2,7 +2,7 @@ import { Link, Stack, Typography } from "@mui/material"
 
 import type { Citation } from "@policyhuis/protocol/Citation"
 
-import { groupSources, sourceNumbers } from "../questions/citations.ts"
+import { groupSources, sourceNumbers, translationNote } from "../questions/citations.ts"
 
 interface SourcesProps {
   readonly answer: string
@@ -30,19 +30,29 @@ export const Sources = ({ answer, citations }: SourcesProps) => {
               </Link>
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {[first.publisher, `version ${first.version}`].filter((part) => part !== null).join(" · ")}
+              {[first.publisher, first.jurisdiction ?? null, `version ${first.version}`]
+                .filter((part) => part !== null)
+                .join(" · ")}
               {" · the live link may show newer data"}
             </Typography>
-            {cited.map((citation) => (
-              <Stack key={citation.citationId} spacing={0.25} sx={{ pl: 2 }}>
-                {citation.locator !== null && <Typography variant="caption">{citation.locator}</Typography>}
-                {citation.quote !== null && (
-                  <Typography variant="caption" color="text.secondary" sx={{ fontStyle: "italic" }}>
-                    {`“${citation.quote}”`}
-                  </Typography>
-                )}
-              </Stack>
-            ))}
+            {cited.map((citation) => {
+              const note = translationNote(citation)
+              return (
+                <Stack key={citation.citationId} spacing={0.25} sx={{ pl: 2 }}>
+                  {citation.locator !== null && <Typography variant="caption">{citation.locator}</Typography>}
+                  {citation.quote !== null && (
+                    <Typography variant="caption" color="text.secondary" sx={{ fontStyle: "italic" }}>
+                      {`“${citation.quote}”`}
+                    </Typography>
+                  )}
+                  {note !== null && (
+                    <Typography variant="caption" color="text.secondary">
+                      {note}
+                    </Typography>
+                  )}
+                </Stack>
+              )
+            })}
           </Stack>
         )
       })}

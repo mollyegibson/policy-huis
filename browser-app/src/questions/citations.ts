@@ -45,6 +45,23 @@ export const linkCitations = (
     return [...new Set(links)].join(" ")
   })
 
+/** The language of a translated or non-English quote, as the note names it. */
+const LANGUAGE_NAMES: Readonly<Record<string, string>> = { en: "English", nl: "Dutch" }
+
+const languageName = (code: string): string => LANGUAGE_NAMES[code] ?? code
+
+/**
+ * The note the sources list shows under a quote, or null for none. A machine translation names the language it came
+ * from ("machine-translated from the Dutch original"), and a quote left in its own language says so ("quoted in
+ * Dutch"), so an English reader knows it is untranslated.
+ */
+export const translationNote = (citation: Citation): string | null => {
+  const language = typeof citation.language === "string" ? languageName(citation.language) : null
+  if (citation.machineTranslated === true)
+    return language === null ? "machine translation" : `machine-translated from the ${language} original`
+  return language !== null && citation.language !== "en" ? `quoted in ${language}` : null
+}
+
 /** One source in the sources list: its number, and every citation of it, in the order received. */
 export interface SourceGroup {
   readonly number: number

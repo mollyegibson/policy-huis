@@ -20,8 +20,21 @@ const provision = decode({
   locator: "Sec. 37.9(a)(8)",
   quote: "The landlord seeks to recover possession in good faith"
 })
+const ordinance = decode({
+  citationId: "ams_docs.huisvestingsverordening@2026-01-01#7.3",
+  sourceId: "ams_docs.huisvestingsverordening@2026-01-01",
+  title: "Huisvestingsverordening Amsterdam 2024",
+  publisher: "Gemeente Amsterdam",
+  sourceUrl: "https://lokaleregelgeving.overheid.nl/CVDR706038",
+  version: "2026-01-01",
+  locator: "artikel 7.3",
+  quote: "Deze verordening is van toepassing op woningen binnen de gemeente Amsterdam.",
+  jurisdiction: "Amsterdam",
+  language: "nl",
+  machineTranslated: true
+})
 const citations: ReadonlyMap<string, Citation> = new Map(
-  [query, otherQuery, provision].map((c): [string, Citation] => [c.citationId, c])
+  [query, otherQuery, provision, ordinance].map((c): [string, Citation] => [c.citationId, c])
 )
 
 const render = (answer: string) => renderToStaticMarkup(<Sources answer={answer} citations={citations} />)
@@ -41,6 +54,14 @@ describe("Sources", () => {
     expect(html).toContain("Sec. 37.9(a)(8)")
     expect(html).toContain("The landlord seeks to recover possession in good faith")
     expect(html).toContain("version 2026-06-29")
+  })
+
+  it("shows a Dutch citation's jurisdiction and labels its quote as machine-translated", () => {
+    const html = render(`D [${ordinance.citationId}].`)
+    expect(html).toContain("Gemeente Amsterdam · Amsterdam")
+    expect(html).toContain("artikel 7.3")
+    expect(html).toContain("Deze verordening is van toepassing op woningen binnen de gemeente Amsterdam.")
+    expect(html).toContain("machine-translated from the Dutch original")
   })
 
   it("shows nothing when the answer cites no source", () => {
