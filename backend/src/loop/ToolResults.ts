@@ -43,7 +43,8 @@ export const failedOutcome = (type: string): LookupOutcome => (UNAVAILABLE_ERROR
 
 /**
  * A citation as a server returns it under the citation convention. `publisher`, `locator` and `quote` may be left out,
- * and any field a server adds of its own is ignored.
+ * and so may the optional `jurisdiction`, `language` and `machineTranslated` of a district-scoped or translated source;
+ * any field a server adds of its own is ignored.
  */
 const ServerCitation = Schema.Struct({
   citationId: Schema.String,
@@ -53,7 +54,10 @@ const ServerCitation = Schema.Struct({
   sourceUrl: Schema.String,
   version: Schema.String,
   locator: Schema.optional(Schema.NullOr(Schema.String)),
-  quote: Schema.optional(Schema.NullOr(Schema.String))
+  quote: Schema.optional(Schema.NullOr(Schema.String)),
+  jurisdiction: Schema.optional(Schema.NullOr(Schema.String)),
+  language: Schema.optional(Schema.NullOr(Schema.String)),
+  machineTranslated: Schema.optional(Schema.NullOr(Schema.Boolean))
 })
 
 const ResultCitations = Schema.Struct({ citations: Schema.Array(Schema.Unknown) })
@@ -68,7 +72,10 @@ const toCitation = (raw: unknown): Option.Option<Citation> =>
       sourceUrl: c.sourceUrl,
       version: c.version,
       locator: c.locator ?? null,
-      quote: c.quote ?? null
+      quote: c.quote ?? null,
+      jurisdiction: c.jurisdiction ?? null,
+      language: c.language ?? null,
+      machineTranslated: c.machineTranslated ?? null
     })
   )
 

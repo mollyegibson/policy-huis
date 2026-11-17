@@ -67,7 +67,10 @@ describe("readCitations", () => {
     sourceUrl: "https://data.sf.gov/d/6jgi-cpb4",
     version: "2026-08-28",
     locator: "Planning pipeline projects, with status BP Filed",
-    quote: null
+    quote: null,
+    jurisdiction: null,
+    language: null,
+    machineTranslated: null
   }
 
   it("reads citations that follow the convention, ignoring a server's own extra fields", () => {
@@ -85,6 +88,29 @@ describe("readCitations", () => {
     }
     const [read] = readCitations({ citations: [required] }).citations
     expect([read?.publisher, read?.locator, read?.quote]).toEqual([null, null, null])
+    expect([read?.jurisdiction, read?.language, read?.machineTranslated]).toEqual([null, null, null])
+  })
+
+  it("passes a translated Dutch citation's jurisdiction, language and machine translation through", () => {
+    const [read] = readCitations({
+      citations: [
+        {
+          ...citation,
+          citationId: "ams_docs.huisvestingsverordening@2026-01-01#7.3",
+          sourceId: "ams_docs.huisvestingsverordening@2026-01-01",
+          title: "Huisvestingsverordening Amsterdam 2024",
+          publisher: "Gemeente Amsterdam",
+          sourceUrl: "https://lokaleregelgeving.overheid.nl/CVDR706038",
+          version: "2026-01-01",
+          locator: "artikel 7.3",
+          quote: "Deze verordening is van toepassing op woningen binnen de gemeente Amsterdam.",
+          jurisdiction: "Amsterdam",
+          language: "nl",
+          machineTranslated: true
+        }
+      ]
+    }).citations
+    expect([read?.jurisdiction, read?.language, read?.machineTranslated]).toEqual(["Amsterdam", "nl", true])
   })
 
   it("rejects each citation that breaks the convention, keeping the rest", () => {

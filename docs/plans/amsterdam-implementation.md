@@ -166,8 +166,8 @@ Each dbt model suggests a list tool and a summary tool; the questions decide whi
 
 ### Contract additions (additive)
 
-- `protocol/src/Citation.ts`: optional `jurisdiction` (Amsterdam, or a district for a district-scoped source) and `language` / `machineTranslated`.
-- `backend/src/loop/ToolResults.ts`: the `ServerCitation` schema gains the same optional fields and passes them through.
+- `protocol/src/Citation.ts`: optional `jurisdiction` (Amsterdam, or a district for a district-scoped source) and `language` / `machineTranslated` — **done**: all three are `optional(NullOr(…))`, so citations without them still decode and every existing fixture stays valid.
+- `backend/src/loop/ToolResults.ts`: the `ServerCitation` schema gains the same optional fields and passes them through — **done**: `toCitation` now forwards them, so the ams-docs citations' `language: "nl"` and `machineTranslated` reach the browser app instead of being dropped.
 - `backend/config/servers.yaml`:
   ```yaml
   - name: ams-data

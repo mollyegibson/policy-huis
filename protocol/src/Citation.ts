@@ -18,7 +18,10 @@ export const CitationId = Schema.String.pipe(
 /**
  * A source behind the answer, as the backend read it from a tool result. Citations with the same `sourceId` are parts
  * of one source. `locator` says in words which part a citation used, such as a section or the data selected; `quote`
- * is the cited text, verbatim.
+ * is the cited text, verbatim. The last three fields are optional and carry what only some sources have: a
+ * `jurisdiction` narrower than the server's city, such as Amsterdam's Zuid stadsdeel, when the source covers only that
+ * area; a `language` code for `quote`, such as `nl`, when the source is not in the answer's language; and
+ * `machineTranslated`, which says `quote` is a machine translation whose original is the source of record.
  */
 export const Citation = Schema.Struct({
   citationId: CitationId,
@@ -28,7 +31,10 @@ export const Citation = Schema.Struct({
   sourceUrl: Schema.String,
   version: Schema.String,
   locator: Schema.NullOr(Schema.String),
-  quote: Schema.NullOr(Schema.String)
+  quote: Schema.NullOr(Schema.String),
+  jurisdiction: Schema.optional(Schema.NullOr(Schema.String)),
+  language: Schema.optional(Schema.NullOr(Schema.String)),
+  machineTranslated: Schema.optional(Schema.NullOr(Schema.Boolean))
 }).check(
   Schema.makeFilter((c) =>
     !c.sourceId.endsWith(`@${c.version}`)
