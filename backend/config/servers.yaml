@@ -9,3 +9,11 @@ servers:
     label: SF Documents
     url: http://localhost:8082/mcp
     prefix: sf_docs_
+  - name: ams-data
+    label: Amsterdam Data
+    url: http://localhost:8083/mcp
+    prefix: ams_data_
+  - name: ams-docs
+    label: Amsterdam Documents
+    url: http://localhost:8084/mcp
+    prefix: ams_docs_

@@ -171,8 +171,8 @@ Each dbt model suggests a list tool and a summary tool; the questions decide whi
 - `backend/config/servers.yaml`:
   ```yaml
   - name: ams-data
-    label: NL Data
-    url: http://localhost:<port>/mcp
+    label: Amsterdam Data
+    url: http://localhost:8083/mcp
     prefix: ams_data_
   ```
 
@@ -241,9 +241,9 @@ Copy of `sf-docs` with Dutch tools and citations.
 
 ## 5. Registration with the agent
 
-1. Add `ams-data` and `ams-docs` to `backend/config/servers.yaml` with prefixes `ams_data_` and `ams_docs_`, labels `NL Data` and `NL Documents` (or `Amsterdam Data` / `Amsterdam Documents`), and their URLs.
+1. Add `ams-data` and `ams-docs` to `backend/config/servers.yaml` with prefixes `ams_data_` and `ams_docs_`, labels `Amsterdam Data` and `Amsterdam Documents`, and URLs on ports 8083 and 8084 — **done**; each server reads its port from `AMS_DATA_PORT` / `AMS_DOCS_PORT` in its own `.env`.
 2. `yarn dev --include amsterdam` works once the workspaces exist; update the README's running instructions.
-3. Restart the backend after adding a server or changing its tools; it lists tools only at connection time.
+3. Restart the backend after adding a server or changing its tools; it lists tools only at connection time. The two servers are registered but offer no Amsterdam tools yet: `ams-data`'s toolkit is empty pending dbt models, and `ams-docs`' tools answer only once its database is loaded.
 4. End-to-end check: ask a Dutch question; lookups show the server's label and titles; citation chips open Dutch sources; `app.tool_calls` records the calls.
 
 ## 6. Sequencing and dependencies
