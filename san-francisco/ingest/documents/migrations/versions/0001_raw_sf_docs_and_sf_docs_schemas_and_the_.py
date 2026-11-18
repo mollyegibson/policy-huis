@@ -108,9 +108,9 @@ def upgrade() -> None:
     )
 
     password = op.get_context().config.attributes["reader_password"]
-    op.get_bind().exec_driver_sql(
-        sql.SQL("CREATE ROLE sf_docs_reader LOGIN PASSWORD {}").format(sql.Literal(password)).as_string()
-    )
+    # exec_driver_sql parses % as a client-side placeholder, so double the percents in the rendered literal.
+    rendered = sql.SQL("CREATE ROLE sf_docs_reader LOGIN PASSWORD {}").format(sql.Literal(password)).as_string()
+    op.get_bind().exec_driver_sql(rendered.replace("%", "%%"))
     op.execute("GRANT USAGE ON SCHEMA sf_docs TO sf_docs_reader")
     op.execute("GRANT SELECT ON ALL TABLES IN SCHEMA sf_docs TO sf_docs_reader")
 
