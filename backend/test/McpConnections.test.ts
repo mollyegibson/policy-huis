@@ -10,7 +10,7 @@ import { makeConnections } from "../src/tools/McpConnections.ts"
 import type { TurnTools } from "../src/tools/TurnToolkit.ts"
 import { turnTools } from "../src/tools/TurnToolkit.ts"
 import { finish, scriptedModel, text, toolCall } from "./support/ScriptedModel.ts"
-import { echoCitation, startTestServer } from "./support/TestMcpServer.ts"
+import { echoCitation, readEchoCitation, startTestServer } from "./support/TestMcpServer.ts"
 
 /** Synthetic limits for these tests only; the backend's values are in config/agent.yaml. */
 const SETTINGS: LoopSettings = {
@@ -84,7 +84,7 @@ describe("MCP connections", () => {
         expect(end?.outcome).toBe("succeeded")
         expect(end?.result).toEqual({ word: "hello", citations: [echoCitation("hello")] })
         const sources = events.find((event) => event._tag === "Sources")
-        expect(sources?.citations).toEqual([echoCitation("hello")])
+        expect(sources?.citations).toEqual([readEchoCitation("hello")])
         expect(sources?.lookupId).toBe(end?.lookupId)
         yield* a.stop
         yield* b.stop

@@ -33,6 +33,17 @@ export const echoCitation = (word: string) => ({
   quote: null
 })
 
+/**
+ * The same citation as the backend reads it: the optional jurisdiction, language and machine-translation fields left
+ * out by the server arrive as nulls.
+ */
+export const readEchoCitation = (word: string) => ({
+  ...echoCitation(word),
+  jurisdiction: null,
+  language: null,
+  machineTranslated: null
+})
+
 const Echo = Tool.make("echo", {
   description: "Echo a word back, with a citation",
   parameters: Schema.Struct({ word: Schema.String }),
