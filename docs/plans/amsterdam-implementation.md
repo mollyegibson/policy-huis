@@ -92,7 +92,7 @@ confirmed and configured in `amsterdam/ingest/data/config/sources.yaml`, with ra
 | Source | Publisher | Access | Format | License | Verified |
 |---|---|---|---|---|---|
 | Woningbouwplannen Openbaar (Nieuwbouwplannen) | Gemeente Amsterdam (Datateam Stedelijke Ontwikkeling en Beheer) | DSO API, `api.data.amsterdam.nl/v1/nieuwbouwplannen/woningbouwplannen_openbaar`, open, paginated HAL+JSON | JSON; per-project counts by tenure (sociale huur, middeldure huur, vrije sector, …) with `stadsdeel`/`wijk` codes and geometry | Creative Commons, Naamsvermelding (CC-BY) | Live, open, ~1.000 rows per page, `peildatum` is the version |
-| Inside Airbnb Amsterdam | Inside Airbnb | bulk download, `data.insideairbnb.com/the-amsterdam/north-holland/amsterdam/<date>/data/listings.csv.gz` | gzipped CSV; per-listing rows with latitude/longitude | CC-BY 4.0 | Live; the 2026-09-16 snapshot is pinned in `sources.yaml` |
+| Inside Airbnb Amsterdam | Inside Airbnb | bulk download, `data.insideairbnb.com/the-netherlands/north-holland/amsterdam/<date>/data/listings.csv.gz` | gzipped CSV; per-listing rows with latitude/longitude | CC-BY 4.0 | Live; the 2026-09-16 snapshot is pinned in `sources.yaml`. The bucket path changed from `the-amsterdam` to `the-netherlands`, which the old URL now refuses |
 | EP-Online energielabels | RVO | Public REST API, `public.ep-online.nl/api/v5/Mutatiebestand/DownloadInfo?fileType=csv&xmlVersion=4`, with an API key in the `Authorization` header (requested once at `epbdwebservices.rvo.nl`; expires after a year of disuse) | ZIP of one semicolon-CSV: every currently valid label in the Netherlands (6.3M rows), with postcode, BAG IDs, `Energieklasse`, `EnergieIndex`, bouwjaar and surface area; refreshed on the first of each month | Geen open licentie; the EP-Online webservicevoorwaarden govern | Key verified against the live API on 2026-11-17: the envelope named `v20261101_v4_csv.zip` and the download worked. The key is a secret, read from `EP_ONLINE_API_KEY` in this project's `.env`, never from a config file or the manifest. The monthly file is a full register snapshot despite the "Mutatiebestand" name; the `Totaalbestand` endpoints answer 404 on the public API. |
 
 Documents, also verified: the consolidated Huisvestingsverordening Amsterdam 2024 is `CVDR706038` on
@@ -129,17 +129,23 @@ names a city.
 
 ### Candidate dbt models
 
-Design from the loaded data; each model suggests a list tool and a summary tool.
+Design from the loaded data; each model suggests a list tool and a summary tool. Built first, in
+`amsterdam/ingest/data/dbt/models/ams_data/`, are the models of the three confirmed sources — **done**:
 
-| Model | Source | Suggested tools |
+| Model | Source | Status |
 |---|---|---|
-| `districts`, `neighborhoods` | CBS / Amsterdam portal | Reference values for tool inputs |
-| `housing_stock` | CBS StatLine | Stock by owner type, district, year |
-| `buildings` | BAG | Age, status, geometry |
-| `energy_labels` | EP-Online joined to BAG | Units by label and age band |
-| `climate_zones` | Klimaateffectatlas | Heat/flood zones with publisher and date |
-| `planned_housing` | Nieuwbouwplannen / Woningbouwplan | Projects by status, district, target |
-| `short_term_rentals` | Inside Airbnb | Listings by neighborhood and time |
+| `datasets`, `districts`, `neighborhoods` | load manifest; Nieuwbouwplannen stadsdeel/wijk codes | **done**; reference values for tool inputs |
+| `planned_housing` | Nieuwbouwplannen | **done**; one row per plan of the latest load, with the published tenure counts ("n.b." is null), the plan's starts of construction, and its geometry re-tagged from RD to 4326 |
+| `energy_labels` | EP-Online | **done**; one row per label at an Amsterdam address, selected by BAG-ID prefix (`0363` Amsterdam, `0457` Weesp — the register's postcodes span Diemen and Amstelveen), with label class and construction period from macros |
+| `short_term_rentals` | Inside Airbnb | **done**; one row per listing of the pinned scrape, price parsed from the scrape's currency format, `registered` true when the host gives a city-shaped registration |
+| `housing_stock` | CBS StatLine | when CBS is taken up |
+| `buildings` | BAG | when BAG is taken up |
+| `climate_zones` | Klimaateffectatlas | when the bulk files are taken up |
+
+Inside Airbnb's `neighbourhood_cleansed` names the city's twenty-two "wijken en gebieden" in its own wording,
+which spans or reorders the gebieden the Nieuwbouwplannen API names ("Zuid" holds three; "De Baarsjes -
+Oud-West" reverses "Oud-West, De Baarsjes"), so `short_term_rentals` keeps the source's own names, validated
+against the table, instead of forcing a mapping.
 
 ### Tests
 
@@ -254,8 +260,8 @@ Copy of `sf-docs` with Dutch tools and citations.
 | M0b. Check each source's access, license, format and size — **done** | M0a | `sources.yaml` |
 | M1. Add shared source types — **done** for `hal_json_api`, `csv_download` and `ep_online` | M0b | CBS/BAG/CAS loaders still to add when those sources are taken up |
 | M2. `amsterdam/ingest/data/` skeleton, migration 0001 and raw tables for the confirmed sources in migration 0002 — **done** | M1 | `raw_ams_data`, `ams_data`, `ams_data_reader`, one raw table per source |
-| M3. Load Amsterdam end to end; dbt models and tests | M2 | `ams_data` schema |
-| M4. `ams-data` server, tools, registration | M3 | Dutch data answers |
+| M3. Load Amsterdam end to end; dbt models and tests — **done** for the dbt models and their tests (`dbt parse` clean; the Docker-backed run still waits for a Docker socket); the end-to-end load waits for the Neon project | M2 | `ams_data` schema |
+| M4. `ams-data` server, tools, registration — **done** for registration and the seven tools (`planned_housing_projects`, `planned_housing_summary`, `energy_labels_summary`, `energy_label_at_address`, `short_term_rentals`, `short_term_rentals_summary`, `dataset_info`); answering waits for the load | M3 | Dutch data answers |
 | M5. Spike S3 (translation) and S4 Dutch run | M0a | Translation model, embedding decision |
 | M6. `amsterdam/ingest/documents/` and `ams-docs` | M5 | Dutch law answers |
 | M7. Amsterdam and cross-city question set; evaluation | M4, M6 | Measured Dutch answers |

@@ -1,0 +1,109 @@
+version: 2
+
+models:
+  - name: datasets
+    columns:
+      - name: dataset_key
+        data_tests:
+          - unique
+          - not_null
+
+  - name: districts
+    columns:
+      - name: district_code
+        data_tests:
+          - unique
+          - not_null
+      - name: name
+        data_tests:
+          - not_null
+
+  - name: neighborhoods
+    columns:
+      - name: neighborhood_code
+        data_tests:
+          - unique
+          - not_null
+      - name: name
+        data_tests:
+          - not_null
+      - name: district_code
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('districts')
+                field: district_code
+
+  - name: planned_housing
+    columns:
+      - name: project_id
+        data_tests:
+          - unique
+          - not_null
+      - name: name
+        data_tests:
+          - not_null
+      - name: stadsdeel
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('districts')
+                field: name
+      - name: wijk
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('neighborhoods')
+                field: name
+      - name: total_units
+        data_tests:
+          - not_null
+      - name: peildatum
+        data_tests:
+          - not_null
+      - name: source_version
+        data_tests:
+          - not_null
+
+  - name: energy_labels
+    columns:
+      - name: bag_prefix
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["0363", "0457"]
+      - name: bag_verblijfsobject_id
+        data_tests:
+          - not_null
+      - name: postcode
+        data_tests:
+          - not_null
+      - name: registered_on
+        data_tests:
+          - not_null
+      - name: label
+        data_tests:
+          - not_null
+      - name: label_class
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["A", "B", "C", "D", "E", "F", "G"]
+      - name: source_version
+        data_tests:
+          - not_null
+
+  - name: short_term_rentals
+    columns:
+      - name: listing_id
+        data_tests:
+          - unique
+          - not_null
+      - name: room_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["Entire home/apt", "Private room", "Hotel room", "Shared room"]

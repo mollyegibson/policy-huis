@@ -11,7 +11,8 @@ const SOURCE_ID = `[a-z][a-z0-9_]*\\.${PART}@${PART}`
 /**
  * One source a result rests on, in the shape every PolicyHuis MCP server returns in `structuredContent.citations`.
  * `sourceId` is `<namespace>.<key>@<version>`; `citationId` is `<sourceId>#<part>`, where the part here is the query
- * key. `locator` says in words which part of the source the result used.
+ * key. `locator` says in words which part of the source the result used. `jurisdiction` is set when the result rests
+ * only on the part of the source that covers one place, such as the district a query filtered to.
  */
 export const Citation = Schema.Struct({
   citationId: Schema.String.pipe(Schema.check(Schema.isPattern(new RegExp(`^${SOURCE_ID}#${PART}$`)))),
@@ -21,7 +22,8 @@ export const Citation = Schema.Struct({
   sourceUrl: Schema.String,
   version: Schema.String,
   locator: Schema.NullOr(Schema.String),
-  quote: Schema.NullOr(Schema.String)
+  quote: Schema.NullOr(Schema.String),
+  jurisdiction: Schema.optional(Schema.NullOr(Schema.String))
 }).check(
   Schema.makeFilter((c) =>
     !c.sourceId.endsWith(`@${c.version}`)
@@ -62,6 +64,7 @@ export interface DatasetCitationInput {
   readonly tool: string
   readonly parameters: Readonly<Record<string, unknown>>
   readonly locator: string
+  readonly jurisdiction?: string | undefined
 }
 
 /**
@@ -78,6 +81,7 @@ export const datasetCitation = (input: DatasetCitationInput): Citation => {
     sourceUrl: input.sourceUrl,
     version: input.sourceVersion,
     locator: input.locator,
-    quote: null
+    quote: null,
+    jurisdiction: input.jurisdiction === undefined ? undefined : input.jurisdiction
   })
 }

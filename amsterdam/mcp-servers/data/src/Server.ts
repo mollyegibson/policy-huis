@@ -21,14 +21,24 @@ export const DatabaseLive = Layer.unwrap(
 )
 
 /**
- * The tool registrations. Each tool is added to `makeAmsDataToolkit` as the data it reads is modelled; a tool that
- * reads a dataset lists the dataset keys loaded when the server starts, so a new dataset needs a restart of the
- * server, then of the backend.
+ * The tool registrations. `dataset_info` offers the dataset keys loaded when the server starts, so a new dataset
+ * needs a restart of the server, then of the backend. If they cannot be read, the server still starts, with
+ * `dataset` taking any text, and every tool reports the database error when called.
  */
 export const RegistrationsLive = Layer.unwrap(
-  Effect.succeed(makeAmsDataToolkit()).pipe(
-    Effect.map((toolkit) => McpServer.toolkit(toolkit).pipe(Layer.provide(AmsDataHandlers(toolkit))))
-  )
+  Effect.gen(function* () {
+    const datasetKeys = yield* (yield* HousingRepo).datasets().pipe(
+      Effect.map((datasets) => datasets.map((d) => d.datasetKey)),
+      Effect.catch((error) =>
+        Effect.as(
+          Effect.logWarning("The loaded datasets could not be read; dataset_info will take any dataset key", error),
+          []
+        )
+      )
+    )
+    const toolkit = makeAmsDataToolkit(datasetKeys)
+    return McpServer.toolkit(toolkit).pipe(Layer.provide(AmsDataHandlers(toolkit)))
+  })
 )
 
 /** The ams-data tools, served by `McpServer` over Streamable HTTP at `/mcp`. */

@@ -19,7 +19,7 @@ nieuwbouwplannen:
 
 inside_airbnb_listings:
   kind: csv_download
-  url: https://data.insideairbnb.com/the-amsterdam/north-holland/amsterdam/2026-09-16/data/listings.csv.gz
+  url: https://data.insideairbnb.com/the-netherlands/north-holland/amsterdam/2026-09-16/data/listings.csv.gz
   title: Inside Airbnb Amsterdam listings
   publisher: Inside Airbnb
   version_pattern: '/(\d{4}-\d{2}-\d{2})/'
