@@ -14,7 +14,9 @@ INSERT INTO ams_data.datasets VALUES
     ('ep_online_energielabels', 'EP-Online energielabels', 'RVO', 'https://public.ep-online.nl', NULL, '2026-11-01',
      'De energielabels van gebouwen.'),
     ('inside_airbnb_listings', 'Inside Airbnb Amsterdam listings', 'Inside Airbnb',
-     'https://data.insideairbnb.com', 'CC-BY', '2026-09-16', 'One day''s scrape.');
+     'https://data.insideairbnb.com', 'CC-BY', '2026-09-16', 'One day''s scrape.'),
+    ('cbs_kerncijfers', 'Kerncijfers wijken en buurten 2025', 'Centraal Bureau voor de Statistiek',
+     'https://opendata.cbs.nl/ODataApi/OData/86165NED', 'CC BY 4.0', '2025-01-01', NULL);
 
 CREATE TABLE ams_data.districts (district_code text PRIMARY KEY, name text NOT NULL);
 INSERT INTO ams_data.districts VALUES
@@ -79,3 +81,29 @@ INSERT INTO ams_data.short_term_rentals VALUES
     ('L2', 'Jordaan room', 'Private room', 'Centrum-West', 95.50, 2, 365, 180, 17316, 40, 'Exempt', false, 3, NULL, NULL),
     ('L3', 'Museum quarter flat', 'Entire home/apt', 'Zuid', 1200.00, 30, NULL, NULL, NULL, 2, NULL, false, 7, NULL, NULL),
     ('L4', 'NDSM loft', 'Hotel room', 'Centrum-West', 400.00, 1, 200, 100, 40000, 8, '036341086EC3C2FF2493', true, 2, NULL, NULL);
+
+CREATE TABLE ams_data.housing_stock (
+    area_level text NOT NULL, area_code text NOT NULL, area_name text NOT NULL, neighborhood_code text,
+    neighborhood_name text, housing_stock integer NOT NULL, new_homes integer, non_housing_stock integer,
+    new_non_housing integer, average_woz_value_thousand_eur numeric, pct_single_family_homes numeric,
+    pct_multi_family_homes numeric, pct_vacant_homes numeric, pct_owner_occupied numeric, pct_rent numeric,
+    pct_corporation_owned numeric, pct_other_landlord_owned numeric, pct_built_before_last_ten_years numeric,
+    pct_built_last_ten_years numeric, average_gas_use_m3 numeric, pct_district_heating numeric,
+    pct_homes_without_gas numeric, pct_homes_with_gas numeric, pct_homes_with_solar_power numeric,
+    pct_homes_mainly_electric_heating numeric, source_version date NOT NULL, load_id uuid
+);
+INSERT INTO ams_data.housing_stock (
+    area_level, area_code, area_name, neighborhood_code, neighborhood_name, housing_stock, new_homes,
+    average_woz_value_thousand_eur, pct_single_family_homes, pct_multi_family_homes, pct_vacant_homes,
+    pct_owner_occupied, pct_rent, pct_corporation_owned, pct_other_landlord_owned, pct_built_last_ten_years,
+    average_gas_use_m3, pct_district_heating, pct_homes_without_gas, pct_homes_with_gas,
+    pct_homes_with_solar_power, pct_homes_mainly_electric_heating, source_version
+) VALUES
+    ('gemeente', '0363', 'Amsterdam', NULL, NULL, 1000, 10, 500, 20, 80, 5, 30, 70, 40, 30, 15, 800, 8, 19, 76, 10, 4,
+     '2025-01-01'),
+    ('wijk', 'KP', 'Zuidas', NULL, NULL, 600, 8, 700, 10, 90, 3, 25, 75, 20, 55, 20, 600, 30, 98, 2, 1, 14,
+     '2025-01-01'),
+    ('buurt', 'KP05', 'Vivaldi', 'KP', 'Zuidas', 400, 5, 800, 5, 95, 2, 20, 80, 15, 65, 30, 500, 40, 96, 4, 2, 12,
+     '2025-01-01'),
+    ('wijk', 'N2', 'Nieuwendammerdijk', NULL, NULL, 400, 2, 300, 30, 70, 2, 35, 65, 60, 5, 10, 1000, 0, 24, 76, 6, 1,
+     '2025-01-01');

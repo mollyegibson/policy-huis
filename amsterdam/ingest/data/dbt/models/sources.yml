@@ -9,3 +9,5 @@ sources:
       - name: nieuwbouwplannen
       - name: inside_airbnb_listings
       - name: ep_online_energielabels
+      - name: cbs_kerncijfers
+      - name: cbs_region_names

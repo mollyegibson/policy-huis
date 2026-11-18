@@ -9,6 +9,7 @@ import pytest
 
 from policyhuis_ingest.source_types import (
     ArcGisLayerSource,
+    CbsOdataSource,
     CsvDownloadSource,
     EpOnlineSource,
     HalJsonApiSource,
@@ -305,3 +306,54 @@ def test_ep_online_fails_when_the_file_name_holds_no_version() -> None:
     envelope = json.dumps({"bestandsnaam": "onleesbaar.zip", "downloadUrl": "https://x/Download"}).encode()
     with pytest.raises(ValueError, match="holds no version date"):
         download(LABELS, FakeFetcher({DOWNLOAD_INFO: envelope}), api_key="k")
+
+
+REGIONS = CbsOdataSource(
+    kind="cbs_odata",
+    service="https://opendata.cbs.example.org",
+    table="86165NED",
+    entity_set="WijkenEnBuurten",
+    filter="Municipality eq 'GM0363'",
+    title="Kerncijfers wijken en buurten 2025",
+    publisher="Centraal Bureau voor de Statistiek",
+    version=date(2025, 1, 1),
+    format="json",
+)
+REGIONS_FEED = (
+    "https://opendata.cbs.example.org/ODataFeed/OData/86165NED/WijkenEnBuurten"
+    "?$filter=Municipality%20eq%20%27GM0363%27&$format=json"
+)
+REGIONS_FEED_SKIPPED = "https://opendata.cbs.example.org/ODataFeed/OData/86165NED/WijkenEnBuurten?$skip=1"
+
+
+def test_cbs_odata_download_follows_the_feed_and_keeps_the_filter_as_the_data_url() -> None:
+    page_one = json.dumps(
+        {
+            "value": [{"Key": "GM0363    ", "Title": "Amsterdam"}],
+            "odata.nextLink": "/ODataFeed/OData/86165NED/WijkenEnBuurten?$skip=1",
+        }
+    ).encode()
+    page_two = json.dumps({"value": [{"Key": "WK0363AA  ", "Title": "Haarlemmerbuurt"}]}).encode()
+    fetcher = FakeFetcher({REGIONS_FEED: page_one, REGIONS_FEED_SKIPPED: page_two})
+    downloaded = download(REGIONS, fetcher)
+    assert downloaded.data_url == REGIONS_FEED
+    assert downloaded.data_extension == "json"
+    rows = parse_rows(REGIONS, downloaded.data)
+    assert [row.record["Title"] for row in rows] == ["Amsterdam", "Haarlemmerbuurt"]
+    assert all(row.geometry is None for row in rows)
+    meta = parse_metadata(REGIONS, downloaded.metadata)
+    assert meta.source_version == date(2025, 1, 1)
+    assert meta.license == "CC BY 4.0"
+    assert (meta.title, meta.publisher) == ("Kerncijfers wijken en buurten 2025", "Centraal Bureau voor de Statistiek")
+    assert meta.source_url == "https://opendata.cbs.example.org/ODataApi/OData/86165NED"
+    assert "Municipality eq 'GM0363'" in downloaded.metadata.decode()
+
+
+def test_cbs_odata_table_identifier_is_a_statline_table_not_a_url(tmp_path: Path) -> None:
+    path = tmp_path / "sources.yaml"
+    path.write_text(
+        "x:\n  kind: cbs_odata\n  service: https://opendata.cbs.nl\n  table: https://opendata.cbs.nl/86165NED\n"
+        '  filter: "1 eq 1"\n  title: t\n  publisher: p\n  version: 2025-01-01\n  format: json\n'
+    )
+    with pytest.raises(ValueError):
+        load_sources(path)

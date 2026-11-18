@@ -38,4 +38,13 @@ describe("locators", () => {
       "Short-term rental listings on Inside Airbnb, in Centrum-West, at 100 a night or more, whose host gives a registration"
     )
   })
+
+  it("name a housing stock query's area and ranking", () => {
+    expect(Locators.housingStock({ areaLevel: "buurt", area: "Vivaldi" })).toBe(
+      "Amsterdam's housing stock from CBS key figures for its buurten, in Vivaldi"
+    )
+    expect(Locators.housingStock({ areaLevel: "wijk", sortBy: "pct_corporation_owned" })).toBe(
+      "Amsterdam's housing stock from CBS key figures for its wijken, ranked by the share owned by housing corporations"
+    )
+  })
 })

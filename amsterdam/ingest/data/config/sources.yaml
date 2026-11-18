@@ -2,7 +2,8 @@
 #
 # kind: socrata reads a dataset from a Socrata portal; arcgis_layer reads an ArcGIS FeatureServer layer; pdf reads
 # a document, one row per page of text; hal_json_api reads a dataset on a HAL+JSON API (paginated); csv_download
-# reads a gzipped CSV file, with its version read from the URL.
+# reads a gzipped CSV file, with its version read from the URL; cbs_odata reads a table on CBS's StatLine OData
+# service, through its uncapped feed and narrowed by a filter.
 #
 # Each source's access method, format, license and size was checked at the publisher; see
 # docs/plans/amsterdam-implementation.md. A national source declares its Amsterdam filter here so the request
@@ -37,3 +38,30 @@ ep_online_energielabels:
   title: EP-Online energielabels
   publisher: RVO
   format: zip
+
+# CBS StatLine's key figures for every municipality, wijk and buurt in the Netherlands, filtered to Amsterdam. CBS
+# gives each annual edition its own table identifier, so a new edition is a new table and version together; 2025
+# is the current edition whose housing figures CBS has published. The rows carry codes only, so the table's own
+# WijkenEnBuurten dimension is read alongside them for the names of the regions.
+cbs_kerncijfers:
+  kind: cbs_odata
+  service: https://opendata.cbs.nl
+  table: 86165NED
+  title: Kerncijfers wijken en buurten 2025
+  publisher: Centraal Bureau voor de Statistiek
+  version: 2025-01-01
+  filter: >-
+    startswith(WijkenEnBuurten,'GM0363') or startswith(WijkenEnBuurten,'WK0363')
+    or startswith(WijkenEnBuurten,'BU0363')
+  format: json
+
+cbs_region_names:
+  kind: cbs_odata
+  service: https://opendata.cbs.nl
+  table: 86165NED
+  entity_set: WijkenEnBuurten
+  title: "Kerncijfers wijken en buurten 2025: region names"
+  publisher: Centraal Bureau voor de Statistiek
+  version: 2025-01-01
+  filter: Municipality eq 'GM0363'
+  format: json

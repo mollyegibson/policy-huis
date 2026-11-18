@@ -14,7 +14,13 @@ const GROUP_WORDS: Readonly<Record<string, string>> = {
   planned_start_year: "year of planned construction start",
   label_class: "label class",
   build_year_band: "the building's construction period",
-  room_type: "room type"
+  room_type: "room type",
+  housing_stock: "the number of homes",
+  pct_owner_occupied: "the share of owner-occupied homes",
+  pct_rent: "the share of rented homes",
+  pct_corporation_owned: "the share owned by housing corporations",
+  average_woz_value_thousand_eur: "the average WOZ value",
+  pct_built_last_ten_years: "the share built in the last ten years"
 }
 
 const groupWords = (key: string) => GROUP_WORDS[key] ?? key.replace(/_/g, " ")
@@ -79,3 +85,19 @@ export const rentalSummary = (p: {
   ])
 
 export const datasetInfo = () => "The dataset's description, license and version"
+
+const AREA_WORDS: Readonly<Record<string, string>> = {
+  gemeente: "the whole city",
+  wijk: "its wijken",
+  buurt: "its buurten"
+}
+
+export const housingStock = (p: {
+  readonly areaLevel: string
+  readonly area?: string | undefined
+  readonly sortBy?: string | undefined
+}) =>
+  phrase(`Amsterdam's housing stock from CBS key figures for ${AREA_WORDS[p.areaLevel] ?? p.areaLevel}`, [
+    given(p.area, (a) => `in ${a}`),
+    given(p.sortBy, (s) => `ranked by ${groupWords(s)}`)
+  ])

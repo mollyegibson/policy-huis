@@ -13,6 +13,7 @@ const DEFAULT_LIMIT = 20
 const PLANNED = ["nieuwbouwplannen"]
 const RENTALS = ["inside_airbnb_listings"]
 const LABELS = ["ep_online_energielabels"]
+const STOCK = ["cbs_kerncijfers"]
 
 /** The handlers of `toolkit`, whichever dataset keys it offers; a tool's handler is found by its name. */
 export const AmsDataHandlers = (toolkit: AmsDataToolkit) =>
@@ -221,6 +222,34 @@ export const AmsDataHandlers = (toolkit: AmsDataToolkit) =>
             }
           },
           withDataErrors(() => RENTALS)
+        ),
+
+        housing_stock: Effect.fn("AmsData.housing_stock")(
+          function* (params) {
+            const datasets = yield* repo.datasets()
+            const data = yield* loadedDataset(datasets, "cbs_kerncijfers")
+            const areaLevel = params.areaLevel ?? "gemeente"
+            const sortBy = params.sortBy ?? "housing_stock"
+            yield* check("area", params.area, repo.housingAreaNames(areaLevel))
+            const { total, areas } = yield* repo.housingStock(
+              { areaLevel, area: params.area, sortBy },
+              params.limit ?? DEFAULT_LIMIT
+            )
+            return {
+              areas,
+              totalMatching: total,
+              sourceVersion: data.sourceVersion,
+              citations: yield* cite(
+                datasets,
+                STOCK,
+                "housing_stock",
+                params,
+                Locators.housingStock({ areaLevel, area: params.area, sortBy: params.sortBy }),
+                params.area
+              )
+            }
+          },
+          withDataErrors(() => STOCK)
         ),
 
         dataset_info: Effect.fn("AmsData.dataset_info")(

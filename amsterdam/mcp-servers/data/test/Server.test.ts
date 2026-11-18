@@ -71,6 +71,7 @@ layer(TestServer.layer, { timeout: 120_000 })("ams-data server", (it) => {
           "energy_label_at_address",
           "short_term_rentals",
           "short_term_rentals_summary",
+          "housing_stock",
           "dataset_info"
         ].sort()
       )
@@ -333,11 +334,61 @@ layer(TestServer.layer, { timeout: 120_000 })("ams-data server", (it) => {
     )
   })
 
+  describe("housing_stock", () => {
+    it.effect("gives the city's own row when no level is named", () =>
+      Effect.gen(function* () {
+        const content = yield* structured("housing_stock", {})
+        expect(content["totalMatching"]).toBe(1)
+        expect(content["sourceVersion"]).toBe("2025-01-01")
+        expect(content["areas"]).toMatchObject([
+          { level: "gemeente", name: "Amsterdam", housingStock: 1000, pctRent: 70 }
+        ])
+      })
+    )
+
+    it.effect("looks one area up at its level", () =>
+      Effect.gen(function* () {
+        const content = yield* structured("housing_stock", { areaLevel: "wijk", area: "Zuidas" })
+        expect(content["areas"]).toMatchObject([
+          { level: "wijk", code: "KP", name: "Zuidas", housingStock: 600, pctCorporationOwned: 20 }
+        ])
+      })
+    )
+
+    it.effect("names the wijk a buurt stands in", () =>
+      Effect.gen(function* () {
+        const content = yield* structured("housing_stock", { areaLevel: "buurt", area: "Vivaldi" })
+        expect(content["areas"]).toMatchObject([
+          { level: "buurt", name: "Vivaldi", neighborhood: "Zuidas", housingStock: 400 }
+        ])
+      })
+    )
+
+    it.effect("ranks a level's areas by the measure asked for", () =>
+      Effect.gen(function* () {
+        const content = yield* structured("housing_stock", {
+          areaLevel: "wijk",
+          sortBy: "pct_corporation_owned"
+        })
+        const areas = content["areas"] as ReadonlyArray<{ name: string }>
+        expect(areas.map((a) => a.name)).toEqual(["Nieuwendammerdijk", "Zuidas"])
+      })
+    )
+
+    it.effect("returns an unknown area as an error result listing the names loaded", () =>
+      Effect.gen(function* () {
+        const result = yield* call("housing_stock", { areaLevel: "wijk", area: "Nieuw-West" })
+        expect(result.isError).toBe(true)
+        expect(JSON.stringify(result.content)).toContain("UnknownValue")
+      })
+    )
+  })
+
   it.effect("offers only the loaded dataset keys to dataset_info", () =>
     Effect.gen(function* () {
       const { tools } = yield* (yield* TestServer).listTools()
       const input = JSON.stringify(tools.find((t) => t.name === "dataset_info")?.inputSchema)
-      for (const key of ["ep_online_energielabels", "inside_airbnb_listings", "nieuwbouwplannen"]) {
+      for (const key of ["ep_online_energielabels", "inside_airbnb_listings", "nieuwbouwplannen", "cbs_kerncijfers"]) {
         expect(input).toContain(`"${key}"`)
       }
       const invented = yield* call("dataset_info", { dataset: "planned_housing" })
@@ -378,7 +429,9 @@ const unreachableRepo = Layer.succeed(HousingRepo, {
   rentalRoomTypes: () => Effect.fail(refused),
   rentalNeighbourhoods: () => Effect.fail(refused),
   rentalListings: () => Effect.fail(refused),
-  rentalSummary: () => Effect.fail(refused)
+  rentalSummary: () => Effect.fail(refused),
+  housingAreaNames: () => Effect.fail(refused),
+  housingStock: () => Effect.fail(refused)
 })
 
 class UnreachableServer extends Context.Service<UnreachableServer, McpTest.Client>()("test/UnreachableServer") {

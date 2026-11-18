@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated, Literal, Protocol
+from urllib.parse import quote
 
 import yaml
 from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
@@ -129,13 +130,52 @@ class EpOnlineSource(BaseModel):
     format: Literal["zip"]
 
 
-type Source = SocrataSource | ArcGisLayerSource | PdfSource | HalJsonApiSource | CsvDownloadSource | EpOnlineSource
+class CbsOdataSource(BaseModel):
+    """A table on CBS's StatLine OData service, the Netherlands' national statistics.
+
+    CBS serves each table from two services: `ODataApi`, which caps a response at ten thousand cells, and
+    `ODataFeed`, which has no cap; the feed is read here. `table` is the table's identifier and `entity_set` the
+    part of it to read: `TypedDataSet` for its rows, or a dimension such as `WijkenEnBuurten` for the names of
+    its region codes. `filter` narrows a national table to the city; it is sent with the request and kept as the
+    load's data URL, so the manifest shows exactly what was filtered. `version` is the edition's reference date,
+    declared: CBS gives each annual edition its own table identifier, so a new edition is a new `table` and
+    `version` together.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["cbs_odata"]
+    service: Annotated[str, StringConstraints(pattern=r"^https://[a-z0-9.-]+$")]
+    table: Annotated[str, StringConstraints(pattern=r"^[0-9]{5}[A-Za-z]{3}$")]
+    entity_set: Annotated[str, StringConstraints(pattern=r"^[A-Za-z]+$")] = "TypedDataSet"
+    filter: str
+    title: str
+    publisher: str
+    version: date
+    format: Literal["json"]
+
+
+type Source = (
+    SocrataSource
+    | ArcGisLayerSource
+    | PdfSource
+    | HalJsonApiSource
+    | CsvDownloadSource
+    | EpOnlineSource
+    | CbsOdataSource
+)
 
 
 class _SourcesFile(BaseModel):
     sources: dict[
         str,
-        SocrataSource | ArcGisLayerSource | PdfSource | HalJsonApiSource | CsvDownloadSource | EpOnlineSource,
+        SocrataSource
+        | ArcGisLayerSource
+        | PdfSource
+        | HalJsonApiSource
+        | CsvDownloadSource
+        | EpOnlineSource
+        | CbsOdataSource,
     ]
 
 
@@ -294,6 +334,41 @@ def download(source: Source, fetcher: Fetcher, api_key: str | None = None) -> Do
             return Download(
                 data=fetcher.get(info["downloadUrl"]), data_extension="zip", metadata=metadata, data_url=url
             )
+        case CbsOdataSource(
+            service=service,
+            table=table,
+            entity_set=entity_set,
+            filter=filter,
+            title=title,
+            publisher=publisher,
+            version=version,
+        ):
+            data_url = f"{service}/ODataFeed/OData/{table}/{entity_set}?$filter={quote(filter)}&$format=json"
+            records: list[dict[str, object]] = []
+            next_url: str | None = data_url
+            while next_url is not None:
+                document = json.loads(fetcher.get(next_url))
+                records.extend(document.get("value") or [])
+                following = document.get("odata.nextLink") or document.get("@odata.nextLink")
+                if following is None:
+                    next_url = None
+                else:
+                    link = str(following)
+                    next_url = link if link.startswith("http") else f"{service}{link}"
+            metadata = json.dumps(
+                {
+                    "title": title,
+                    "publisher": publisher,
+                    "source_version": version.isoformat(),
+                    "source_url": f"{service}/ODataApi/OData/{table}",
+                    "license": "CC BY 4.0",
+                    "entity_set": entity_set,
+                    "filter": filter,
+                }
+            ).encode()
+            return Download(
+                data=json.dumps(records).encode(), data_extension="json", metadata=metadata, data_url=data_url
+            )
 
 
 def parse_metadata(source: Source, metadata: bytes) -> SourceMetadata:
@@ -347,6 +422,15 @@ def parse_metadata(source: Source, metadata: bytes) -> SourceMetadata:
                 source_url=doc["source_url"],
             )
         case EpOnlineSource():
+            return SourceMetadata(
+                title=doc["title"],
+                publisher=doc["publisher"],
+                description=None,
+                license=_blank_to_none(doc.get("license")),
+                source_version=date.fromisoformat(doc["source_version"]),
+                source_url=doc["source_url"],
+            )
+        case CbsOdataSource():
             return SourceMetadata(
                 title=doc["title"],
                 publisher=doc["publisher"],

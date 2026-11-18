@@ -220,6 +220,70 @@ export const ShortTermRentalsSummary = Tool.make("short_term_rentals_summary", {
   failureMode: "return"
 }).annotate(Tool.Title, "Short-term rental totals")
 
+const AreaLevel = Schema.Literals(["gemeente", "wijk", "buurt"]).annotate({
+  description: "An area level of the CBS key figures: the whole city, a wijk, or a buurt within a wijk"
+})
+
+const HousingMeasure = Schema.Literals([
+  "housing_stock",
+  "pct_owner_occupied",
+  "pct_rent",
+  "pct_corporation_owned",
+  "average_woz_value_thousand_eur",
+  "pct_built_last_ten_years"
+]).annotate({ description: "A housing measure to rank areas by, highest first" })
+
+const HousingArea = Schema.Struct({
+  level: Schema.String,
+  code: Schema.String,
+  name: Schema.String,
+  neighborhood: Schema.NullOr(Schema.String),
+  housingStock: NonNegativeInt,
+  newHomes: Schema.NullOr(NonNegativeInt),
+  pctVacantHomes: Schema.NullOr(Schema.Finite),
+  pctOwnerOccupied: Schema.NullOr(Schema.Finite),
+  pctRent: Schema.NullOr(Schema.Finite),
+  pctCorporationOwned: Schema.NullOr(Schema.Finite),
+  pctOtherLandlordOwned: Schema.NullOr(Schema.Finite),
+  averageWozValueThousandEur: Schema.NullOr(Schema.Finite),
+  pctSingleFamilyHomes: Schema.NullOr(Schema.Finite),
+  pctMultiFamilyHomes: Schema.NullOr(Schema.Finite),
+  pctBuiltLastTenYears: Schema.NullOr(Schema.Finite),
+  averageGasUseM3: Schema.NullOr(Schema.Finite),
+  pctDistrictHeating: Schema.NullOr(Schema.Finite),
+  pctHomesWithoutGas: Schema.NullOr(Schema.Finite),
+  pctHomesWithSolarPower: Schema.NullOr(Schema.Finite),
+  pctHomesMainlyElectricHeating: Schema.NullOr(Schema.Finite)
+})
+
+export const HousingStock = Tool.make("housing_stock", {
+  description:
+    "Amsterdam's housing stock from CBS's key figures: how many homes an area holds, the share owned and rented, " +
+    "the share owned by housing corporations, the average WOZ value, dwelling type, how much was built in the last " +
+    "ten years, and the share vacant, heated without gas, or with solar panels. CBS reports for the city, its " +
+    "wijken and its buurten, and has no stadsdeel. Give a level and an area for one area, or a level alone to list " +
+    "its areas ranked by a measure, highest first. Shares are percentages of an area's homes, and CBS leaves one " +
+    "out where the area is too small to publish.",
+  parameters: Schema.Struct({
+    areaLevel: OptionalParam(AreaLevel),
+    area: OptionalParam(
+      Schema.String.annotate({
+        description: "A wijk or buurt name, as listed in tool results; omit it for the whole city or every area"
+      })
+    ),
+    sortBy: OptionalParam(HousingMeasure),
+    limit: OptionalParam(Limit)
+  }),
+  success: Schema.Struct({
+    areas: Schema.Array(HousingArea),
+    totalMatching: NonNegativeInt,
+    sourceVersion: IsoDate,
+    citations: Citations
+  }),
+  failure: ToolFailure,
+  failureMode: "return"
+}).annotate(Tool.Title, "Housing stock and tenure")
+
 /**
  * A dataset key: one of `datasetKeys` when the loaded datasets were read at startup, so the model is offered only keys
  * that exist, or any text when they could not be.
@@ -266,6 +330,7 @@ export const makeAmsDataToolkit = (datasetKeys: ReadonlyArray<string>) =>
     EnergyLabelAtAddress,
     ShortTermRentals,
     ShortTermRentalsSummary,
+    HousingStock,
     datasetInfo(datasetKeys)
   )
 

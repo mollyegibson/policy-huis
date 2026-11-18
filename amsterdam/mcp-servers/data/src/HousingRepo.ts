@@ -83,6 +83,30 @@ const RentalGroupRow = Schema.Struct({
   withRegistration: NonNegativeInt
 })
 
+export const HousingAreaRow = Schema.Struct({
+  level: Schema.String,
+  code: Schema.String,
+  name: Schema.String,
+  neighborhood: NullableText,
+  housingStock: NonNegativeInt,
+  newHomes: NullableCount,
+  pctVacantHomes: Schema.NullOr(Schema.Finite),
+  pctOwnerOccupied: Schema.NullOr(Schema.Finite),
+  pctRent: Schema.NullOr(Schema.Finite),
+  pctCorporationOwned: Schema.NullOr(Schema.Finite),
+  pctOtherLandlordOwned: Schema.NullOr(Schema.Finite),
+  averageWozValueThousandEur: Schema.NullOr(Schema.Finite),
+  pctSingleFamilyHomes: Schema.NullOr(Schema.Finite),
+  pctMultiFamilyHomes: Schema.NullOr(Schema.Finite),
+  pctBuiltLastTenYears: Schema.NullOr(Schema.Finite),
+  averageGasUseM3: Schema.NullOr(Schema.Finite),
+  pctDistrictHeating: Schema.NullOr(Schema.Finite),
+  pctHomesWithoutGas: Schema.NullOr(Schema.Finite),
+  pctHomesWithSolarPower: Schema.NullOr(Schema.Finite),
+  pctHomesMainlyElectricHeating: Schema.NullOr(Schema.Finite)
+})
+export type HousingAreaRow = typeof HousingAreaRow.Type
+
 const Value = Schema.Struct({ value: Schema.String })
 const NullableValue = Schema.Struct({ value: NullableText })
 
@@ -102,6 +126,20 @@ export interface RentalFilters {
   readonly roomType?: string | undefined
   readonly registeredOnly?: boolean | undefined
   readonly minNightlyPrice?: number | undefined
+}
+
+export type HousingMeasure =
+  | "housing_stock"
+  | "pct_owner_occupied"
+  | "pct_rent"
+  | "pct_corporation_owned"
+  | "average_woz_value_thousand_eur"
+  | "pct_built_last_ten_years"
+
+export interface HousingStockFilters {
+  readonly areaLevel: string
+  readonly area?: string | undefined
+  readonly sortBy: HousingMeasure
 }
 
 export type PlannedGroupBy = "district" | "neighborhood" | "planned_start_year"
@@ -298,6 +336,53 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       )
     })
 
+    const housingAreaNames = (areaLevel: string) =>
+      values(sql`SELECT area_name AS value FROM ams_data.housing_stock WHERE area_level = ${areaLevel}`)
+
+    const housingStock = Effect.fn("HousingRepo.housingStock")(function* (
+      filters: HousingStockFilters,
+      limit: number
+    ) {
+      const order = {
+        housing_stock: sql`housing_stock`,
+        pct_owner_occupied: sql`pct_owner_occupied`,
+        pct_rent: sql`pct_rent`,
+        pct_corporation_owned: sql`pct_corporation_owned`,
+        average_woz_value_thousand_eur: sql`average_woz_value_thousand_eur`,
+        pct_built_last_ten_years: sql`pct_built_last_ten_years`
+      }[filters.sortBy]
+      const found = yield* rows(Counted(HousingAreaRow))(
+        yield* sql`
+          SELECT area_level AS level, area_code AS code, area_name AS name,
+                 neighborhood_name AS neighborhood,
+                 housing_stock AS "housingStock",
+                 new_homes AS "newHomes", pct_vacant_homes::float8 AS "pctVacantHomes",
+                 pct_owner_occupied::float8 AS "pctOwnerOccupied",
+                 pct_rent::float8 AS "pctRent",
+                 pct_corporation_owned::float8 AS "pctCorporationOwned",
+                 pct_other_landlord_owned::float8 AS "pctOtherLandlordOwned",
+                 average_woz_value_thousand_eur::float8 AS "averageWozValueThousandEur",
+                 pct_single_family_homes::float8 AS "pctSingleFamilyHomes",
+                 pct_multi_family_homes::float8 AS "pctMultiFamilyHomes",
+                 pct_built_last_ten_years::float8 AS "pctBuiltLastTenYears",
+                 average_gas_use_m3::float8 AS "averageGasUseM3",
+                 pct_district_heating::float8 AS "pctDistrictHeating",
+                 pct_homes_without_gas::float8 AS "pctHomesWithoutGas",
+                 pct_homes_with_solar_power::float8 AS "pctHomesWithSolarPower",
+                 pct_homes_mainly_electric_heating::float8 AS "pctHomesMainlyElectricHeating",
+                 count(*) OVER ()::int AS total
+          FROM ams_data.housing_stock
+          WHERE ${where([
+            sql`area_level = ${filters.areaLevel}`,
+            ...(filters.area === undefined ? [] : [sql`area_name = ${filters.area}`])
+          ])}
+          ORDER BY ${order} DESC NULLS LAST, name
+          LIMIT ${limit}`
+      )
+      const { total, rows: areas } = withTotal(found)
+      return { total, areas }
+    })
+
     return {
       datasets,
       districts,
@@ -312,7 +397,9 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       rentalRoomTypes,
       rentalNeighbourhoods,
       rentalListings,
-      rentalSummary
+      rentalSummary,
+      housingAreaNames,
+      housingStock
     } as const
   })
 }) {

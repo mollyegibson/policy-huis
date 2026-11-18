@@ -86,14 +86,16 @@ Direct counterpart of `san-francisco/ingest/data/`, renamed.
 
 ### Confirmed sources
 
-Access method, format, license, update frequency and size were checked at the publisher on 2026-11-17. Two sources are
-confirmed and configured in `amsterdam/ingest/data/config/sources.yaml`, with raw tables in migration `0002`:
+Access method, format, license, update frequency and size were checked at the publisher on 2026-11-17 and 2026-11-18.
+Four sources are confirmed and configured in `amsterdam/ingest/data/config/sources.yaml`: raw tables for the first two
+in migration `0002`, for EP-Online in `0003`, and for CBS in `0004`.
 
 | Source | Publisher | Access | Format | License | Verified |
 |---|---|---|---|---|---|
 | Woningbouwplannen Openbaar (Nieuwbouwplannen) | Gemeente Amsterdam (Datateam Stedelijke Ontwikkeling en Beheer) | DSO API, `api.data.amsterdam.nl/v1/nieuwbouwplannen/woningbouwplannen_openbaar`, open, paginated HAL+JSON | JSON; per-project counts by tenure (sociale huur, middeldure huur, vrije sector, …) with `stadsdeel`/`wijk` codes and geometry | Creative Commons, Naamsvermelding (CC-BY) | Live, open, ~1.000 rows per page, `peildatum` is the version |
 | Inside Airbnb Amsterdam | Inside Airbnb | bulk download, `data.insideairbnb.com/the-netherlands/north-holland/amsterdam/<date>/data/listings.csv.gz` | gzipped CSV; per-listing rows with latitude/longitude | CC-BY 4.0 | Live; the 2026-09-16 snapshot is pinned in `sources.yaml`. The bucket path changed from `the-amsterdam` to `the-netherlands`, which the old URL now refuses |
 | EP-Online energielabels | RVO | Public REST API, `public.ep-online.nl/api/v5/Mutatiebestand/DownloadInfo?fileType=csv&xmlVersion=4`, with an API key in the `Authorization` header (requested once at `epbdwebservices.rvo.nl`; expires after a year of disuse) | ZIP of one semicolon-CSV: every currently valid label in the Netherlands (6.3M rows), with postcode, BAG IDs, `Energieklasse`, `EnergieIndex`, bouwjaar and surface area; refreshed on the first of each month | Geen open licentie; the EP-Online webservicevoorwaarden govern | Key verified against the live API on 2026-11-17: the envelope named `v20261101_v4_csv.zip` and the download worked. The key is a secret, read from `EP_ONLINE_API_KEY` in this project's `.env`, never from a config file or the manifest. The monthly file is a full register snapshot despite the "Mutatiebestand" name; the `Totaalbestand` endpoints answer 404 on the public API. |
+| CBS StatLine, Kerncijfers wijken en buurten 2025 | Centraal Bureau voor de Statistiek | OData: catalogue `opendata.cbs.nl/ODataCatalog/Tables`, rows from the uncapped feed `opendata.cbs.nl/ODataFeed/OData/86165NED/TypedDataSet`, names from the table's own `WijkenEnBuurten` dimension | JSON; one row per region with the housing figures (stock, tenure, WOZ, dwelling type, build period, vacancy, gas, district heating, solar) | CC BY 4.0 | Live on 2026-11-18: table `86165NED` is the current edition whose housing block is published. The standard `ODataApi` service caps a response at 10,000 cells, the feed does not; paths are case-sensitive. The Amsterdam subset (`GM0363`/`WK0363`/`BU0363`) is 628 rows, 2.4 MB, in one response with no `nextLink`. CBS assigns each annual edition its own table identifier, so a new edition is a new table and version together. |
 
 Documents, also verified: the consolidated Huisvestingsverordening Amsterdam 2024 is `CVDR706038` on
 lokaleregelgeving.overheid.nl (HTML, last modified 2026-01-01); the gmb-2023-* and gmb-2024-* besluiten PDFs on
@@ -101,10 +103,11 @@ zoek.officielebekendmakingen.nl download directly; the Woningbouwplan 2022-2028 
 2025 jaarrapportage are on assets.amsterdam.nl. These join the documents corpus via the documents pipeline, not
 `sources.yaml`.
 
-Deferred until needed, with the reason: CBS StatLine OData and BAG (national, each needs its own source kind and an
-Amsterdam filter — add when a question requires them), Klimaateffectatlas (Geopackage/Geotiff bulk files, CC-BY 4.0, no
-API), Open Raadsinformatie (the classic API shuts down 2026-11-01; OpenBesluitvorming is the successor and needs its own
-check).
+Deferred until needed, with the reason: BAG (national, needs its own source kind and an Amsterdam filter — add when a
+question requires it), the dedicated CBS housing cube `86079NED` (city-level only, five dimension sets to look up;
+the Kerncijfers table already carries tenure and type per wijk and buurt), Klimaateffectatlas (Geopackage/Geotiff bulk
+files, CC-BY 4.0, no API), Open Raadsinformatie (the classic API shuts down 2026-11-01; OpenBesluitvorming is the
+successor and needs its own check).
 
 One operational note on the EP-Online load: the monthly file holds 6.3M rows and the load pipeline materializes the
 parsed rows in memory, so ingesting it wants a machine with ample RAM; a streaming refactor of `load.py` is the
@@ -120,9 +123,13 @@ Added additively alongside Socrata/ArcGIS/PDF, each with tests using synthetic r
   latitude/longitude fields building point geometries. Added; used by Inside Airbnb.
 - `kind: ep_online` — RVO's EP-Online public API: the `DownloadInfo` envelope, then the tokenized ZIP download; the
   key comes from settings, the version from the envelope's `bestandsnaam`. Added; used by the energielabels source.
+- `kind: cbs_odata` — a table on CBS's StatLine OData service: a service, a table identifier, an entity set (the
+  rows, or a dimension for its names), a `$filter` narrowing the national table to the city, and an explicit
+  `version`, since CBS gives each annual edition its own table. Reads the uncapped feed and follows
+  `odata.nextLink`. Added; used by `cbs_kerncijfers` and `cbs_region_names`.
 
-Still to add when their sources are taken up: `odata` for CBS StatLine, a BAG kind, a CAS bulk-file kind, and
-`law_xml` for the documents corpus later.
+Still to add when their sources are taken up: a BAG kind, a CAS bulk-file kind, and `law_xml` for the documents
+corpus later.
 
 Existing source types and the load manifest's columns did not change. A test in `shared/ingest` fails if shared code
 names a city.
@@ -130,7 +137,7 @@ names a city.
 ### Candidate dbt models
 
 Design from the loaded data; each model suggests a list tool and a summary tool. Built first, in
-`amsterdam/ingest/data/dbt/models/ams_data/`, are the models of the three confirmed sources — **done**:
+`amsterdam/ingest/data/dbt/models/ams_data/`, are the models of the confirmed sources — **done**:
 
 | Model | Source | Status |
 |---|---|---|
@@ -138,7 +145,7 @@ Design from the loaded data; each model suggests a list tool and a summary tool.
 | `planned_housing` | Nieuwbouwplannen | **done**; one row per plan of the latest load, with the published tenure counts ("n.b." is null), the plan's starts of construction, and its geometry re-tagged from RD to 4326 |
 | `energy_labels` | EP-Online | **done**; one row per label at an Amsterdam address, selected by BAG-ID prefix (`0363` Amsterdam, `0457` Weesp — the register's postcodes span Diemen and Amstelveen), with label class and construction period from macros |
 | `short_term_rentals` | Inside Airbnb | **done**; one row per listing of the pinned scrape, price parsed from the scrape's currency format, `registered` true when the host gives a city-shaped registration |
-| `housing_stock` | CBS StatLine | when CBS is taken up |
+| `housing_stock` | CBS StatLine | **done**; one row per Amsterdam area in the Kerncijfers load — the city, its 110 wijken and 517 buurten — with stock, owned/rented and corporation shares, average WOZ value, dwelling type, share built in the last ten years, vacancy, gas use, district heating and solar. Names come from the table's own `WijkenEnBuurten` dimension; a buurt carries the wijk it stands in, joined on the eight-character code (`BU0363AA01` → `AA`). Shares CBS suppresses for small areas stay null. |
 | `buildings` | BAG | when BAG is taken up |
 | `climate_zones` | Klimaateffectatlas | when the bulk files are taken up |
 
@@ -258,10 +265,10 @@ Copy of `sf-docs` with Dutch tools and citations.
 |---|---|---|
 | M0a. Confirm the Amsterdam source list — **done** | Amsterdam, audience and language settled | Sources for `sources.yaml` |
 | M0b. Check each source's access, license, format and size — **done** | M0a | `sources.yaml` |
-| M1. Add shared source types — **done** for `hal_json_api`, `csv_download` and `ep_online` | M0b | CBS/BAG/CAS loaders still to add when those sources are taken up |
+| M1. Add shared source types — **done** for `hal_json_api`, `csv_download`, `ep_online` and `cbs_odata` | M0b | BAG/CAS loaders still to add when those sources are taken up |
 | M2. `amsterdam/ingest/data/` skeleton, migration 0001 and raw tables for the confirmed sources in migration 0002 — **done** | M1 | `raw_ams_data`, `ams_data`, `ams_data_reader`, one raw table per source |
-| M3. Load Amsterdam end to end — **done**: the `ams-data` Neon project is provisioned, migrations 0001–0003 applied, `nieuwbouwplannen` (1,048 rows) and `inside_airbnb_listings` (10,612 records) loaded and archived, and `dbt build` passes (40 pass, 1 designed warn on six projects whose published tenure parts do not sum to their total). EP-Online still waits for plan storage. The pinned 2026-09-16 scrape's "17,090 rows" was a physical-line count; its real record count is 10,612, the difference being newlines inside quoted description fields | M2 | `ams_data` schema filled |
-| M4. `ams-data` server, tools, registration — **done**: the seven tools answer from the loaded `ams_data` schema; the server boots with the `ams_data_reader` connection string and is registered on port 8083 | M3 | Dutch data answers |
+| M3. Load Amsterdam end to end — **done**: the `ams-data` Neon project is provisioned, migrations 0001–0004 applied, `nieuwbouwplannen` (1,048 rows) and `inside_airbnb_listings` (10,612 records) loaded and archived, `cbs_kerncijfers` (628 rows) and `cbs_region_names` (628 rows) loaded, and `dbt build` passes (49 pass, 1 designed warn on six projects whose published tenure parts do not sum to their total). EP-Online still waits for plan storage. The pinned 2026-09-16 scrape's "17,090 rows" was a physical-line count; its real record count is 10,612, the difference being newlines inside quoted description fields | M2 | `ams_data` schema filled |
+| M4. `ams-data` server, tools, registration — **done**: eight tools are published; those over the loaded schema answer, `housing_stock` included, and the energy-label tools report the register as not yet loaded. The server boots with the `ams_data_reader` connection string and is registered on port 8083 | M3 | Dutch data answers |
 | M5. Spike S3 (translation) and S4 Dutch run | M0a | Translation model, embedding decision |
 | M6. `amsterdam/ingest/documents/` and `ams-docs` | M5 | Dutch law answers |
 | M7. Amsterdam and cross-city question set; evaluation | M4, M6 | Measured Dutch answers |
@@ -294,7 +301,7 @@ Declines: causation; individual legal advice (refer to the Huurcommissie); unit-
 1. **Audience and language** — settled as policy makers and residents, with English answers and Dutch citations; the source list and question set must serve both audiences.
 2. **Translation quality and review** — no Dutch-speaking reviewer confirmed; machine translation of legal text is a correctness risk.
 3. **S3/S4/S6 open** — documents work is blocked until translation and embedding are decided.
-4. **National data size** — BAG, EP-Online and CBS may exceed one 1 GB Neon project; filter at download and measure before loading.
+4. **National data size** — BAG and EP-Online may exceed one 1 GB Neon project; filter at download and measure before loading. CBS measured small: the Amsterdam subset of Kerncijfers is 628 rows and 2.4 MB.
 5. **Source access** — the EP-Online key expires after a year of disuse and was shared in conversation, so it should be rotated once the register loads are routine; Inside Airbnb terms, Open Raadsinformatie reuse terms, and Amsterdam portal datasets need checking.
 6. **Tool count** — both cities' tools appear on every question; the evaluation must check the model still picks the right one.
 7. **Jurisdiction semantics** — with one city, decide whether `jurisdiction` means Amsterdam, a district or a neighborhood, and keep it optional.
@@ -303,5 +310,6 @@ Declines: causation; individual legal advice (refer to the Huurcommissie); unit-
 
 1. Who contacts TNO or SURF about GPT-NL, and who reviews translations?
 2. Which Amsterdam portal datasets are open and machine-readable?
-3. Do BAG, EP-Online and CBS for Amsterdam fit one 1 GB Neon project?
+3. Do BAG and EP-Online for Amsterdam fit one 1 GB Neon project?
 4. What does `jurisdiction` mean for a single-city deployment?
+5. CBS reports housing at wijk and buurt only, with no stadsdeel, so district-level stock questions stay with the planned-housing tool until a gebied boundary source is taken up.

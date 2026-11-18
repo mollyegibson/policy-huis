@@ -107,3 +107,24 @@ models:
           - accepted_values:
               arguments:
                 values: ["Entire home/apt", "Private room", "Hotel room", "Shared room"]
+
+  - name: housing_stock
+    columns:
+      - name: area_level
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["gemeente", "wijk", "buurt"]
+      - name: area_code
+        data_tests:
+          - not_null
+      - name: area_name
+        data_tests:
+          - not_null
+      - name: housing_stock
+        data_tests:
+          - not_null
+      - name: source_version
+        data_tests:
+          - not_null

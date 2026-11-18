@@ -23,6 +23,7 @@ describe("the tools the model reads", () => {
         "energy_label_at_address",
         "short_term_rentals",
         "short_term_rentals_summary",
+        "housing_stock",
         "dataset_info"
       ].sort()
     )
