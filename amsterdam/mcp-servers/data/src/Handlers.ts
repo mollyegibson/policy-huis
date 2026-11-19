@@ -92,7 +92,7 @@ export const AmsDataHandlers = (toolkit: AmsDataToolkit) =>
               projects: projects.map((p) => ({
                 projectId: p.projectId,
                 name: p.name,
-                district: p.stadsdeel,
+                district: p.district,
                 area: p.gebied,
                 neighborhood: p.wijk,
                 publicationStage: p.publicationStage,

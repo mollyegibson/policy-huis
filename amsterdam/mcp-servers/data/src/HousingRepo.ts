@@ -23,7 +23,7 @@ export type DatasetRow = typeof DatasetRow.Type
 export const PlannedProjectRow = Schema.Struct({
   projectId: Schema.String,
   name: Schema.String,
-  stadsdeel: NullableText,
+  district: NullableText,
   gebied: NullableText,
   wijk: NullableText,
   publicationStage: NullableText,
@@ -191,9 +191,23 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       return row.value
     })
 
+    /**
+     * The plans, each with the district it stands in: the one its record names, or, when the record names none, the
+     * district of the neighborhood it names, if `ams_data.neighborhoods` places that neighborhood in exactly one.
+     * A plan with neither has a null district.
+     */
+    const plans = sql`(
+      SELECT p.*, coalesce(p.stadsdeel, (
+        SELECT CASE WHEN count(DISTINCT d.name) = 1 THEN min(d.name) END
+        FROM ams_data.neighborhoods n JOIN ams_data.districts d ON d.district_code = n.district_code
+        WHERE n.neighborhood_code = p.neighborhood_code
+      )) AS district
+      FROM ams_data.planned_housing p
+    ) AS plans`
+
     const plannedWhere = (p: PlannedFilters) =>
       where([
-        ...(p.district === undefined ? [] : [sql`stadsdeel = ${p.district}`]),
+        ...(p.district === undefined ? [] : [sql`district = ${p.district}`]),
         ...(p.neighborhood === undefined ? [] : [sql`wijk = ${p.neighborhood}`]),
         ...(p.minUnits === undefined ? [] : [sql`total_units >= ${p.minUnits}`]),
         ...(p.buildingFrom === undefined ? [] : [sql`construction_start_planned >= ${p.buildingFrom}-01-01`])
@@ -205,7 +219,7 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
     ) {
       const found = yield* rows(Counted(PlannedProjectRow))(
         yield* sql`
-          SELECT project_id AS "projectId", name, stadsdeel, gebied, wijk,
+          SELECT project_id AS "projectId", name, district, gebied, wijk,
                  publication_stage AS "publicationStage",
                  construction_start_planned::text AS "constructionStartPlanned",
                  construction_start_realised::text AS "constructionStartRealised",
@@ -219,7 +233,7 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
                    + coalesce(units_temporary, 0) + coalesce(units_student, 0) + coalesce(units_young, 0)
                    + coalesce(units_self_build, 0) + coalesce(units_unknown_tenure, 0) AS "unitsOther",
                  count(*) OVER ()::int AS total
-          FROM ams_data.planned_housing
+          FROM ${plans}
           WHERE ${plannedWhere(filters)}
           ORDER BY total_units DESC NULLS LAST, project_id
           LIMIT ${limit}`
@@ -238,7 +252,7 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       filters: PlannedFilters
     ) {
       const key = {
-        district: sql`coalesce(stadsdeel, 'unknown')`,
+        district: sql`coalesce(district, 'unknown')`,
         neighborhood: sql`coalesce(wijk, 'unknown')`,
         planned_start_year: sql`coalesce(extract(year FROM construction_start_planned)::int::text, 'not planned')`
       }[groupBy]
@@ -255,7 +269,7 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
                  coalesce(sum(coalesce(units_private_rent_or_sale, 0) + coalesce(units_non_self_contained, 0)
                    + coalesce(units_temporary, 0) + coalesce(units_student, 0) + coalesce(units_young, 0)
                    + coalesce(units_self_build, 0) + coalesce(units_unknown_tenure, 0)), 0)::int AS "unitsOther"
-          FROM ams_data.planned_housing
+          FROM ${plans}
           WHERE ${plannedWhere(filters)}
           GROUP BY 1 ORDER BY 1`
       )
@@ -289,7 +303,7 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       return yield* rows(AddressLabelRow)(
         yield* sql`
           SELECT label_class AS "labelClass", label, build_year AS "buildYear", build_year_band AS "buildYearBand",
-                 registered_on::text AS "registeredOn", valid_until::text AS "validUntil", surface
+                 registered_on::text AS "registeredOn", valid_until::text AS "validUntil", surface::float8 AS surface
           FROM ams_data.energy_labels
           WHERE upper(postcode) = ${postcode.toUpperCase()} AND house_number = ${houseNumber}
           ORDER BY registered_on DESC, label_class`
@@ -311,9 +325,9 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       const found = yield* rows(Counted(RentalListingRow))(
         yield* sql`
           SELECT listing_id AS "listingId", name, room_type AS "roomType", neighbourhood,
-                 nightly_price AS "nightlyPrice", minimum_nights AS "minimumNights",
+                 nightly_price::float8 AS "nightlyPrice", minimum_nights AS "minimumNights",
                  nights_available AS "nightsAvailable", estimated_occupancy_nights AS "estimatedOccupancyNights",
-                 estimated_revenue AS "estimatedRevenue", registration, registered,
+                 estimated_revenue::float8 AS "estimatedRevenue", registration, registered,
                  host_listings_count AS "hostListingsCount", count(*) OVER ()::int AS total
           FROM ams_data.short_term_rentals
           WHERE ${rentalWhere(filters)}
@@ -346,10 +360,7 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
     const housingAreaNames = (areaLevel: string) =>
       values(sql`SELECT area_name AS value FROM ams_data.housing_stock WHERE area_level = ${areaLevel}`)
 
-    const housingStock = Effect.fn("HousingRepo.housingStock")(function* (
-      filters: HousingStockFilters,
-      limit: number
-    ) {
+    const housingStock = Effect.fn("HousingRepo.housingStock")(function* (filters: HousingStockFilters, limit: number) {
       const order = {
         housing_stock: sql`housing_stock`,
         pct_owner_occupied: sql`pct_owner_occupied`,
