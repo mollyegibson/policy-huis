@@ -8,8 +8,8 @@ import zipfile
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
-from urllib.parse import quote
 from typing import Annotated, Any, Literal, Protocol
+from urllib.parse import quote
 
 import pdfplumber
 import yaml
@@ -541,7 +541,14 @@ def parse_rows(source: Source, data: bytes) -> list[RawRow]:
     gives one row per page, with its page number and text, and its marked lines when it declares
     `strikethrough: marked`."""
     if source.format == "pdf":
-        return [RawRow(record={"page": n, "text": text}, geometry=None) for n, text in enumerate(pdf_pages(data), 1)]
+        texts = pdf_pages(data)
+        if isinstance(source, PdfSource) and source.strikethrough == "marked":
+            marked = pdf_marked_lines(data)
+            return [
+                RawRow(record={"page": n, "text": text, "lines": lines}, geometry=None)
+                for n, (text, lines) in enumerate(zip(texts, marked, strict=True), 1)
+            ]
+        return [RawRow(record={"page": n, "text": text}, geometry=None) for n, text in enumerate(texts, 1)]
     if isinstance(source, EpOnlineSource):
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             csv_name = next(name for name in archive.namelist() if name.lower().endswith(".csv"))
@@ -562,14 +569,6 @@ def parse_rows(source: Source, data: bytes) -> list[RawRow]:
                     geometry = {"type": "Point", "coordinates": [float(longitude), float(latitude)]}
             rows.append(RawRow(record=dict(row), geometry=geometry))
         return rows
-        texts = pdf_pages(data)
-        if isinstance(source, PdfSource) and source.strikethrough == "marked":
-            marked = pdf_marked_lines(data)
-            return [
-                RawRow(record={"page": n, "text": text, "lines": lines}, geometry=None)
-                for n, (text, lines) in enumerate(zip(texts, marked, strict=True), 1)
-            ]
-        return [RawRow(record={"page": n, "text": text}, geometry=None) for n, text in enumerate(texts, 1)]
     doc = json.loads(data)
     if isinstance(source, HalJsonApiSource):
         return [
