@@ -228,6 +228,11 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       return { total, projects }
     })
 
+    /**
+     * Each plan leaves a tenure part it has not given yet null, so every part is read as zero before the parts are
+     * added: a district whose plans are missing different parts still adds up, where adding the nulls themselves
+     * would make its whole total zero.
+     */
     const plannedSummary = Effect.fn("HousingRepo.plannedSummary")(function* (
       groupBy: PlannedGroupBy,
       filters: PlannedFilters
@@ -241,13 +246,15 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
         yield* sql`
           SELECT ${key} AS key, count(*)::int AS projects,
                  coalesce(sum(total_units), 0)::int AS "totalUnits",
-                 coalesce(sum(units_social_rent_corporation + units_social_rent_independent), 0)::int
-                   AS "unitsSocialRent",
+                 coalesce(sum(coalesce(units_social_rent_corporation, 0)
+                   + coalesce(units_social_rent_independent, 0)), 0)::int AS "unitsSocialRent",
                  coalesce(sum(units_mid_rent), 0)::int AS "unitsMidRent",
                  coalesce(sum(units_private_rent), 0)::int AS "unitsPrivateRent",
-                 coalesce(sum(units_private_sale + units_affordable_sale), 0)::int AS "unitsOwnerOccupied",
-                 coalesce(sum(units_private_rent_or_sale + units_non_self_contained + units_temporary + units_student
-                   + units_young + units_self_build + units_unknown_tenure), 0)::int AS "unitsOther"
+                 coalesce(sum(coalesce(units_private_sale, 0) + coalesce(units_affordable_sale, 0)), 0)::int
+                   AS "unitsOwnerOccupied",
+                 coalesce(sum(coalesce(units_private_rent_or_sale, 0) + coalesce(units_non_self_contained, 0)
+                   + coalesce(units_temporary, 0) + coalesce(units_student, 0) + coalesce(units_young, 0)
+                   + coalesce(units_self_build, 0) + coalesce(units_unknown_tenure, 0)), 0)::int AS "unitsOther"
           FROM ams_data.planned_housing
           WHERE ${plannedWhere(filters)}
           GROUP BY 1 ORDER BY 1`
