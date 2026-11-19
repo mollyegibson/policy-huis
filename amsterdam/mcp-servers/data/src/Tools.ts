@@ -231,7 +231,11 @@ const HousingMeasure = Schema.Literals([
   "pct_corporation_owned",
   "average_woz_value_thousand_eur",
   "pct_built_last_ten_years"
-]).annotate({ description: "A housing measure to rank areas by, highest first" })
+]).annotate({ description: "A housing measure to rank areas by" })
+
+const Ranking = Schema.Literals(["highest", "lowest"]).annotate({
+  description: "Which end of the ranking to start at: the areas with the highest measure or those with the lowest"
+})
 
 const HousingArea = Schema.Struct({
   level: Schema.String,
@@ -262,8 +266,9 @@ export const HousingStock = Tool.make("housing_stock", {
     "the share owned by housing corporations, the average WOZ value, dwelling type, how much was built in the last " +
     "ten years, and the share vacant, heated without gas, or with solar panels. CBS reports for the city, its " +
     "wijken and its buurten, and has no stadsdeel. Give a level and an area for one area, or a level alone to list " +
-    "its areas ranked by a measure, highest first. Shares are percentages of an area's homes, and CBS leaves one " +
-    "out where the area is too small to publish.",
+    "its areas ranked by a measure, from the highest or from the lowest. Shares are percentages of an area's homes, " +
+    "and CBS leaves one out where the area is too small to publish, which keeps that area out of either end. " +
+    "Areas that share a measure are tied for its place, so a short list may name only some of them.",
   parameters: Schema.Struct({
     areaLevel: OptionalParam(AreaLevel),
     area: OptionalParam(
@@ -272,6 +277,7 @@ export const HousingStock = Tool.make("housing_stock", {
       })
     ),
     sortBy: OptionalParam(HousingMeasure),
+    order: OptionalParam(Ranking),
     limit: OptionalParam(Limit)
   }),
   success: Schema.Struct({

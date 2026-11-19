@@ -136,10 +136,13 @@ export type HousingMeasure =
   | "average_woz_value_thousand_eur"
   | "pct_built_last_ten_years"
 
+export type RankingOrder = "highest" | "lowest"
+
 export interface HousingStockFilters {
   readonly areaLevel: string
   readonly area?: string | undefined
   readonly sortBy: HousingMeasure
+  readonly order: RankingOrder
 }
 
 export type PlannedGroupBy = "district" | "neighborhood" | "planned_start_year"
@@ -346,10 +349,7 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
     const housingAreaNames = (areaLevel: string) =>
       values(sql`SELECT area_name AS value FROM ams_data.housing_stock WHERE area_level = ${areaLevel}`)
 
-    const housingStock = Effect.fn("HousingRepo.housingStock")(function* (
-      filters: HousingStockFilters,
-      limit: number
-    ) {
+    const housingStock = Effect.fn("HousingRepo.housingStock")(function* (filters: HousingStockFilters, limit: number) {
       const order = {
         housing_stock: sql`housing_stock`,
         pct_owner_occupied: sql`pct_owner_occupied`,
@@ -358,6 +358,7 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
         average_woz_value_thousand_eur: sql`average_woz_value_thousand_eur`,
         pct_built_last_ten_years: sql`pct_built_last_ten_years`
       }[filters.sortBy]
+      const direction = filters.order === "lowest" ? sql`ASC` : sql`DESC`
       const found = yield* rows(Counted(HousingAreaRow))(
         yield* sql`
           SELECT area_level AS level, area_code AS code, area_name AS name,
@@ -383,7 +384,7 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
             sql`area_level = ${filters.areaLevel}`,
             ...(filters.area === undefined ? [] : [sql`area_name = ${filters.area}`])
           ])}
-          ORDER BY ${order} DESC NULLS LAST, name
+          ORDER BY ${order} ${direction} NULLS LAST, name
           LIMIT ${limit}`
       )
       const { total, rows: areas } = withTotal(found)

@@ -375,6 +375,56 @@ layer(TestServer.layer, { timeout: 120_000 })("ams-data server", (it) => {
       })
     )
 
+    it.effect("ranks the same measure from the lowest when asked", () =>
+      Effect.gen(function* () {
+        const content = yield* structured("housing_stock", {
+          areaLevel: "wijk",
+          sortBy: "pct_corporation_owned",
+          order: "lowest"
+        })
+        const areas = content["areas"] as ReadonlyArray<{ name: string }>
+        expect(areas.map((a) => a.name)).toEqual(["Zuidas", "Nieuwendammerdijk"])
+      })
+    )
+
+    it.effect("leaves an area whose measure CBS leaves out last, from either end", () =>
+      Effect.gen(function* () {
+        const names = (content: Readonly<Record<string, unknown>>) =>
+          (content["areas"] as ReadonlyArray<{ name: string }>).map((a) => a.name)
+        const highest = yield* structured("housing_stock", {
+          areaLevel: "buurt",
+          sortBy: "pct_corporation_owned",
+          order: "highest"
+        })
+        const lowest = yield* structured("housing_stock", {
+          areaLevel: "buurt",
+          sortBy: "pct_corporation_owned",
+          order: "lowest"
+        })
+        expect(names(highest)).toEqual(["Vivaldi", "Gustav Mahlerplein"])
+        expect(names(lowest)).toEqual(["Vivaldi", "Gustav Mahlerplein"])
+      })
+    )
+
+    it.effect("cites the ranking it used, so the lowest is not the citation of the highest", () =>
+      Effect.gen(function* () {
+        const highest = citationsOf(
+          yield* structured("housing_stock", { areaLevel: "wijk", sortBy: "pct_corporation_owned" })
+        )
+        const lowest = citationsOf(
+          yield* structured("housing_stock", { areaLevel: "wijk", sortBy: "pct_corporation_owned", order: "lowest" })
+        )
+        expect(highest[0]?.locator).toBe(
+          "Amsterdam's housing stock from CBS key figures for its wijken, ranked by the share owned by housing corporations"
+        )
+        expect(lowest[0]?.locator).toBe(
+          "Amsterdam's housing stock from CBS key figures for its wijken, ranked by the share owned by housing " +
+            "corporations, lowest first"
+        )
+        expect(lowest[0]?.citationId).not.toBe(highest[0]?.citationId)
+      })
+    )
+
     it.effect("returns an unknown area as an error result listing the names loaded", () =>
       Effect.gen(function* () {
         const result = yield* call("housing_stock", { areaLevel: "wijk", area: "Nieuw-West" })

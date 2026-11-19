@@ -96,8 +96,10 @@ export const housingStock = (p: {
   readonly areaLevel: string
   readonly area?: string | undefined
   readonly sortBy?: string | undefined
+  readonly order?: string | undefined
 }) =>
   phrase(`Amsterdam's housing stock from CBS key figures for ${AREA_WORDS[p.areaLevel] ?? p.areaLevel}`, [
     given(p.area, (a) => `in ${a}`),
-    given(p.sortBy, (s) => `ranked by ${groupWords(s)}`)
+    given(p.sortBy, (s) => `ranked by ${groupWords(s)}`),
+    p.order === "lowest" ? "lowest first" : null
   ])

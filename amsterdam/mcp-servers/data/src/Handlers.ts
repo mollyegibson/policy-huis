@@ -230,9 +230,10 @@ export const AmsDataHandlers = (toolkit: AmsDataToolkit) =>
             const data = yield* loadedDataset(datasets, "cbs_kerncijfers")
             const areaLevel = params.areaLevel ?? "gemeente"
             const sortBy = params.sortBy ?? "housing_stock"
+            const order = params.order ?? "highest"
             yield* check("area", params.area, repo.housingAreaNames(areaLevel))
             const { total, areas } = yield* repo.housingStock(
-              { areaLevel, area: params.area, sortBy },
+              { areaLevel, area: params.area, sortBy, order },
               params.limit ?? DEFAULT_LIMIT
             )
             return {
@@ -244,7 +245,7 @@ export const AmsDataHandlers = (toolkit: AmsDataToolkit) =>
                 STOCK,
                 "housing_stock",
                 params,
-                Locators.housingStock({ areaLevel, area: params.area, sortBy: params.sortBy }),
+                Locators.housingStock({ areaLevel, area: params.area, sortBy: params.sortBy, order: params.order }),
                 params.area
               )
             }

@@ -106,4 +106,6 @@ INSERT INTO ams_data.housing_stock (
     ('buurt', 'KP05', 'Vivaldi', 'KP', 'Zuidas', 400, 5, 800, 5, 95, 2, 20, 80, 15, 65, 30, 500, 40, 96, 4, 2, 12,
      '2025-01-01'),
     ('wijk', 'N2', 'Nieuwendammerdijk', NULL, NULL, 400, 2, 300, 30, 70, 2, 35, 65, 60, 5, 10, 1000, 0, 24, 76, 6, 1,
-     '2025-01-01');
+     '2025-01-01'),
+    ('buurt', 'KP06', 'Gustav Mahlerplein', 'KP', 'Zuidas', 100, NULL, NULL, 2, 98, 1, 10, 90, NULL, 80, 40, 400, 60,
+     95, 5, 3, 9, '2025-01-01');
