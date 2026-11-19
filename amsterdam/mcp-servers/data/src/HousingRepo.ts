@@ -199,7 +199,7 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
         ...(p.district === undefined ? [] : [sql`stadsdeel = ${p.district}`]),
         ...(p.neighborhood === undefined ? [] : [sql`wijk = ${p.neighborhood}`]),
         ...(p.minUnits === undefined ? [] : [sql`total_units >= ${p.minUnits}`]),
-        ...(p.buildingFrom === undefined ? [] : [sql`construction_start_planned >= ${p.buildingFrom}-01-01`])
+        ...(p.buildingFrom === undefined ? [] : [sql`construction_start_planned >= ${`${p.buildingFrom}-01-01`}::date`])
       ])
 
     const plannedProjects = Effect.fn("HousingRepo.plannedProjects")(function* (
@@ -292,7 +292,7 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       return yield* rows(AddressLabelRow)(
         yield* sql`
           SELECT label_class AS "labelClass", label, build_year AS "buildYear", build_year_band AS "buildYearBand",
-                 registered_on::text AS "registeredOn", valid_until::text AS "validUntil", surface
+                 registered_on::text AS "registeredOn", valid_until::text AS "validUntil", surface::float8 AS surface
           FROM ams_data.energy_labels
           WHERE upper(postcode) = ${postcode.toUpperCase()} AND house_number = ${houseNumber}
           ORDER BY registered_on DESC, label_class`
@@ -314,9 +314,9 @@ export class HousingRepo extends Context.Service<HousingRepo>()("HousingRepo", {
       const found = yield* rows(Counted(RentalListingRow))(
         yield* sql`
           SELECT listing_id AS "listingId", name, room_type AS "roomType", neighbourhood,
-                 nightly_price AS "nightlyPrice", minimum_nights AS "minimumNights",
+                 nightly_price::float8 AS "nightlyPrice", minimum_nights AS "minimumNights",
                  nights_available AS "nightsAvailable", estimated_occupancy_nights AS "estimatedOccupancyNights",
-                 estimated_revenue AS "estimatedRevenue", registration, registered,
+                 estimated_revenue::float8 AS "estimatedRevenue", registration, registered,
                  host_listings_count AS "hostListingsCount", count(*) OVER ()::int AS total
           FROM ams_data.short_term_rentals
           WHERE ${rentalWhere(filters)}

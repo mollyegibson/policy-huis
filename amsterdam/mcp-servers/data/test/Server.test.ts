@@ -97,6 +97,16 @@ layer(TestServer.layer, { timeout: 120_000 })("ams-data server", (it) => {
       })
     )
 
+    it.effect("lists the plans whose construction starts in the given year or later", () =>
+      Effect.gen(function* () {
+        const content = yield* structured("planned_housing_projects", { buildingFrom: "2028" })
+        const projects = Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ projectId: Schema.String })))(
+          content["projects"]
+        )
+        expect(projects).toEqual([{ projectId: "P3" }])
+      })
+    )
+
     it.effect("groups the published tenure columns into the tenure totals it reports", () =>
       Effect.gen(function* () {
         const content = yield* structured("planned_housing_projects", { minUnits: 100 })
@@ -293,13 +303,14 @@ layer(TestServer.layer, { timeout: 120_000 })("ams-data server", (it) => {
             Schema.Struct({
               listingId: Schema.String,
               registered: Schema.Boolean,
-              registration: Schema.NullOr(Schema.String)
+              registration: Schema.NullOr(Schema.String),
+              nightlyPrice: Schema.NullOr(Schema.Number)
             })
           )
         )(content["listings"])
         expect(listings).toEqual([
-          { listingId: "L4", registered: true, registration: "036341086EC3C2FF2493" },
-          { listingId: "L1", registered: true, registration: "0363 78AD 8875 790E" }
+          { listingId: "L4", registered: true, registration: "036341086EC3C2FF2493", nightlyPrice: 400 },
+          { listingId: "L1", registered: true, registration: "0363 78AD 8875 790E", nightlyPrice: 250 }
         ])
       })
     )
