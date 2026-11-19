@@ -1,3 +1,4 @@
+import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parseArgs } from "node:util"
 
@@ -13,7 +14,7 @@ import { loadQuestions } from "./Questions.ts"
 import { byProvider, formatSummary, ResultsFile, summarize } from "./results.ts"
 import { testCaseFor } from "./suite.ts"
 
-const QUESTIONS = fileURLToPath(new URL("../questions/sf.yaml", import.meta.url))
+const QUESTIONS = fileURLToPath(new URL("../questions", import.meta.url))
 const RESULTS = fileURLToPath(new URL("../results", import.meta.url))
 
 /**
@@ -29,7 +30,7 @@ export class EvaluationFailed extends Schema.TaggedError<EvaluationFailed>()("Ev
 }) {}
 
 const USAGE =
-  "yarn workspace @policyhuis/evaluation eval [--model open_cloud,frontier] [--repeat N] [--only sf-bla-01,sf-data-10]"
+  "yarn workspace @policyhuis/evaluation eval [--model open_cloud,frontier] [--repeat N] [--only sf-bla-01,ams-data-05]"
 
 const parseCommandLine = Effect.fn("runEval.parseCommandLine")(function* () {
   const { values } = yield* Effect.try({
@@ -53,9 +54,23 @@ const parseCommandLine = Effect.fn("runEval.parseCommandLine")(function* () {
 
 const ConfigLive = BackendConfig.layer.pipe(Layer.provide(EvaluationEnv.layer), Layer.provide(NodeServices.layer))
 
+/** Every city's question file in `questions`, in file-name order, refusing an ID two files share. */
+const loadQuestionSets = Effect.fn("runEval.loadQuestionSets")(function* () {
+  const fs = yield* FileSystem.FileSystem
+  const names = (yield* fs.readDirectory(QUESTIONS)).filter((name) => name.endsWith(".yaml")).sort()
+  if (names.length === 0) return yield* new EvaluationFailed({ message: `${QUESTIONS} holds no .yaml file` })
+  const sets = yield* Effect.forEach(names, (name) => loadQuestions(join(QUESTIONS, name)))
+  const ids = sets.flatMap((set) => set.questions.map((question) => question.id))
+  const repeated = [...new Set(ids.filter((id, index) => ids.indexOf(id) !== index))]
+  return repeated.length === 0
+    ? sets
+    : yield* new EvaluationFailed({ message: `Question IDs two files share: ${repeated.join(", ")}` })
+})
+
 const main = Effect.gen(function* () {
   const { repeat, only, models } = yield* parseCommandLine()
-  const { questions } = yield* loadQuestions(QUESTIONS)
+  const sets = yield* loadQuestionSets()
+  const questions = sets.flatMap((set) => set.questions)
   const unknown = (only ?? []).filter((id) => !questions.some((q) => q.id === id))
   if (unknown.length > 0) return yield* new EvaluationFailed({ message: `No such question: ${unknown.join(", ")}` })
   const selected = only === undefined ? questions : questions.filter((q) => only.includes(q.id))
@@ -110,7 +125,7 @@ const main = Effect.gen(function* () {
     try: () =>
       evaluate(
         {
-          description: `PolicyHuis San Francisco question set (${providers.map((p) => p.label).join(" vs ")})`,
+          description: `PolicyHuis question sets: ${sets.map((set) => set.city).join(", ")} (${providers.map((p) => p.label).join(" vs ")})`,
           prompts: ["{{question}}"],
           providers: providers.map((p) => p.provider),
           tests: selected.map(testCaseFor),

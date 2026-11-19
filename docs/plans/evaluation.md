@@ -50,9 +50,12 @@ The API side is in [`protocol/src/QuestionsApi.ts`](../../protocol/src/Questions
 
 ### The question file
 
-`evaluation/questions/sf.yaml` holds the questions below. `Questions.ts` decodes it with `Schema`, and `suite.ts` turns each question's `expect` into promptfoo assertions (see [The checks](#the-checks)).
+`evaluation/questions/` holds one file per city: `sf.yaml` and `ams.yaml`. Each names its `city` and its `prefix`, and every question ID starts with that prefix, so a file whose IDs name another city is refused. `Questions.ts` decodes each file with `Schema`, `runEval.ts` loads every `.yaml` in that folder and refuses an ID two files share, and `suite.ts` turns each question's `expect` into promptfoo assertions (see [The checks](#the-checks)).
 
 ```yaml
+city: San Francisco
+prefix: sf
+
 questions:
   - id: sf-bla-01
     type: report
@@ -68,6 +71,8 @@ questions:
 
 | Field | Meaning |
 |---|---|
+| `city` | The city the run names this file's questions by, in its progress line and promptfoo description |
+| `prefix` | The start of every question ID in the file (`sf`, `ams`); the ID's rest names what it asks about |
 | `type` | A [question type](#question-types) |
 | `expect.tools` | At least one of these tools is called |
 | `expect.documents` | The answer cites a passage of each of these documents |
@@ -207,6 +212,28 @@ All nine expect a docs tool, a citation of `bla_affordable_housing`, and a menti
 | sf-decline-03 | decline | How many eviction notices were filed in Oakland last year? | `citesNothing`; `mentions` "Oakland" |
 
 That is 75 questions: 9 on the report, 50 on the ordinance, 10 on the data tools, 3 combining them and 3 declines.
+
+### The Amsterdam set
+
+`evaluation/questions/ams.yaml` holds what Amsterdam's loaded sources can answer today: one question per `ams-data` tool that has data, and declines.
+
+| ID | Type | Question | Expected |
+|---|---|---|---|
+| ams-data-01 | ground | Where do the Amsterdam housing figures come from, and how current are they? | `ams_data_dataset_info`; `mentions` "CBS" |
+| ams-data-02 | ground | How many homes are there in Amsterdam, and what share is owned by housing corporations? | `ams_data_housing_stock` |
+| ams-data-03 | ground | What share of homes in the Zuidas is owned by housing corporations? | `ams_data_housing_stock`, called with `areaLevel` wijk and `area` Zuidas |
+| ams-data-04 | ground | Which Amsterdam neighborhood has the lowest share of homes owned by housing corporations? | `ams_data_housing_stock`, called with `order` lowest: the ranking's lower end |
+| ams-data-05 | ground | How many social-rent homes are planned in Nieuw-West, and when? | `ams_data_planned_housing_summary`, called with `district` Nieuw-West |
+| ams-data-06 | ground | Which housing projects in Nieuw-West are planned to start construction in 2028 or later? | `ams_data_planned_housing_projects`, called with `district` Nieuw-West and `buildingFrom` 2028 |
+| ams-data-07 | ground | How many short-term rental listings are in Centrum-West, and how many nights do they advertise? | `ams_data_short_term_rentals_summary`, called with `neighbourhood` Centrum-West |
+| ams-data-08 | ground | Which short-term rental listings in Amsterdam cost the most per night? | `ams_data_short_term_rentals` |
+| ams-decline-01 | decline | My landlord wants to evict me. Should I stop paying rent and fight it in court? | `mentions` "Huurcommissie"; it may explain the rule once the corpus holds it |
+| ams-decline-02 | decline | Do short-term rentals push up rents in Amsterdam? | No figure without a citation; whether it avoids a causal claim is read by hand |
+| ams-decline-03 | decline | How many social-rent homes are planned in Rotterdam? | `citesNothing`; `mentions` "Rotterdam" |
+
+**No rule question is in the set yet, and that is the point of the set's size.** Amsterdam's documents project has no source confirmed: its `config/sources.yaml` and `config/corpus.yaml` are empty, so the Huisvestingsverordening, the national rent law and the Woningbouwplan reports have no passages to cite, and the draft questions about them ([Netherlands Ingestion Plan](netherlands-ingestion.md#amsterdam)) cannot pass. Two more sources are missing behind specific draft questions: EP-Online is declared but not loaded, so the energy-label tools report the data unavailable, and CBS publishes no stadsdeel level, so ams-data-02 and ams-data-03 ask for the city and a wijk rather than for a district.
+
+Before any document question can pass, the citation checks need the second city's namespace: `documentCitationPrefix` in `evaluation/src/checks.ts` hardcodes `sf_docs.`, so `documents`, `notDocuments` and `provisions` recognise only San Francisco's docs server. The Amsterdam docs server's prefix has to settle that, as part of loading its corpus.
 
 ## The model choice in the browser app
 

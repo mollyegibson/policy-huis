@@ -13,6 +13,7 @@ import { Complete, LookupEnded, LookupStarted, Sources, TextChunk } from "@polic
 import { answer, ordinance } from "./fixtures.ts"
 
 const QUESTIONS = fileURLToPath(new URL("../questions/sf.yaml", import.meta.url))
+const AMS_QUESTIONS = fileURLToPath(new URL("../questions/ams.yaml", import.meta.url))
 
 describe("the question file", () => {
   it.effect("decodes, with 75 questions", () =>
@@ -22,9 +23,37 @@ describe("the question file", () => {
     }).pipe(Effect.provide(NodeServices.layer))
   )
 
+  it.effect("decodes Amsterdam's set, whose every ID carries its prefix", () =>
+    Effect.gen(function* () {
+      const { prefix, questions } = yield* loadQuestions(AMS_QUESTIONS)
+      expect(prefix).toBe("ams")
+      expect(questions.length).toBeGreaterThan(0)
+      expect(questions.filter((question) => !question.id.startsWith("ams-"))).toEqual([])
+    }).pipe(Effect.provide(NodeServices.layer))
+  )
+
+  it.effect("gives the two sets no ID in common", () =>
+    Effect.gen(function* () {
+      const sf = yield* loadQuestions(QUESTIONS)
+      const ams = yield* loadQuestions(AMS_QUESTIONS)
+      const ids = new Set(sf.questions.map((question) => question.id))
+      expect(ams.questions.filter((question) => ids.has(question.id))).toEqual([])
+    }).pipe(Effect.provide(NodeServices.layer))
+  )
+
   it("rejects a repeated question ID", () => {
     const question = { id: "sf-bla-01", type: "report", question: "Q?", expect: {} }
-    const decoded = Schema.decodeUnknownExit(QuestionFile)({ questions: [question, question] })
+    const decoded = Schema.decodeUnknownExit(QuestionFile)({
+      city: "San Francisco",
+      prefix: "sf",
+      questions: [question, question]
+    })
+    expect(Exit.isFailure(decoded)).toBe(true)
+  })
+
+  it("rejects a file whose questions name another city", () => {
+    const question = { id: "sf-bla-01", type: "report", question: "Q?", expect: {} }
+    const decoded = Schema.decodeUnknownExit(QuestionFile)({ city: "Amsterdam", prefix: "ams", questions: [question] })
     expect(Exit.isFailure(decoded)).toBe(true)
   })
 })
@@ -52,6 +81,20 @@ describe("assertionsFor", () => {
       ["javascript", "expectedFacts", expect.any(Function)]
     ])
   })
+
+  it.effect("turns each Amsterdam question's expectations into its checks", () =>
+    Effect.gen(function* () {
+      const { questions } = yield* loadQuestions(AMS_QUESTIONS)
+      for (const question of questions) {
+        const metrics = new Set(assertionsFor(question).map((assertion) => assertion.metric))
+        expect(metrics.has("completed")).toBe(true)
+        expect(metrics.has("calledExpectedTool")).toBe(question.expect.tools !== undefined)
+        expect(metrics.has("calledWithArguments")).toBe(question.expect.arguments !== undefined)
+        expect(metrics.has("mentions")).toBe(question.expect.mentions !== undefined)
+        expect(metrics.has("citesNothing")).toBe(question.expect.citesNothing === true)
+      }
+    }).pipe(Effect.provide(NodeServices.layer))
+  )
 
   it("runs a check on the answer the provider attached, and fails a result that carries none", async () => {
     const [completedCheck] = assertionsFor({ id: "sf-decline-02", type: "decline", question: "Q?", expect: {} })

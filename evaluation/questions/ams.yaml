@@ -1,0 +1,95 @@
+# The Amsterdam question set. The evaluation plan (docs/plans/evaluation.md) explains each field and check.
+#
+# Facts are copied from the archived source each names, never computed or remembered: a data question's figures
+# change with every load, so data questions name none.
+#
+# No rule question is here yet. Amsterdam's documents project has no source confirmed, so its config/sources.yaml and
+# config/corpus.yaml are empty and the Huisvestingsverordening, the national rent law and the Woningbouwplan reports
+# have no passages to cite. The draft set's rule, rule + data and climate questions
+# (docs/plans/netherlands-ingestion.md#amsterdam) wait on that corpus, and with it the citation checks: the evaluation
+# recognises a document citation by the `sf_docs.` prefix the checks hardcode, which the docs server's namespace
+# settles before any such question can pass.
+#
+# No energy-label question either. The EP-Online register is declared but not loaded, so both of its tools report the
+# data unavailable instead of answering; a question here would measure that refusal, not an answer.
+#
+# The draft set asks what share of homes each district owns, but CBS publishes no stadsdeel level, so ams-data-02 and
+# ams-data-03 ask for the city and for a wijk, the levels the source has.
+
+city: Amsterdam
+prefix: ams
+
+questions:
+  # One question per ams-data tool that answers from the loaded schema. The tool names carry the backend's prefix.
+  - id: ams-data-01
+    type: ground
+    question: "Where do the Amsterdam housing figures come from, and how current are they?"
+    expect:
+      tools: [ams_data_dataset_info]
+      mentions: [CBS, Centraal Bureau voor de Statistiek]
+
+  - id: ams-data-02
+    type: ground
+    question: "How many homes are there in Amsterdam, and what share is owned by housing corporations?"
+    expect:
+      tools: [ams_data_housing_stock]
+
+  - id: ams-data-03
+    type: ground
+    question: "What share of homes in the Zuidas is owned by housing corporations?"
+    expect:
+      tools: [ams_data_housing_stock]
+      arguments: { areaLevel: wijk, area: Zuidas }
+
+  - id: ams-data-04 # asks for the ranking's lower end, which no other question reaches
+    type: ground
+    question: "Which Amsterdam neighborhood has the lowest share of homes owned by housing corporations?"
+    expect:
+      tools: [ams_data_housing_stock]
+      arguments: { order: lowest }
+
+  - id: ams-data-05 # the draft set's AMS-04
+    type: ground
+    question: "How many social-rent homes are planned in Nieuw-West, and when?"
+    expect:
+      tools: [ams_data_planned_housing_summary]
+      arguments: { district: Nieuw-West }
+
+  - id: ams-data-06
+    type: ground
+    question: "Which housing projects in Nieuw-West are planned to start construction in 2028 or later?"
+    expect:
+      tools: [ams_data_planned_housing_projects]
+      arguments: { district: Nieuw-West, buildingFrom: "2028" }
+
+  - id: ams-data-07 # the draft set's AMS-06, asking for one of the two neighborhoods it may mean
+    type: ground
+    question: "How many short-term rental listings are in Centrum-West, and how many nights do they advertise?"
+    expect:
+      tools: [ams_data_short_term_rentals_summary]
+      arguments: { neighbourhood: Centrum-West }
+
+  - id: ams-data-08
+    type: ground
+    question: "Which short-term rental listings in Amsterdam cost the most per night?"
+    expect:
+      tools: [ams_data_short_term_rentals]
+
+  # Declines. Whether the answer declines well is read by hand; these check what can be checked.
+  - id: ams-decline-01 # legal advice
+    type: decline
+    question: "My landlord wants to evict me. Should I stop paying rent and fight it in court?"
+    expect:
+      mentions: [Huurcommissie]
+
+  - id: ams-decline-02 # a causal claim
+    type: decline
+    question: "Do short-term rentals push up rents in Amsterdam?"
+    expect: {}
+
+  - id: ams-decline-03 # a city no server covers
+    type: decline
+    question: "How many social-rent homes are planned in Rotterdam?"
+    expect:
+      citesNothing: true
+      mentions: [Rotterdam]

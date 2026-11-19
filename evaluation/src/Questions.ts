@@ -30,19 +30,36 @@ export type Expect = typeof Expect.Type
 
 export const QuestionType = Schema.Literals(["rule", "ground", "rule + data", "climate", "report", "decline"])
 
+/** A question's ID: its set's prefix, what it asks about, and its number, such as `sf-rent-01` or `ams-data-01`. */
+const QuestionId = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[a-z]{2,3}-[a-z]+-\d{2}$/, { message: "an ID like sf-rent-01 or ams-data-01" }))
+)
+
 export const Question = Schema.Struct({
-  id: Schema.String.pipe(Schema.check(Schema.isPattern(/^sf-[a-z]+-\d{2}$/, { message: "an ID like sf-rent-01" }))),
+  id: QuestionId,
   type: QuestionType,
   question: Schema.NonEmptyString,
   expect: Expect
 })
 export type Question = typeof Question.Type
 
-export const QuestionFile = Schema.Struct({ questions: Schema.Array(Question) }).check(
-  Schema.makeFilter(({ questions }) => {
+/**
+ * One city's questions: the city a run names them by, the prefix every ID in the file starts with, and the questions.
+ * The prefix is declared here rather than read off the IDs, so a file whose IDs name another city is an error.
+ */
+export const QuestionFile = Schema.Struct({
+  city: Schema.NonEmptyString,
+  prefix: Schema.NonEmptyString,
+  questions: Schema.Array(Question)
+}).check(
+  Schema.makeFilter(({ city, prefix, questions }) => {
     const ids = questions.map((q) => q.id)
     const repeated = ids.filter((id, i) => ids.indexOf(id) !== i)
-    return repeated.length === 0 ? true : `question IDs must be unique: ${repeated.join(", ")}`
+    if (repeated.length > 0) return `question IDs must be unique: ${repeated.join(", ")}`
+    const foreign = ids.filter((id) => !id.startsWith(`${prefix}-`))
+    return foreign.length === 0
+      ? true
+      : `${city}'s questions all start with ${prefix}-, but these do not: ${foreign.join(", ")}`
   })
 )
 export type QuestionFile = typeof QuestionFile.Type
