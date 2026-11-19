@@ -128,6 +128,16 @@ layer(TestServer.layer, { timeout: 120_000 })("ams-data server", (it) => {
       })
     )
 
+    it.effect("finds a plan whose record names no district by the district of the neighborhood it names", () =>
+      Effect.gen(function* () {
+        const content = yield* structured("planned_housing_projects", { district: "Weesp" })
+        const projects = Schema.decodeUnknownSync(
+          Schema.Array(Schema.Struct({ projectId: Schema.String, district: Schema.NullOr(Schema.String) }))
+        )(content["projects"])
+        expect(projects.map((p) => [p.projectId, p.district])).toEqual([["P4", "Weesp"]])
+      })
+    )
+
     it.effect(
       "cites the register's version, its locator naming the district, and cites that district as its jurisdiction",
       () =>
@@ -159,52 +169,54 @@ layer(TestServer.layer, { timeout: 120_000 })("ams-data server", (it) => {
     )
   })
 
-  it.effect("summarizes the planned housing by district, grouping plans without one as unknown", () =>
-    Effect.gen(function* () {
-      const content = yield* structured("planned_housing_summary", { groupBy: "district" })
-      expect(content["groups"]).toEqual([
-        {
-          key: "Centrum",
-          projects: 1,
-          totalUnits: 30,
-          unitsSocialRent: 30,
-          unitsMidRent: 0,
-          unitsPrivateRent: 0,
-          unitsOwnerOccupied: 0,
-          unitsOther: 0
-        },
-        {
-          key: "Noord",
-          projects: 1,
-          totalUnits: 15,
-          unitsSocialRent: 0,
-          unitsMidRent: 0,
-          unitsPrivateRent: 0,
-          unitsOwnerOccupied: 0,
-          unitsOther: 15
-        },
-        {
-          key: "Weesp",
-          projects: 1,
-          totalUnits: 12,
-          unitsSocialRent: 12,
-          unitsMidRent: 0,
-          unitsPrivateRent: 0,
-          unitsOwnerOccupied: 0,
-          unitsOther: 0
-        },
-        {
-          key: "Zuid",
-          projects: 1,
-          totalUnits: 100,
-          unitsSocialRent: 40,
-          unitsMidRent: 20,
-          unitsPrivateRent: 10,
-          unitsOwnerOccupied: 30,
-          unitsOther: 0
-        }
-      ])
-    })
+  it.effect(
+    "summarizes the planned housing by district, taking a plan's district from its neighborhood when it names none",
+    () =>
+      Effect.gen(function* () {
+        const content = yield* structured("planned_housing_summary", { groupBy: "district" })
+        expect(content["groups"]).toEqual([
+          {
+            key: "Centrum",
+            projects: 1,
+            totalUnits: 30,
+            unitsSocialRent: 30,
+            unitsMidRent: 0,
+            unitsPrivateRent: 0,
+            unitsOwnerOccupied: 0,
+            unitsOther: 0
+          },
+          {
+            key: "Noord",
+            projects: 1,
+            totalUnits: 15,
+            unitsSocialRent: 0,
+            unitsMidRent: 0,
+            unitsPrivateRent: 0,
+            unitsOwnerOccupied: 0,
+            unitsOther: 15
+          },
+          {
+            key: "Weesp",
+            projects: 1,
+            totalUnits: 12,
+            unitsSocialRent: 12,
+            unitsMidRent: 0,
+            unitsPrivateRent: 0,
+            unitsOwnerOccupied: 0,
+            unitsOther: 0
+          },
+          {
+            key: "Zuid",
+            projects: 1,
+            totalUnits: 100,
+            unitsSocialRent: 40,
+            unitsMidRent: 20,
+            unitsPrivateRent: 10,
+            unitsOwnerOccupied: 30,
+            unitsOther: 0
+          }
+        ])
+      })
   )
 
   it.effect("summarizes the planned housing by year of planned construction start", () =>

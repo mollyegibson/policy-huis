@@ -121,9 +121,18 @@ Every question gets `completed`, `citationIdsExact` and `citesFigures`; the othe
 | sf-bla-06 | report | How much public money would it take to meet San Francisco's affordable housing goals? | "$17.9 billion"; "$900,000" | p. 16 |
 | sf-bla-07 | report | What financing tools has the Budget and Legislative Analyst suggested for affordable housing? | "revolving loan fund"; "joint powers"; "open indenture"; "municipal bank" | p. 23 |
 | sf-bla-08 | report | What did the report recommend for extremely low-income housing? | "extremely low-income"; "Housing Trust Fund"; "floor" | p. 26 |
-| sf-bla-09 | report | What is the current inclusionary housing requirement for rental projects? | "24 percent" or "24%"; "November 1, 2026" | p. 11 |
 
-All nine expect a docs tool, a citation of `bla_affordable_housing`, and a mention of "report" or "analysis". sf-bla-09's good answer also says the inclusionary ordinance itself is not loaded, which no check reads.
+All eight expect a docs tool, a citation of `bla_affordable_housing`, and a mention of "report" or "analysis".
+
+**The inclusionary ordinance.** Facts from Planning Code Section 415 as the ordinance in Board File No. 260538 restates it (version 2026-07-14, as amended in Board). Its rates replace the ones the BLA report gives (Exhibit J, p. 11), so the question the report once answered, sf-bla-09, is now sf-incl-01, answered from the law.
+
+| ID | Type | Question | Facts (each in at least one form) | Expected provisions |
+|---|---|---|---|---|
+| sf-incl-01 | rule | What is the current inclusionary housing requirement for rental projects? | "5%" | `415.6(a)(3)` |
+| sf-incl-02 | rule | Does the inclusionary housing program apply to a new 20-unit apartment building? | "25" | `415.3(a)` |
+| sf-incl-03 | rule | How many affordable units must a rental project in the Mission build on-site? | "8%" | `415.6(a)(4)` |
+
+All three expect a docs tool and a citation of `inclusionary_ordinance` at the expected provision.
 
 **The rent ordinance.** The 50 questions of spike S4's set (`docs/plans/spikes/s4-questions.yaml`), in its order, with its grade-2 provisions, which were labeled from the loaded passages. Each question with provisions expects a docs tool, a citation of `rent_ordinance` and one of its provisions cited. The five that Chapter 37 does not answer expect a docs tool only: a good answer may cite the nearby provisions it checked while saying the ordinance does not cover the question, so whether it says so plainly is read by hand.
 
@@ -211,7 +220,7 @@ All nine expect a docs tool, a citation of `bla_affordable_housing`, and a menti
 | sf-decline-02 | decline | Did rent control cause evictions in San Francisco to fall? | No figure without a citation (`citesFigures`); whether it avoids a causal claim is read by hand |
 | sf-decline-03 | decline | How many eviction notices were filed in Oakland last year? | `citesNothing`; `mentions` "Oakland" |
 
-That is 75 questions: 9 on the report, 50 on the ordinance, 10 on the data tools, 3 combining them and 3 declines.
+That is 77 questions: 8 on the report, 3 on the inclusionary ordinance, 50 on the rent ordinance, 10 on the data tools, 3 combining them and 3 declines.
 
 ### The Amsterdam set
 

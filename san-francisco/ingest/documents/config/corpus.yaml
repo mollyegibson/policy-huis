@@ -33,3 +33,18 @@ bla_affordable_housing:
     Trust Fund, and new or enhanced taxes); and gaps in the affordable housing delivery system for vulnerable
     communities.
   splitter: bla_affordable_housing
+
+inclusionary_ordinance:
+  document_type: law
+  # The ordinance's title on page 1, and the headings of Planning Code Section 415 and its subsections as the ordinance
+  # restates them (415.1 to 415.10). The ordinance deletes Sections 415A and 415B, the temporary reductions of
+  # inclusionary requirements, and Section 415.7-1, the small sites alternative, so they have no passages.
+  description: >-
+    San Francisco's Inclusionary Affordable Housing Program in the Planning Code, as amended by the Board of
+    Supervisors' ordinance on inclusionary housing program updates and reductions: housing requirements for
+    residential and live/work development projects, findings, definitions, which housing projects the program applies
+    to, imposition of requirements and post-approval project modifications, the affordable housing fee, the on-site
+    affordable housing alternative, land dedication and off-site alternatives to the fee, duration and monitoring of
+    affordability, enforcement, and the triennial economic feasibility analysis.
+  splitter: inclusionary_ordinance
+  sections: ["415"]

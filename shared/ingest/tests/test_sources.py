@@ -21,7 +21,7 @@ from policyhuis_ingest.source_types import (
     parse_rows,
     raw_table,
 )
-from policyhuis_ingest.testing import FakeFetcher, pdf
+from policyhuis_ingest.testing import FakeFetcher, marked_pdf, pdf
 from tests.fixtures import LAYER, SQUARE, geojson, layer_responses, socrata_metadata, socrata_responses
 
 
@@ -357,3 +357,44 @@ def test_cbs_odata_table_identifier_is_a_statline_table_not_a_url(tmp_path: Path
     )
     with pytest.raises(ValueError):
         load_sources(path)
+
+
+ORDINANCE = REPORT.model_copy(update={"strikethrough": "marked"})
+
+
+def _marked(line: list[dict[str, object]]) -> str:
+    return "".join(f"~{span['text']}~" if span["struck"] else str(span["text"]) for span in line)
+
+
+def test_marked_pdf_rows_flag_struck_text_but_not_underlined_text() -> None:
+    data = marked_pdf(
+        [
+            [
+                [("that ", "plain"), ("are", "struck"), (" ", "plain"), ("is", "underlined"), (" affordable", "plain")],
+                [("Section ", "plain"), ("415.4(e)(2)", "struck"), ("415.4(g)(2)", "underlined")],
+                [("the ", "plain"), ("whole old", "struck"), (" ", "struck"), ("clause", "struck")],
+            ]
+        ]
+    )
+    [row] = parse_rows(ORDINANCE, data)
+    lines = row.record["lines"]
+    assert isinstance(lines, list)
+    assert [_marked(line) for line in lines] == [
+        "that ~are~ is affordable",
+        "Section ~415.4(e)(2)~415.4(g)(2)",
+        "the ~whole old clause~",
+    ]
+    assert "text" in row.record
+
+
+def test_a_margin_line_number_is_a_line_of_its_own() -> None:
+    data = marked_pdf([[[("first line", "plain")], [("second", "struck")]]], line_numbers=True)
+    [row] = parse_rows(ORDINANCE, data)
+    lines = row.record["lines"]
+    assert isinstance(lines, list)
+    assert [_marked(line) for line in lines] == ["1", "first line", "2", "~second~"]
+
+
+def test_pdf_rows_have_no_marked_lines_unless_the_source_declares_them() -> None:
+    [row] = parse_rows(REPORT, marked_pdf([[[("old", "struck")]]]))
+    assert "lines" not in row.record

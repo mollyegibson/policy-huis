@@ -125,18 +125,46 @@ questions:
         - any: ["floor"]
           source: "bla_affordable_housing, recommendation 4.1, p. 26"
 
-  - id: sf-bla-09 # a good answer also says the inclusionary ordinance itself is not loaded, which no check reads
-    type: report
+  # The inclusionary ordinance (Board File No. 260538, as amended in Board), version 2026-07-14: Planning Code Section
+  # 415 as the ordinance restates it. Its rates replace the ones the BLA report gives (Exhibit J, p. 11).
+  - id: sf-incl-01
+    type: rule
     question: "What is the current inclusionary housing requirement for rental projects?"
     expect:
       tools: *docs_tools
-      documents: [bla_affordable_housing]
-      mentions: *report_mentions
+      documents: [inclusionary_ordinance]
+      provisions:
+        document: inclusionary_ordinance
+        any: ["415.6(a)(3)"]
       facts:
-        - any: ["24 percent", "24%"]
-          source: "bla_affordable_housing, Exhibit J, p. 11"
-        - any: ["November 1, 2026"]
-          source: "bla_affordable_housing, Exhibit J, p. 11"
+        - any: ["5%", "5 percent", "five percent"]
+          source: "inclusionary_ordinance, Sec. 415.6(a)(3)"
+
+  - id: sf-incl-02
+    type: rule
+    question: "Does the inclusionary housing program apply to a new 20-unit apartment building?"
+    expect:
+      tools: *docs_tools
+      documents: [inclusionary_ordinance]
+      provisions:
+        document: inclusionary_ordinance
+        any: ["415.3(a)"]
+      facts:
+        - any: ["25"]
+          source: "inclusionary_ordinance, Sec. 415.3(a)"
+
+  - id: sf-incl-03
+    type: rule
+    question: "How many affordable units must a rental project in the Mission build on-site?"
+    expect:
+      tools: *docs_tools
+      documents: [inclusionary_ordinance]
+      provisions:
+        document: inclusionary_ordinance
+        any: ["415.6(a)(4)"]
+      facts:
+        - any: ["8%", "8 percent", "eight percent"]
+          source: "inclusionary_ordinance, Sec. 415.6(a)(4)"
 
   # The rent ordinance (Administrative Code Chapter 37), version 2026-06-29: spike S4's questions, in its order.
   - id: sf-rent-01 # spike S4 q01
